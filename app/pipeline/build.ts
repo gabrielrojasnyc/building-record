@@ -2,6 +2,8 @@ import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { Complex, Meta } from '@/domain/types';
 import { formatRegisteredAddress } from '@/domain/address';
+import { HISTORY_START, austinCalendarDate } from '@/domain/history';
+import { caseTotal } from '@/domain/query';
 import { buildAddressResolver, loadAddressPoints } from './addresses';
 import { emptyCaseSummary, loadCases } from './cases';
 import { loadRepeatOffenders } from './context';
@@ -32,24 +34,17 @@ function requireAtLeast(dataset: string, received: number, floor: number): void 
 
 const WRITE_BATCH = 100;
 
-const austinDate = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'America/Chicago',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
-
 const roundTo3 = (value: number) => Math.round(value * 1000) / 1000;
 
 const startsWithHouseNumber = (address: string) => /^\d/.test(address);
 
-const sumCounts = (counts: Complex['cases']) => counts.structure + counts.property + counts.landuse + counts.permit;
+const SAFE_PARCEL_ID = /^[A-Za-z0-9]+$/;
 
 /** Files to publish, keyed by path relative to the output directory. */
 type Files = Map<string, string>;
 
 async function assemble(pulledAt: Date, fetchImpl: typeof fetch, floors: Required<BuildOptions>): Promise<{ files: Files; meta: Meta }> {
-  const [parcels, addressPoints, caseIndex, repeatOffenders] = await Promise.all([
+  const [landUse, addressPoints, caseIndex, repeatOffenders] = await Promise.all([
     loadApartmentParcels(fetchImpl),
     loadAddressPoints(fetchImpl),
     loadCases(pulledAt, fetchImpl),
@@ -66,6 +61,10 @@ async function assemble(pulledAt: Date, fetchImpl: typeof fetch, floors: Require
     );
   }
   const { offenders } = repeatOffenders;
+
+  // An ID names a file under buildings/, so anything but letters and digits is left out and counted.
+  const parcels = landUse.parcels.filter(({ id }) => SAFE_PARCEL_ID.test(id));
+  const skippedParcelRows = landUse.skippedRows + (landUse.parcels.length - parcels.length);
 
   const resolveAddress = buildAddressResolver(addressPoints);
   const sorted = [...parcels].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -99,13 +98,14 @@ async function assemble(pulledAt: Date, fetchImpl: typeof fetch, floors: Require
   for (const { detail } of properties) files.set(`buildings/${detail.id}.json`, JSON.stringify(detail));
 
   const meta: Meta = {
-    pulledAt: austinDate.format(pulledAt),
-    since: '2023-11-01',
+    pulledAt: austinCalendarDate(pulledAt),
+    since: HISTORY_START,
     complexCount: complexes.length,
-    caseCount: complexes.reduce((sum, c) => sum + sumCounts(c.cases), 0),
+    caseCount: complexes.reduce((sum, c) => sum + caseTotal(c.cases), 0),
     unmatchedCaseShare: caseIndex.totalCases === 0 ? 0 : roundTo3(caseIndex.unmatchedCases / caseIndex.totalCases),
     uncategorizedCases: caseIndex.uncategorizedCases,
     futureDatedCases: caseIndex.futureDatedCases,
+    skippedParcelRows,
   };
   files.set('complexes.json', JSON.stringify(complexes));
   files.set('meta.json', JSON.stringify(meta));

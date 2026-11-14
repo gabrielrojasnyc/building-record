@@ -11,7 +11,7 @@ it("marks the active period and reports a change", async () => {
     "aria-pressed",
     "true",
   );
-  await userEvent.click(screen.getByRole("button", { name: "Since 2023" }));
+  await userEvent.click(screen.getByRole("button", { name: "Since Nov 2023" }));
   expect(onChange).toHaveBeenCalledWith({ ...DEFAULT_VIEW, period: "cases" });
 });
 

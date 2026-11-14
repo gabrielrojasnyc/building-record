@@ -1,4 +1,4 @@
-import type { Category, Complex } from './types';
+import type { Category, Complex, Counts } from './types';
 
 export type Period = 'cases12' | 'cases';
 export type CategoryFilter = Category | 'all';
@@ -25,12 +25,14 @@ const PERIODS: readonly Period[] = ['cases12', 'cases'];
 const CATEGORIES: readonly CategoryFilter[] = ['all', 'structure', 'property', 'landuse', 'permit'];
 const ORDERS: readonly View['order'][] = ['fewest', 'most'];
 
+/** Cases of all four categories together. */
+export function caseTotal(counts: Counts): number {
+  return counts.structure + counts.property + counts.landuse + counts.permit;
+}
+
 export function countFor(complex: Complex, view: View): number {
   const counts = complex[view.period];
-  if (view.category === 'all') {
-    return counts.structure + counts.property + counts.landuse + counts.permit;
-  }
-  return counts[view.category];
+  return view.category === 'all' ? caseTotal(counts) : counts[view.category];
 }
 
 /** How far from an edge, as a cross product in square degrees, a point still counts as on it. */

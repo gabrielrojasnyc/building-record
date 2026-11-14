@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from "react";
 import { formatAcres } from "@/domain/format";
 import { CATEGORY_LABEL } from "@/domain/labels";
-import { countFor, viewToSearchParams, type View } from "@/domain/query";
+import { caseTotal, countFor, viewToSearchParams, type View } from "@/domain/query";
 import type { Category, Complex, Counts } from "@/domain/types";
 import { Glass } from "./Glass";
 
@@ -28,6 +28,8 @@ interface TrayProps {
   complexes: Complex[];
   /** Every complex in Austin as a wrapping list the page scrolls, for a device where the map cannot start. */
   citywide?: boolean;
+  /** The map has not yet said what it shows, so the complexes are all of Austin's. */
+  awaitingView?: boolean;
   view: View;
   selectedId: string | null;
   hoveredId: string | null;
@@ -50,10 +52,6 @@ function mainCategories(counts: Counts, total: number): string {
   return `${CATEGORY_LABEL[first]} and ${CATEGORY_LABEL[second].toLowerCase()}`;
 }
 
-function totalCases(counts: Counts): number {
-  return Object.values(counts).reduce((sum, count) => sum + count, 0);
-}
-
 /** The caption under a card's figure and the line under its address, both speaking to the same filter as the figure. */
 function cardCopy(complex: Complex, view: View, count: number): { caption: string; detail: string } {
   const counts = complex[view.period];
@@ -69,7 +67,7 @@ function cardCopy(complex: Complex, view: View, count: number): { caption: strin
   if (count > 0) return { caption: caseWord, detail: `${label} only` };
 
   // The selected type has none here, so every case in the period belongs to another type.
-  const others = totalCases(counts);
+  const others = caseTotal(counts);
   return {
     caption: `no ${label.toLowerCase()} cases`,
     detail: others === 0 ? acres : `${others} other ${others === 1 ? "case" : "cases"}`,
@@ -156,6 +154,7 @@ export function Tray(props: TrayProps) {
   const countId = useId();
   const cardsRef = useRef<HTMLDivElement>(null);
   const citywide = props.citywide === true;
+  const countsAustin = citywide || props.awaitingView === true;
   const total = complexes.length;
 
   // Pages of 40 apply to the view they were asked for; any other view starts again at one page.
@@ -179,7 +178,7 @@ export function Tray(props: TrayProps) {
               {total.toLocaleString("en-US")}
             </strong>{" "}
             <span className="text-sm text-slate">
-              {total === 1 ? "complex" : "complexes"} {citywide ? "in Austin" : "in view"}
+              {total === 1 ? "complex" : "complexes"} {countsAustin ? "in Austin" : "in view"}
             </span>
           </p>
           <button
@@ -236,7 +235,11 @@ export function Tray(props: TrayProps) {
           </TrayNote>
         )}
         {!citywide && hidden > 0 && (
-          <TrayNote>{`${hidden.toLocaleString("en-US")} more in view. Zoom in to narrow them down.`}</TrayNote>
+          <TrayNote>
+            {countsAustin
+              ? `${hidden.toLocaleString("en-US")} more in Austin.`
+              : `${hidden.toLocaleString("en-US")} more in view. Zoom in to narrow them down.`}
+          </TrayNote>
         )}
         {citywide && total > CARD_LIMIT && (
           <div className="flex w-full items-center gap-3 pt-1 pb-1 text-[13px] text-slate">

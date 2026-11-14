@@ -12,6 +12,7 @@ const meta: Meta = {
   unmatchedCaseShare: 0.131,
   uncategorizedCases: 0,
   futureDatedCases: 0,
+  skippedParcelRows: 0,
 };
 
 vi.mock("../dataFiles", () => ({
@@ -118,6 +119,11 @@ it("makes only the claims the data supports", async () => {
   ]) {
     expect(text).not.toContain(removed);
   }
+});
+
+it("says the open figure covers the same history as everything else", async () => {
+  await renderPage();
+  expect(screen.getByText(/The "open now" figure counts only cases opened since November 2023\./)).toBeVisible();
 });
 
 it("describes each of the four ways a building is labelled", async () => {

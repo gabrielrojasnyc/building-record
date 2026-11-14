@@ -3,6 +3,7 @@ import type {
   Complex,
   Counts,
 } from "@/domain/types";
+import { caseTotal } from "@/domain/query";
 import { metresBetween, type LabelSource } from "./addresses";
 import type { CaseSummary } from "./cases";
 import type { RepeatOffenderRecord } from "./context";
@@ -11,6 +12,9 @@ import { toAcres } from "./parcels";
 /** Parcels with the same address whose centroids are this close to another member are one property. */
 const SAME_PROPERTY_METRES = 250;
 const LATEST_LIMIT = 8;
+
+/** Six decimals is about 10 cm on the ground, finer than any pin, and keeps the page light. */
+const roundTo6 = (degrees: number) => Math.round(degrees * 1e6) / 1e6;
 
 /** One apartment parcel with its label and its own record, before parcels that share an address are combined. */
 export interface LabelledParcel {
@@ -33,9 +37,6 @@ export interface Property {
 }
 
 const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-
-const sumCounts = (counts: Counts) =>
-  counts.structure + counts.property + counts.landuse + counts.permit;
 
 const addCounts = (a: Counts, b: Counts): Counts => ({
   structure: a.structure + b.structure,
@@ -97,7 +98,7 @@ function newestFirst(a: { opened: string }, b: { opened: string }): number {
 /** One complex from the members of a group: its ID and URL come from the busiest member, its figures from all of them. */
 function combine(group: LabelledParcel[]): Property {
   const members = [...group].sort((a, b) => compareText(a.id, b.id));
-  const casesOf = (member: LabelledParcel) => sumCounts(member.summary.cases);
+  const casesOf = (member: LabelledParcel) => caseTotal(member.summary.cases);
 
   // Members are in ID order and only a strictly larger value replaces the best so far, so ties go to the lowest ID.
   const busiest = members.reduce((best, member) =>
@@ -135,8 +136,8 @@ function combine(group: LabelledParcel[]): Property {
     id: busiest.id,
     parcelIds: members.map(({ id }) => id),
     address: busiest.label,
-    lon: largest.lon,
-    lat: largest.lat,
+    lon: roundTo6(largest.lon),
+    lat: roundTo6(largest.lat),
     acres: toAcres(members.reduce((sum, member) => sum + member.squareFeet, 0)),
     cases12: summaries.map(({ cases12 }) => cases12).reduce(addCounts),
     cases: summaries.map(({ cases }) => cases).reduce(addCounts),

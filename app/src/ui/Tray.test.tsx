@@ -146,6 +146,21 @@ it("tags Repeat Offender properties", () => {
   expect(card("1107 W Gibson St").queryByText("Repeat Offender")).toBeNull();
 });
 
+it("counts every complex in Austin until the map says what it shows", () => {
+  render(
+    <Tray
+      awaitingView
+      complexes={sample}
+      {...handlers}
+      view={DEFAULT_VIEW}
+      selectedId={null}
+      hoveredId={null}
+    />,
+  );
+  expect(screen.getByRole("region", { name: "3 complexes in Austin" })).toBeVisible();
+  expect(screen.getByRole("navigation", { name: "Jump to an area" })).toBeVisible();
+});
+
 it("names a single complex in the singular", () => {
   renderTray([busy]);
 

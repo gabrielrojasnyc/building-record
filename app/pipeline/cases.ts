@@ -1,8 +1,8 @@
+import { HISTORY_START, HISTORY_START_MONTH, austinCalendarDate } from '@/domain/history';
 import type { BuildingDetail, Category, Counts } from '@/domain/types';
 import { readAll } from './socrata';
 
 const CODE_CASES_DATASET = '6wtj-zbtb';
-const HISTORY_START_MONTH = '2023-11';
 const LATEST_LIMIT = 8;
 
 /** First recognised phrase wins. Matching ignores case and the city's "(s)" suffixes. */
@@ -53,16 +53,6 @@ const emptyCounts = (): Counts => ({ structure: 0, property: 0, landuse: 0, perm
 const pad = (n: number) => String(n).padStart(2, '0');
 
 const daysInMonth = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
-
-const austinDate = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'America/Chicago',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
-
-/** The pull date as an Austin calendar date, YYYY-MM-DD. */
-const isoDate = (date: Date) => austinDate.format(date);
 
 /** Same day of month, 12 months earlier, clamped for 29 February. */
 function twelveMonthsBefore(pulled: string): string {
@@ -120,13 +110,13 @@ function summarise(id: string, acc: Accumulator, months: string[]): CaseSummary 
 
 /** A parcel with no cases: zero counts and a zero-filled monthly series for the pull date. */
 export function emptyCaseSummary(id: string, pulledAt: Date): CaseSummary {
-  const months = monthRange(isoDate(pulledAt));
+  const months = monthRange(austinCalendarDate(pulledAt));
   return summarise(id, emptyAccumulator(months), months);
 }
 
 /** Reads code complaint cases since 2023-11-01 and summarises them per parcel. */
 export async function loadCases(pulledAt: Date, fetchImpl: typeof fetch = fetch): Promise<CaseIndex> {
-  const pulled = isoDate(pulledAt);
+  const pulled = austinCalendarDate(pulledAt);
   const since12 = twelveMonthsBefore(pulled);
   const months = monthRange(pulled);
 
@@ -134,7 +124,7 @@ export async function loadCases(pulledAt: Date, fetchImpl: typeof fetch = fetch)
     CODE_CASES_DATASET,
     {
       select: 'parcelid,description,status,opened_date',
-      where: `opened_date >= '2023-11-01'`,
+      where: `opened_date >= '${HISTORY_START}'`,
       order: 'case_id',
     },
     fetchImpl,

@@ -204,6 +204,7 @@ export function Finder({
         )}
         <Tray
           citywide={mapUnavailable}
+          awaitingView={viewArea === null}
           complexes={inView}
           view={view}
           selectedId={selectedId}

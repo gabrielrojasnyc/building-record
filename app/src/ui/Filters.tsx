@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
+import { HISTORY_START_SHORT } from "@/domain/history";
 import type { CategoryFilter, Period, View } from "@/domain/query";
 import { Glass } from "./Glass";
 
 const PERIODS: { value: Period; label: string }[] = [
   { value: "cases12", label: "12 months" },
-  { value: "cases", label: "Since 2023" },
+  { value: "cases", label: `Since ${HISTORY_START_SHORT}` },
 ];
 
 const CATEGORIES: { value: CategoryFilter; label: string }[] = [

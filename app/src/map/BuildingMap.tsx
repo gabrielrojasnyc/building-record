@@ -31,6 +31,9 @@ setWorkerUrl(
 
 const SOURCE_ID = "complexes";
 const FLY_PITCH = 58;
+/** Past these, the list without a map serves better than a blank screen. */
+const STYLE_TIMEOUT_MS = 10_000;
+const LOAD_TIMEOUT_MS = 20_000;
 
 /** Pixels at each edge that the camera treats as covered, so it centers on what stays visible. */
 export interface CameraPadding {
@@ -109,6 +112,8 @@ export function BuildingMap(props: BuildingMapProps) {
 
     let cancelled = false;
     let map: maplibregl.Map | null = null;
+    const styleRequest = new AbortController();
+    let loadTimer: ReturnType<typeof setTimeout> | undefined;
 
     const giveUp = () => {
       if (cancelled) return;
@@ -122,13 +127,21 @@ export function BuildingMap(props: BuildingMapProps) {
       if (!hasWebGL()) return giveUp();
 
       let style: StyleSpecification;
+      const styleTimer = setTimeout(
+        () => styleRequest.abort(),
+        STYLE_TIMEOUT_MS,
+      );
       try {
-        const response = await fetch(BASE_STYLE_URL);
+        const response = await fetch(BASE_STYLE_URL, {
+          signal: styleRequest.signal,
+        });
         if (!response.ok)
           throw new Error(`Base style responded ${response.status}`);
         style = repaint((await response.json()) as StyleSpecification);
       } catch {
         return giveUp();
+      } finally {
+        clearTimeout(styleTimer);
       }
       if (cancelled) return;
 
@@ -144,6 +157,14 @@ export function BuildingMap(props: BuildingMapProps) {
       }
       mapRef.current = map;
       map.setPadding(latest.current.padding ?? NO_PADDING);
+
+      // A style whose sources never finish leaves a map that never loads.
+      loadTimer = setTimeout(() => {
+        map?.remove();
+        map = null;
+        mapRef.current = null;
+        giveUp();
+      }, LOAD_TIMEOUT_MS);
 
       map.addControl(
         new maplibregl.NavigationControl({ visualizePitch: true }),
@@ -165,6 +186,7 @@ export function BuildingMap(props: BuildingMapProps) {
       };
 
       map.on("load", () => {
+        clearTimeout(loadTimer);
         if (!map) return;
         const { complexes: initialComplexes, view: initialView } =
           latest.current;
@@ -217,6 +239,8 @@ export function BuildingMap(props: BuildingMapProps) {
 
     return () => {
       cancelled = true;
+      styleRequest.abort();
+      clearTimeout(loadTimer);
       map?.remove();
       mapRef.current = null;
       markedSelected.current = null;

@@ -152,7 +152,7 @@ describe("combineParcels", () => {
     expect(complex.lastCase).toBe("2026-11-12");
     expect(complex.acres).toBe(2.7);
     // The larger parcel's centroid, so the pin sits on the bulk of the property.
-    expect(complex.lat).toBe(quiet.lat);
+    expect(complex.lat).toBeCloseTo(quiet.lat, 6);
     expect(detail.id).toBe("0204040107");
     expect(detail.monthly).toEqual([
       { month: "2026-09", count: 2 },

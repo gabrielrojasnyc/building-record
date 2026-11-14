@@ -2,19 +2,21 @@
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { searchAddresses, searchComplexes, type AddressMatch } from "@/city/addressSearch";
+import { ADDRESS_SEARCH_MIN_CHARACTERS } from "@/domain/address";
 import type { Complex } from "@/domain/types";
 import { Glass } from "./Glass";
 
 const PLACEHOLDER = "Search an Austin address";
 const NO_MATCH = "No Austin address starts with that.";
 const NO_COMPLEX_MATCH = "No apartment complex address starts with or contains that.";
+const CITY_UNAVAILABLE = "Other Austin addresses could not be loaded right now.";
 const TYPING_PAUSE_MS = 250;
-const MIN_CHARACTERS = 3;
 
 interface Suggestions {
   /** The trimmed text these matches answer. A result for older text is never shown. */
   query: string;
   matches: AddressMatch[];
+  cityUnavailable: boolean;
 }
 
 export function IntroSearch({
@@ -37,12 +39,15 @@ export function IntroSearch({
   const query = text.trim();
 
   useEffect(() => {
-    if (query.length < MIN_CHARACTERS) return;
+    if (query.length < ADDRESS_SEARCH_MIN_CHARACTERS) return;
     let superseded = false;
     const timer = setTimeout(async () => {
-      const matches = complexesOnly ? searchComplexes(query, complexes) : await searchAddresses(query, complexes);
+      // With no map the city is never asked, so it cannot be unavailable.
+      const result = complexesOnly
+        ? { matches: searchComplexes(query, complexes), cityUnavailable: false }
+        : await searchAddresses(query, complexes);
       if (superseded) return;
-      setSuggestions({ query, matches });
+      setSuggestions({ query, ...result });
       setActiveIndex(-1);
     }, TYPING_PAUSE_MS);
     return () => {
@@ -54,7 +59,10 @@ export function IntroSearch({
   const shown = suggestions?.query === query && dismissedQuery !== query ? suggestions : null;
   const matches = shown?.matches ?? [];
   const isOpen = matches.length > 0;
-  const showsNoMatch = shown !== null && matches.length === 0;
+  const showsCityUnavailable = shown?.cityUnavailable === true;
+  // The no-match sentence is only true when the city answered and nothing matched.
+  const showsNoMatch = shown !== null && matches.length === 0 && !showsCityUnavailable;
+  const showsSurface = isOpen || showsNoMatch || showsCityUnavailable;
   const optionId = (index: number) => `${listId}-${index}`;
 
   useEffect(() => {
@@ -102,7 +110,7 @@ export function IntroSearch({
   return (
     <Glass
       as="header"
-      className={`fixed top-(--gutter) left-(--gutter) ${isOpen || showsNoMatch ? "z-5" : "z-3"} w-[340px] rounded-[28px] px-[22px] pt-[22px] pb-[18px] phone:right-(--gutter) phone:w-auto phone:rounded-3xl phone:px-4 phone:py-3.5`}
+      className={`fixed top-(--gutter) left-(--gutter) ${showsSurface ? "z-5" : "z-3"} w-[340px] rounded-[28px] px-[22px] pt-[22px] pb-[18px] phone:right-(--gutter) phone:w-auto phone:rounded-3xl phone:px-4 phone:py-3.5`}
     >
       <h1 className="font-display text-[40px] leading-none tracking-[-0.01em] text-deep italic phone:text-[28px]">
         Building Record
@@ -147,12 +155,13 @@ export function IntroSearch({
             className="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-steel"
           />
         </div>
-        {isOpen && (
+        {showsSurface && (
+          <div className={SURFACE}>
+            {isOpen && (
           <ul
             id={listId}
             role="listbox"
             aria-label="Address suggestions"
-            className={SURFACE}
           >
             {matches.map((match, index) => (
               <li
@@ -170,11 +179,18 @@ export function IntroSearch({
               </li>
             ))}
           </ul>
-        )}
-        {showsNoMatch && (
-          <p role="status" className={`${SURFACE} px-[18px] py-3.5 text-slate`}>
-            {complexesOnly ? NO_COMPLEX_MATCH : NO_MATCH}
-          </p>
+            )}
+            {showsCityUnavailable && (
+              <p role="status" className={`px-3 text-[13px] text-steel ${isOpen ? "pt-1.5 pb-1" : "py-2"}`}>
+                {CITY_UNAVAILABLE}
+              </p>
+            )}
+            {showsNoMatch && (
+              <p role="status" className="px-3 py-2 text-slate">
+                {complexesOnly ? NO_COMPLEX_MATCH : NO_MATCH}
+              </p>
+            )}
+          </div>
         )}
       </div>
     </Glass>

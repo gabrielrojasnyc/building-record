@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { HISTORY_START_SHORT } from "@/domain/history";
 import { countFor, DEFAULT_VIEW } from "@/domain/query";
 import type { BuildingDetail, Complex, Meta } from "@/domain/types";
 import { BuildingPanel } from "@/ui/BuildingPanel";
@@ -31,7 +32,7 @@ function describeRecord(complex: Complex): string {
     total === 0
       ? "no code complaint cases"
       : `${total.toLocaleString("en-US")} code complaint ${total === 1 ? "case" : "cases"}`;
-  return `${complex.address}: ${cases} since Nov 2023. Data from the City of Austin.`;
+  return `${complex.address}: ${cases} since ${HISTORY_START_SHORT}. Data from the City of Austin.`;
 }
 
 export async function generateMetadata({
@@ -65,6 +66,7 @@ export default async function BuildingPage({
       <div className="relative mx-auto flex max-w-xl flex-col gap-3">
         <Link
           href="/"
+          prefetch={false}
           className="inline-flex h-[30px] items-center self-start rounded-full bg-white/55 px-3 text-[13px] font-normal text-deep hover:bg-white/85"
         >
           Back to the map

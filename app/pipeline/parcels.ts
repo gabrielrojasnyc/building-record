@@ -18,8 +18,22 @@ export interface Parcel {
 
 interface LandUseRow {
   parcel_id_10?: string;
-  shape_area: string;
-  the_geom: GeoJSON.MultiPolygon;
+  shape_area?: string;
+  the_geom?: GeoJSON.MultiPolygon;
+}
+
+export interface ApartmentParcels {
+  parcels: Parcel[];
+  /** Rows left out for having no geometry, or a missing or non-numeric area. */
+  skippedRows: number;
+}
+
+/** The row's area in square feet, or null when the city left it out or it is not a number. */
+function areaOf(row: LandUseRow): number | null {
+  const text = row.shape_area?.trim();
+  if (!text) return null;
+  const squareFeet = Number(text);
+  return Number.isFinite(squareFeet) ? squareFeet : null;
 }
 
 export function toAcres(squareFeet: number): number {
@@ -63,8 +77,12 @@ function boundingBox(polygons: GeoJSON.Position[][][]): Parcel['bbox'] {
   return [west, south, east, north];
 }
 
-/** Apartment land parcels, one per parcel ID. IDs are usually 10 digits; Williamson County parcels carry R-prefixed IDs. The city lists some parcels on several rows. */
-export async function loadApartmentParcels(fetchImpl: typeof fetch = fetch): Promise<Parcel[]> {
+/**
+ * Apartment land parcels, one per parcel ID. IDs are usually 10 digits; Williamson County parcels
+ * carry R-prefixed IDs. The city lists some parcels on several rows. A row with no polygon or no
+ * usable area is skipped and counted, never turned into NaN.
+ */
+export async function loadApartmentParcels(fetchImpl: typeof fetch = fetch): Promise<ApartmentParcels> {
   const rows = await readAll<LandUseRow>(
     LAND_USE_DATASET,
     {
@@ -75,16 +93,23 @@ export async function loadApartmentParcels(fetchImpl: typeof fetch = fetch): Pro
   );
 
   const byId = new Map<string, { polygons: GeoJSON.Position[][][]; squareFeet: number }>();
+  let skippedRows = 0;
   for (const row of rows) {
     const id = row.parcel_id_10?.trim();
     if (!id) continue;
+    const polygons = row.the_geom?.coordinates ?? [];
+    const squareFeet = areaOf(row);
+    if (polygons.length === 0 || squareFeet === null) {
+      skippedRows += 1;
+      continue;
+    }
     const entry = byId.get(id) ?? { polygons: [], squareFeet: 0 };
-    entry.polygons.push(...row.the_geom.coordinates);
-    entry.squareFeet += Number(row.shape_area);
+    entry.polygons.push(...polygons);
+    entry.squareFeet += squareFeet;
     byId.set(id, entry);
   }
 
-  return [...byId].map(([id, { polygons, squareFeet }]) => {
+  const parcels = [...byId].map(([id, { polygons, squareFeet }]): Parcel => {
     const [lon, lat] = centroid(polygons);
     return {
       id,
@@ -96,4 +121,5 @@ export async function loadApartmentParcels(fetchImpl: typeof fetch = fetch): Pro
       bbox: boundingBox(polygons),
     };
   });
+  return { parcels, skippedRows };
 }

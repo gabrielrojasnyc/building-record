@@ -4,6 +4,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 interface ComplexRecord {
   id: string;
+  parcelIds: string[];
   address: string;
 }
 
@@ -161,13 +162,13 @@ test("pick an area, open a building, see its record", async ({ page }) => {
 test("a filtered view survives a reload", async ({ page }) => {
   await page.goto("/?period=cases&order=most");
   await expect(
-    page.getByRole("button", { name: "Since 2023" }),
+    page.getByRole("button", { name: "Since Nov 2023" }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Most first" })).toBeVisible();
 
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "Since 2023" }),
+    page.getByRole("button", { name: "Since Nov 2023" }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Most first" })).toBeVisible();
 });
@@ -222,9 +223,29 @@ test("a building page is reachable directly", async ({ page }) => {
   ).toHaveAttribute("href", "/");
 });
 
-test("an unknown building id is a 404", async ({ page }) => {
+test("an unknown building id is a 404 that leads back to the map", async ({ page }) => {
   const response = await page.goto("/building/0000000000");
   expect(response?.status()).toBe(404);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("That page does not exist.");
+  await expect(page.getByRole("link", { name: "Back to the map" })).toHaveAttribute("href", "/");
+  await expect(page.getByText(NOT_OFFICIAL)).toBeVisible();
+});
+
+test("a property listed under several parcels has one suggestion and one record", async ({ page }) => {
+  const merged = complexes.find(({ parcelIds }) => parcelIds.length > 1);
+  expect(merged, "the data has a complex of several parcels").toBeDefined();
+  if (!merged) return;
+  const others = merged.parcelIds.filter((id) => id !== merged.id);
+
+  await page.goto("/");
+  await waitForMap(page);
+  await page.getByRole("combobox").fill(merged.address);
+  const suggestions = page.getByRole("option").filter({ hasText: "apartments" });
+  await expect(suggestions.first()).toBeVisible();
+  await expect(suggestions.filter({ hasText: merged.address })).toHaveCount(1);
+
+  const response = await page.goto(`/building/${others[0]}`);
+  expect(response?.status(), "a member parcel has no page of its own").toBe(404);
 });
 
 test("the method page states the caution and links back to the map", async ({

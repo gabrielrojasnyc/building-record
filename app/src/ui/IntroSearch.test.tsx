@@ -27,7 +27,7 @@ beforeEach(() => {
   // Testing Library only waits through fake timers when it sees Jest's; this hands it Vitest's.
   vi.stubGlobal("jest", { advanceTimersByTime: vi.advanceTimersByTime });
   search.mockReset();
-  search.mockResolvedValue([apartments, street]);
+  search.mockResolvedValue({ matches: [apartments, street], cityUnavailable: false });
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -61,8 +61,10 @@ describe("IntroSearch", () => {
 
   it("ignores a response that arrives after the text has changed", async () => {
     let answerFirst: (matches: AddressMatch[]) => void = () => {};
-    search.mockImplementationOnce(() => new Promise((resolve) => (answerFirst = resolve)));
-    search.mockResolvedValueOnce([street]);
+    search.mockImplementationOnce(
+      () => new Promise((resolve) => (answerFirst = (matches) => resolve({ matches, cityUnavailable: false }))),
+    );
+    search.mockResolvedValueOnce({ matches: [street], cityUnavailable: false });
     const { user, input } = setup();
 
     await user.type(input, "1601");
@@ -108,13 +110,35 @@ describe("IntroSearch", () => {
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
-  it("says so when nothing starts with the text", async () => {
-    search.mockResolvedValue([]);
+  it("says so when the city answered and nothing starts with the text", async () => {
+    search.mockResolvedValue({ matches: [], cityUnavailable: false });
     const { user, input } = setup();
     await user.type(input, "zzzz");
     await settle();
 
     expect(screen.getByText("No Austin address starts with that.")).toBeInTheDocument();
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("lists the complexes it found and says other addresses could not be loaded when the city is unreachable", async () => {
+    search.mockResolvedValue({ matches: [apartments], cityUnavailable: true });
+    const { user, input } = setup();
+    await user.type(input, "1601 Roy");
+    await settle();
+
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["1601 Royal Crest Dr" + "apartments"]);
+    expect(screen.getByText("Other Austin addresses could not be loaded right now.")).toBeVisible();
+    expect(screen.queryByText("No Austin address starts with that.")).not.toBeInTheDocument();
+  });
+
+  it("says only that other addresses could not be loaded when the city is unreachable and no complex matches", async () => {
+    search.mockResolvedValue({ matches: [], cityUnavailable: true });
+    const { user, input } = setup();
+    await user.type(input, "zzzz");
+    await settle();
+
+    expect(screen.getByText("Other Austin addresses could not be loaded right now.")).toBeVisible();
+    expect(screen.queryByText("No Austin address starts with that.")).not.toBeInTheDocument();
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
@@ -144,7 +168,7 @@ describe("IntroSearch", () => {
   });
 
   it("closes the no-match message on Escape without the event reaching the document", async () => {
-    search.mockResolvedValue([]);
+    search.mockResolvedValue({ matches: [], cityUnavailable: false });
     const onDocumentKey = vi.fn();
     document.addEventListener("keydown", onDocumentKey);
     const { user, input } = setup();

@@ -164,7 +164,7 @@ describe('chooseAddress', () => {
 
 describe('buildAddressResolver', () => {
   it('agrees with chooseAddress on every real fixture parcel', async () => {
-    const parcels = await loadApartmentParcels(fakeFetch(parcelRows).impl);
+    const { parcels } = await loadApartmentParcels(fakeFetch(parcelRows).impl);
     const points = await loadFixturePoints();
     const resolve = buildAddressResolver(points);
 
@@ -221,7 +221,7 @@ describe('loadAddressPoints', () => {
 });
 
 async function fixtureParcel(id: string): Promise<Parcel> {
-  const parcels = await loadApartmentParcels(fakeFetch(parcelRows).impl);
+  const { parcels } = await loadApartmentParcels(fakeFetch(parcelRows).impl);
   const found = parcels.find((each) => each.id === id);
   if (!found) throw new Error(`Fixture parcel ${id} is missing`);
   return found;

@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useId,
   useRef,
@@ -11,7 +13,8 @@ import {
 } from "react";
 import { load311Summary, type RequestTypeCount } from "@/city/requests311";
 import { formatAcres } from "@/domain/format";
-import { CATEGORY_LABEL } from "@/domain/labels";
+import { HISTORY_START_LONG, HISTORY_START_SHORT } from "@/domain/history";
+import { CATEGORY_LABEL, NO_CASES_CAUTION } from "@/domain/labels";
 import { countFor, DEFAULT_VIEW, type Period, type View } from "@/domain/query";
 import type { BuildingDetail, Category, Complex } from "@/domain/types";
 import { Glass } from "./Glass";
@@ -35,11 +38,11 @@ const LOADING = { status: "loading" } as const;
 
 const PERIOD_CAPTION: Record<Period, string> = {
   cases12: "in the last 12 months",
-  cases: "since November 2023",
+  cases: `since ${HISTORY_START_LONG}`,
 };
 
 const OTHER_PERIOD: Record<Period, { period: Period; label: string }> = {
-  cases12: { period: "cases", label: "since Nov 2023" },
+  cases12: { period: "cases", label: `since ${HISTORY_START_SHORT}` },
   cases: { period: "cases12", label: "last 12 months" },
 };
 
@@ -51,6 +54,9 @@ const MAP_PLACEMENT =
   "building-sheet fixed top-[76px] right-(--gutter) bottom-[259px] z-3 w-[372px] overflow-hidden rounded-[28px] motion-safe:animate-rise phone:top-auto phone:right-0 phone:bottom-0 phone:left-0 phone:z-4 phone:h-[72dvh] phone:w-auto phone:rounded-b-none";
 const MAP_SCROLLER =
   "h-full overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+
+/** Section headings sit one level under the building's address: h2 under the page's h1, h3 under the panel's h2. */
+const SectionLevel = createContext<"h2" | "h3">("h3");
 
 const SECTION = "mt-[22px]";
 const SECTION_HEADING =
@@ -177,6 +183,7 @@ export function BuildingPanel(props: BuildingPanelProps) {
       aria-labelledby={headingId}
       className={props.place === "page" ? "rounded-[28px]" : MAP_PLACEMENT}
     >
+      <SectionLevel value={props.place === "page" ? "h2" : "h3"}>
       <div
         ref={scrollerRef}
         className={
@@ -249,8 +256,7 @@ export function BuildingPanel(props: BuildingPanelProps) {
           >
             Austin 311
           </a>
-          , City of Austin. No cases means none reached Code Enforcement. It
-          does not mean the building has no problems.
+          , City of Austin. {NO_CASES_CAUTION}
         </p>
 
         {onClose && (
@@ -262,17 +268,18 @@ export function BuildingPanel(props: BuildingPanelProps) {
           </Link>
         )}
       </div>
+      </SectionLevel>
     </Glass>
   );
 }
 
 function Section(props: { title: string; children: ReactNode }) {
   const headingId = useId();
+  const level = useContext(SectionLevel);
+  const heading = { id: headingId, className: SECTION_HEADING, children: props.title };
   return (
     <section aria-labelledby={headingId} className={SECTION}>
-      <h3 id={headingId} className={SECTION_HEADING}>
-        {props.title}
-      </h3>
+      {level === "h2" ? <h2 {...heading} /> : <h3 {...heading} />}
       {props.children}
     </section>
   );
@@ -291,7 +298,14 @@ function RepeatOffenderNote({
       />
       <p>
         <strong className="block font-medium">
-          On the city&apos;s Repeat Offender list
+          <a
+            href="https://data.austintexas.gov/d/86z9-i27i"
+            target="_blank"
+            rel="noreferrer"
+            className="underline"
+          >
+            On the city&apos;s Repeat Offender list
+          </a>
         </strong>{" "}
         {listing.name ?? "Registered property"}, {formatCount(listing.units)}{" "}
         {listing.units === 1 ? "unit" : "units"}.{" "}
@@ -405,15 +419,17 @@ function MonthChart({ monthly }: { monthly: BuildingDetail["monthly"] }) {
   if (peak === 0) {
     return (
       <Section title="Month by month">
-        <p className={MESSAGE}>No code cases since Nov 2023.</p>
+        <p className={MESSAGE}>No code cases since {HISTORY_START_SHORT}.</p>
       </Section>
     );
   }
 
   const first = formatMonth(monthly[0].month);
   const last = formatMonth(monthly[monthly.length - 1].month);
-  const busiest = monthly.find(({ count }) => count === peak);
-  const summary = `Code cases opened each month, ${first} to ${last}. Busiest month: ${busiest ? formatMonth(busiest.month) : first}, with ${peak} ${casesWord(peak)}.`;
+  // On a tie, the most recent of the busiest months.
+  const busiest = formatMonth(monthly.findLast(({ count }) => count === peak)?.month ?? monthly[0].month);
+  const peakCases = `${peak} ${casesWord(peak)}`;
+  const summary = `Code cases opened each month, ${first} to ${last}. Busiest month: ${busiest}, with ${peakCases}.`;
 
   return (
     <Section title="Month by month">
@@ -434,7 +450,9 @@ function MonthChart({ monthly }: { monthly: BuildingDetail["monthly"] }) {
       </div>
       <p className="mt-1.5 flex justify-between text-[12px] text-steel">
         <span>{first}</span>
-        <span>Busiest month: {peak}</span>
+        <span>
+          Busiest month: {busiest}, {peakCases}
+        </span>
         <span>{last}</span>
       </p>
     </Section>
@@ -470,8 +488,8 @@ function Requests311({ outcome }: { outcome: Outcome<RequestTypeCount[]> }) {
   return (
     <Section title="311 requests around this parcel">
       <p className={`${MESSAGE} mb-2`}>
-        Counted inside the rectangle around the parcel since Nov 2023, so some
-        may belong to neighbors.
+        Counted inside the rectangle around the parcel since{" "}
+        {HISTORY_START_SHORT}, so some may belong to neighbors.
       </p>
       {outcome.status === "loading" && (
         <p className={MESSAGE}>Loading from the City of Austin</p>
@@ -484,7 +502,7 @@ function Requests311({ outcome }: { outcome: Outcome<RequestTypeCount[]> }) {
       {outcome.status === "ready" &&
         (outcome.value.length === 0 ? (
           <p className={MESSAGE}>
-            No 311 requests in this area since Nov 2023.
+            No 311 requests in this area since {HISTORY_START_SHORT}.
           </p>
         ) : (
           <ul className="text-[14px]">

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { CATEGORY_LABEL } from "@/domain/labels";
+import { HISTORY_START_DAY, HISTORY_START_LONG } from "@/domain/history";
+import { CATEGORY_LABEL, NO_CASES_CAUTION } from "@/domain/labels";
 import type { Category, Meta } from "@/domain/types";
 import { Glass } from "@/ui/Glass";
 import { formatPullDate, Notice } from "@/ui/Notice";
@@ -50,9 +51,6 @@ const CITY_TERMS: { category: Category; term: string }[] = [
   { category: "permit", term: "Work Without Permit" },
 ];
 
-const CAUTION =
-  "No cases means none reached Code Enforcement. It does not mean the building has no problems.";
-
 const formatCount = (count: number) => count.toLocaleString("en-US");
 
 function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
@@ -84,6 +82,7 @@ export default async function MethodPage() {
       <div className="relative mx-auto flex max-w-[44rem] flex-col gap-3">
         <Link
           href="/"
+          prefetch={false}
           className="inline-flex h-[30px] items-center self-start rounded-full bg-white/55 px-3 text-[13px] font-normal text-deep hover:bg-white/85"
         >
           Back to the map
@@ -167,10 +166,11 @@ export default async function MethodPage() {
 
           <Section title="How far back it goes">
             <p>
-              History starts on November 1, 2023, because the city&apos;s dataset is sparse before
+              History starts on {HISTORY_START_DAY}, because the city&apos;s dataset is sparse before
               then. Two periods are offered: the last 12 months, counted back from the date the
-              data was pulled, and everything since November 2023. Dates follow
-              Austin&apos;s calendar, not UTC.
+              data was pulled, and everything since {HISTORY_START_LONG}. Dates follow
+              Austin&apos;s calendar, not UTC. The &quot;open now&quot; figure counts only cases
+              opened since {HISTORY_START_LONG}.
             </p>
           </Section>
 
@@ -179,8 +179,8 @@ export default async function MethodPage() {
               About {unmatchedPercent}% of the city&apos;s cases carry no parcel number, so they
               cannot be tied to a building and are not counted anywhere. Cases on parcels that are
               not apartments are not shown either. This copy counts{" "}
-              {formatCount(meta.caseCount)} cases matched to apartment parcels since November
-              2023.
+              {formatCount(meta.caseCount)} cases matched to apartment parcels since{" "}
+              {HISTORY_START_LONG}.
               {meta.uncategorizedCases > 0 &&
                 (meta.uncategorizedCases === 1
                   ? " 1 case carries a description this site does not recognize and is not counted."
@@ -236,7 +236,7 @@ export default async function MethodPage() {
 
           <Section title="What a record cannot tell you">
             <p className="rounded-[18px] border border-white/60 bg-white/42 px-4 py-3 text-deep">
-              {CAUTION}
+              {NO_CASES_CAUTION}
             </p>
           </Section>
 

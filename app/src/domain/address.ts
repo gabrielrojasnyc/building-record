@@ -1,3 +1,6 @@
+/** Address search waits for this many characters, in the browser and before asking the city. */
+export const ADDRESS_SEARCH_MIN_CHARACTERS = 3;
+
 const UPPERCASE_WORDS = new Set(['IH', 'SH', 'FM', 'RM', 'US', 'NB', 'SB', 'EB', 'WB', 'SVRD']);
 const ORDINAL = /^(\d+)(ST|ND|RD|TH)$/;
 

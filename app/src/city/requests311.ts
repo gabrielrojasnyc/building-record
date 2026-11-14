@@ -1,4 +1,5 @@
-import type { BuildingDetail, Meta } from "@/domain/types";
+import { HISTORY_START } from "@/domain/history";
+import type { BuildingDetail } from "@/domain/types";
 
 export interface RequestTypeCount {
   type: string;
@@ -7,13 +8,10 @@ export interface RequestTypeCount {
 
 const REQUESTS_311 = "https://data.austintexas.gov/resource/xwdj-i9he.json";
 
-/** The same start as the code case history, so both sections cover the same months. */
-const HISTORY_START: Meta["since"] = "2023-11-01";
-
 const TOP_TYPES = 6;
 
 interface TypeCountRow {
-  sr_type_desc: string;
+  sr_type_desc?: string;
   count: string;
 }
 
@@ -28,7 +26,7 @@ function toQueryString(params: Record<string, string>): string {
 }
 
 /**
- * The most frequent 311 request types inside a parcel's bounding box since the history start,
+ * The most frequent 311 request types inside a parcel's bounding box since the history start, the same months as the code cases,
  * read live from the city. Rejects when the city answers with an error or cannot be reached.
  */
 export async function load311Summary(
@@ -51,7 +49,7 @@ export async function load311Summary(
 
   const rows = (await response.json()) as TypeCountRow[];
   return rows.map((row) => ({
-    type: row.sr_type_desc,
+    type: row.sr_type_desc || "Unspecified",
     count: Number(row.count),
   }));
 }

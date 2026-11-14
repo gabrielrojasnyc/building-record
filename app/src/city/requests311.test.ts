@@ -58,6 +58,14 @@ describe("load311Summary", () => {
     ]);
   });
 
+  it("labels a group the city returns with no request type as Unspecified", async () => {
+    const fetchImpl = fakeFetch(json([{ count: "4" }, { sr_type_desc: "", count: "2" }]));
+    expect(await load311Summary(BOX, fetchImpl)).toEqual([
+      { type: "Unspecified", count: 4 },
+      { type: "Unspecified", count: 2 },
+    ]);
+  });
+
   it("rejects when the city answers with an error status", async () => {
     const fetchImpl = fakeFetch(json({ message: "busy" }, 503));
     await expect(load311Summary(BOX, fetchImpl)).rejects.toThrow("503");

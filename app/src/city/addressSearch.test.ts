@@ -48,7 +48,7 @@ describe("escapeSoql", () => {
 describe("searchAddresses", () => {
   it("returns nothing for fewer than 3 characters without calling the city", async () => {
     const fetchImpl = fakeCity([]);
-    await expect(searchAddresses("  16 ", complexes, fetchImpl)).resolves.toEqual([]);
+    await expect(searchAddresses("  16 ", complexes, fetchImpl)).resolves.toEqual({ matches: [], cityUnavailable: false });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -61,21 +61,22 @@ describe("searchAddresses", () => {
       cityRow("1601 ROYAL ST"),
       cityRow("1601 ROYAL RD"),
     ]);
-    const matches = await searchAddresses("1601 Roy", complexes, fetchImpl);
+    const { matches, cityUnavailable } = await searchAddresses("1601 Roy", complexes, fetchImpl);
 
+    expect(cityUnavailable).toBe(false);
     expect(matches).toHaveLength(6);
     expect(matches[0]).toMatchObject({ label: "1601 Royal Crest Dr", complexId: "a" });
     expect(matches.slice(1).every((match) => match.complexId === null)).toBe(true);
   });
 
   it("puts complexes that start with the text before those that merely contain it, then sorts alphabetically", async () => {
-    const matches = await searchAddresses("1601 royal", complexes, fakeCity([]));
+    const { matches } = await searchAddresses("1601 royal", complexes, fakeCity([]));
     expect(matches.map((match) => match.label)).toEqual(["1601 Royal Crest Dr"]);
 
-    const contained = await searchAddresses("crest", complexes, fakeCity([]));
+    const { matches: contained } = await searchAddresses("crest", complexes, fakeCity([]));
     expect(contained.map((match) => match.label)).toEqual(["1601 Royal Crest Dr", "Park at Royal Crest Dr Annex"]);
 
-    const ordered = await searchAddresses(
+    const { matches: ordered } = await searchAddresses(
       "main",
       [complex("x", "5 Main St"), complex("y", "Main Annex 9"), complex("z", "2 Main St"), complex("w", "Main Alley 1")],
       fakeCity([]),
@@ -84,23 +85,39 @@ describe("searchAddresses", () => {
   });
 
   it("drops a city address that repeats a complex already listed", async () => {
-    const matches = await searchAddresses("1601 Royal", complexes, fakeCity([cityRow("1601 ROYAL CREST DR"), cityRow("1601 ROYAL OAK LN")]));
+    const { matches } = await searchAddresses("1601 Royal", complexes, fakeCity([cityRow("1601 ROYAL CREST DR"), cityRow("1601 ROYAL OAK LN")]));
     expect(matches.map((match) => match.label)).toEqual(["1601 Royal Crest Dr", "1601 Royal Oak Ln"]);
   });
 
   it("formats city addresses and carries their point", async () => {
-    const [match] = await searchAddresses("100 Cong", [], fakeCity([cityRow("100 CONGRESS AVE")]));
+    const {
+      matches: [match],
+    } = await searchAddresses("100 Cong", [], fakeCity([cityRow("100 CONGRESS AVE")]));
     expect(match).toEqual({ label: "100 Congress Ave", lon: -97.74, lat: 30.26, complexId: null });
   });
 
-  it("still returns complex matches when the city lookup fails", async () => {
+  it("still returns complex matches when the city lookup fails, and says the city could not be reached", async () => {
     const failing = vi.fn<typeof fetch>(async () => new Response("nope", { status: 503 }));
-    await expect(searchAddresses("1601 Roy", complexes, failing)).resolves.toMatchObject([{ complexId: "a" }]);
+    await expect(searchAddresses("1601 Roy", complexes, failing)).resolves.toEqual({
+      matches: [expect.objectContaining({ complexId: "a" })],
+      cityUnavailable: true,
+    });
 
     const offline = vi.fn<typeof fetch>(async () => {
       throw new TypeError("network down");
     });
-    await expect(searchAddresses("1601 Roy", complexes, offline)).resolves.toMatchObject([{ complexId: "a" }]);
+    await expect(searchAddresses("zzzz", complexes, offline)).resolves.toEqual({ matches: [], cityUnavailable: true });
+  });
+
+  it("does not ask the city, and so cannot miss it, when complexes fill every suggestion", async () => {
+    const many = Array.from({ length: 6 }, (_, index) => complex(String(index), `${index} Oak Ln`));
+    const offline = vi.fn<typeof fetch>(async () => {
+      throw new TypeError("network down");
+    });
+    const result = await searchAddresses("oak", many, offline);
+    expect(offline).not.toHaveBeenCalled();
+    expect(result.cityUnavailable).toBe(false);
+    expect(result.matches).toHaveLength(6);
   });
 
   it("asks the city for primary addresses that start with the escaped text, at most 6", async () => {

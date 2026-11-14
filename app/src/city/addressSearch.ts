@@ -1,4 +1,4 @@
-import { formatAddress } from "@/domain/address";
+import { ADDRESS_SEARCH_MIN_CHARACTERS, formatAddress } from "@/domain/address";
 import type { Complex } from "@/domain/types";
 
 export interface AddressMatch {
@@ -8,9 +8,14 @@ export interface AddressMatch {
   complexId: string | null;
 }
 
+export interface AddressSearchResult {
+  matches: AddressMatch[];
+  /** True when the city was asked for other addresses and could not answer. */
+  cityUnavailable: boolean;
+}
+
 const ADDRESS_ENDPOINT = "https://data.austintexas.gov/resource/9s7j-tygf.json";
 const PRIMARY_ADDRESS_TYPE = "1";
-const MIN_CHARACTERS = 3;
 const MAX_SUGGESTIONS = 6;
 
 interface AddressRow {
@@ -61,7 +66,7 @@ async function matchCity(text: string, limit: number, fetchImpl: typeof fetch): 
 /** Matching complexes alone, for a device with no map to fly to an address. At most 6. */
 export function searchComplexes(text: string, complexes: Complex[]): AddressMatch[] {
   const trimmed = text.trim();
-  if (trimmed.length < MIN_CHARACTERS) return [];
+  if (trimmed.length < ADDRESS_SEARCH_MIN_CHARACTERS) return [];
   return matchComplexes(trimmed, complexes).slice(0, MAX_SUGGESTIONS);
 }
 
@@ -70,19 +75,20 @@ export async function searchAddresses(
   text: string,
   complexes: Complex[],
   fetchImpl: typeof fetch = fetch,
-): Promise<AddressMatch[]> {
+): Promise<AddressSearchResult> {
   const trimmed = text.trim();
-  if (trimmed.length < MIN_CHARACTERS) return [];
+  if (trimmed.length < ADDRESS_SEARCH_MIN_CHARACTERS) return { matches: [], cityUnavailable: false };
 
   const fromComplexes = matchComplexes(trimmed, complexes).slice(0, MAX_SUGGESTIONS);
   const cityRoom = MAX_SUGGESTIONS - fromComplexes.length;
-  if (cityRoom === 0) return fromComplexes;
+  if (cityRoom === 0) return { matches: fromComplexes, cityUnavailable: false };
 
   try {
     const listed = new Set(fromComplexes.map((match) => match.label));
     const fromCity = await matchCity(trimmed, MAX_SUGGESTIONS, fetchImpl);
-    return [...fromComplexes, ...fromCity.filter((match) => !listed.has(match.label))].slice(0, MAX_SUGGESTIONS);
+    const matches = [...fromComplexes, ...fromCity.filter((match) => !listed.has(match.label))].slice(0, MAX_SUGGESTIONS);
+    return { matches, cityUnavailable: false };
   } catch {
-    return fromComplexes;
+    return { matches: fromComplexes, cityUnavailable: true };
   }
 }

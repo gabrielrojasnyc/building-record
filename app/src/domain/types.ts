@@ -1,3 +1,5 @@
+import type { HISTORY_START } from './history';
+
 export type Category = 'structure' | 'property' | 'landuse' | 'permit';
 export type Counts = Record<Category, number>;
 
@@ -40,7 +42,7 @@ export interface BuildingDetail {
 export interface Meta {
   /** Austin calendar date of the pull, YYYY-MM-DD. */
   pulledAt: string;
-  since: '2023-11-01';
+  since: typeof HISTORY_START;
   complexCount: number;
   /** Categorized cases matched to an apartment parcel, since 2023-11-01. */
   caseCount: number;
@@ -50,4 +52,6 @@ export interface Meta {
   uncategorizedCases: number;
   /** Categorized cases opened after the pull date, left out of every count. */
   futureDatedCases: number;
+  /** Land use rows left out: no polygon, a missing or non-numeric area, or an ID that is not letters and digits. */
+  skippedParcelRows: number;
 }

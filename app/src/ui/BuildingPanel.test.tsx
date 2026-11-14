@@ -201,7 +201,7 @@ it("notes a listing on the city's Repeat Offender list with its published figure
 
   const note = screen.getByText(
     "On the city's Repeat Offender list",
-  ).parentElement;
+  ).closest("p");
   expect(note).toHaveTextContent(
     "On the city's Repeat Offender list Mia Riverside, 562 units. 0 active of 166 total violations.",
   );
@@ -216,7 +216,7 @@ it("counts a single registered unit in the singular", () => {
     busyDetail,
   );
   expect(
-    screen.getByText("On the city's Repeat Offender list").parentElement,
+    screen.getByText("On the city's Repeat Offender list").closest("p"),
   ).toHaveTextContent("Registered property, 1 unit. 1 active of 1 total violations.");
 });
 
@@ -237,7 +237,7 @@ it("renders one bar per month", () => {
   expect(screen.getAllByTestId("month-bar")).toHaveLength(
     busyDetail.monthly.length,
   );
-  expect(screen.getByText("Busiest month: 75")).toBeVisible();
+  expect(screen.getByText("Busiest month: Sep 2025, 75 cases")).toBeVisible();
 });
 
 it("describes the month chart in words, naming the busiest month and its count", () => {
@@ -245,6 +245,23 @@ it("describes the month chart in words, naming the busiest month and its count",
   expect(
     screen.getByRole("img", {
       name: "Code cases opened each month, Aug 2025 to Nov 2025. Busiest month: Sep 2025, with 75 cases.",
+    }),
+  ).toBeVisible();
+});
+
+it("names the most recent of tied busiest months, in the caption and the text alternative alike", () => {
+  renderPage(busy, {
+    ...busyDetail,
+    monthly: [
+      { month: "2025-08", count: 1 },
+      { month: "2025-09", count: 1 },
+      { month: "2025-10", count: 0 },
+    ],
+  });
+  expect(screen.getByText("Busiest month: Sep 2025, 1 case")).toBeVisible();
+  expect(
+    screen.getByRole("img", {
+      name: "Code cases opened each month, Aug 2025 to Oct 2025. Busiest month: Sep 2025, with 1 case.",
     }),
   ).toBeVisible();
 });
@@ -318,6 +335,21 @@ it("credits both city datasets and says what no cases means", () => {
   expect(screen.getByText(/^From .*, City of Austin\./)).toHaveTextContent(
     "From Austin Code Complaint Cases and Austin 311, City of Austin. No cases means none reached Code Enforcement. It does not mean the building has no problems.",
   );
+});
+
+it("links the Repeat Offender note to the city's list, so its figures can be traced", () => {
+  renderPage(busy, busyDetail);
+  expect(
+    screen.getByRole("link", { name: "On the city's Repeat Offender list" }),
+  ).toHaveAttribute("href", "https://data.austintexas.gov/d/86z9-i27i");
+});
+
+it("puts its section headings one level under the page's h1", () => {
+  renderPage(busy, busyDetail);
+  expect(
+    screen.getByRole("heading", { level: 2, name: "What the cases were about" }),
+  ).toBeVisible();
+  expect(screen.queryAllByRole("heading", { level: 3 })).toHaveLength(0);
 });
 
 it("names the building as the page's h1 on its own page", () => {
@@ -463,6 +495,14 @@ describe("over the map", () => {
     cleanup();
     renderPage(busy, busyDetail);
     expect(document.body).toHaveFocus();
+  });
+
+  it("puts its section headings one level under its own h2", () => {
+    renderOnMap(busy, { [HISTORY]: pending });
+    expect(
+      screen.getByRole("heading", { level: 3, name: "What the cases were about" }),
+    ).toBeVisible();
+    expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(1);
   });
 
   it("links to the building's own page", () => {

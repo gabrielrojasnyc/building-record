@@ -42,7 +42,7 @@ describe("loadApartmentParcels", () => {
   });
 
   it("merges rows that share a parcel ID into one parcel and sums the area", async () => {
-    const parcels = await loadApartmentParcels(fakeFetch(parcelRows).impl);
+    const { parcels } = await loadApartmentParcels(fakeFetch(parcelRows).impl);
     const merged = parcels.find((parcel) => parcel.id === "0312130115");
 
     expect(parcels.map((parcel) => parcel.id)).toHaveLength(
@@ -57,7 +57,9 @@ describe("loadApartmentParcels", () => {
     const large = square(-97.001, 30.001, 0.001);
     const { impl } = fakeFetch([row("0000000001", "43560", small, large)]);
 
-    const [parcel] = await loadApartmentParcels(impl);
+    const {
+      parcels: [parcel],
+    } = await loadApartmentParcels(impl);
 
     expect(parcel.lon).toBeCloseTo(-97.0005, 6);
     expect(parcel.lat).toBeCloseTo(30.0015, 6);
@@ -68,7 +70,7 @@ describe("loadApartmentParcels", () => {
   });
 
   it("keeps the real parcels from the city fixture whole", async () => {
-    const parcels = await loadApartmentParcels(fakeFetch(parcelRows).impl);
+    const { parcels } = await loadApartmentParcels(fakeFetch(parcelRows).impl);
     const burton = parcels.find((parcel) => parcel.id === "0304070701");
 
     expect(parcels).toHaveLength(6);
@@ -86,13 +88,37 @@ describe("loadApartmentParcels", () => {
       row("0000000002", "5000", ring),
     ]);
 
-    const parcels = await loadApartmentParcels(impl);
+    const { parcels } = await loadApartmentParcels(impl);
 
     expect(parcels.map((parcel) => parcel.id)).toEqual(["R485525", "0000000002"]);
   });
 
+  it("skips and counts a row with no geometry or no numeric area, without throwing or producing NaN", async () => {
+    const ring = square(-97, 30, 0.001);
+    const { impl } = fakeFetch([
+      row("0000000001", "5000", ring),
+      { parcel_id_10: "0000000002", shape_area: "5000" },
+      { ...row("0000000003", "5000", ring), the_geom: { type: "MultiPolygon", coordinates: [] } },
+      { parcel_id_10: "0000000004", the_geom: row("x", "1", ring).the_geom },
+      row("0000000005", "not a number", ring),
+      row("0000000006", "", ring),
+      // A second row of a good parcel with no area: the parcel stays, the row is counted.
+      row("0000000001", "abc", ring),
+    ]);
+
+    const { parcels, skippedRows } = await loadApartmentParcels(impl);
+
+    expect(parcels.map((parcel) => parcel.id)).toEqual(["0000000001"]);
+    expect(skippedRows).toBe(6);
+    const [only] = parcels;
+    for (const value of [only.lon, only.lat, only.acres, only.squareFeet, ...only.bbox]) {
+      expect(Number.isFinite(value)).toBe(true);
+    }
+    expect(only.squareFeet).toBe(5000);
+  });
+
   it("keeps a real R-prefixed parcel from the city fixture", async () => {
-    const parcels = await loadApartmentParcels(fakeFetch(parcelRows).impl);
+    const { parcels } = await loadApartmentParcels(fakeFetch(parcelRows).impl);
     expect(parcels.map((parcel) => parcel.id)).toContain("R056943");
   });
 });

@@ -22,6 +22,9 @@ const NO_CASES = '0231091509';
 /** The land of parcel 0204080102 listed again under a Williamson County ID, as the city does for some parcels. */
 const TWIN = 'R999001';
 const twinRow = { ...parcelRows.find((row) => row.parcel_id_10 === '0204080102')!, parcel_id_10: TWIN };
+/** Rows the build must leave out and count: an ID that cannot name a file, and a row with no polygon. */
+const unsafeIdRow = { ...twinRow, parcel_id_10: '../0204080102' };
+const noPolygonRow = { parcel_id_10: 'R999002', land_use: '220', shape_area: '5000' };
 
 const caseRow = (parcelid: string | null, description: string, opened: string) => ({
   ...(parcelid ? { parcelid } : {}),
@@ -51,7 +54,7 @@ function caseFixture() {
 }
 
 const FIXTURES: Record<string, unknown[]> = {
-  '7vsm-dvxg': [...parcelRows, twinRow],
+  '7vsm-dvxg': [...parcelRows, twinRow, unsafeIdRow, noPolygonRow],
   '9s7j-tygf': addressRows,
   '6wtj-zbtb': caseFixture(),
   // Registered the way the city writes some addresses: every building number listed, the street type spelled out.
@@ -110,6 +113,22 @@ describe('buildData', () => {
     expect(existsSync(`${out}/buildings/0204080102.json`)).toBe(false);
   });
 
+  it('leaves out a parcel whose ID is not letters and digits before it can name a file', async () => {
+    await buildData(out, NOW, fixtureFetch, LOW);
+    const ids = readJson<Complex[]>(`${out}/complexes.json`).flatMap((c) => c.parcelIds);
+    expect(ids.every((id) => /^[A-Za-z0-9]+$/.test(id))).toBe(true);
+    expect(readdirSync(root)).toEqual(['data']);
+    expect(readdirSync(`${out}/buildings`).every((name) => /^[A-Za-z0-9]+\.json$/.test(name))).toBe(true);
+  });
+
+  it('publishes coordinates to 6 decimals, about 10 cm, to keep the page light', async () => {
+    await buildData(out, NOW, fixtureFetch, LOW);
+    for (const { lon, lat } of readJson<Complex[]>(`${out}/complexes.json`)) {
+      expect(Math.round(lon * 1e6) / 1e6).toBe(lon);
+      expect(Math.round(lat * 1e6) / 1e6).toBe(lat);
+    }
+  });
+
   it('never publishes two complexes under one address', async () => {
     await buildData(out, NOW, fixtureFetch, LOW);
     const addresses = readJson<Complex[]>(`${out}/complexes.json`).map((c) => c.address);
@@ -127,6 +146,7 @@ describe('buildData', () => {
       unmatchedCaseShare: 0.033,
       uncategorizedCases: 1,
       futureDatedCases: 1,
+      skippedParcelRows: 2,
     });
   });
 
