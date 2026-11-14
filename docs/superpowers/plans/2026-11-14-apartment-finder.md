@@ -173,7 +173,7 @@ export type Counts = Record<Category, number>;
 export interface RepeatOffender { name: string | null; units: number; activeViolations: number; totalViolations: number }
 export interface PublishedUnits { count: number; source: 'repeat-offender' | 'affordable-housing' }
 export interface Complex {
-  id: string;            // 10-digit parcel ID
+  id: string;            // city parcel ID: 10 digits in Travis County, R-prefixed in Williamson County
   address: string;
   lon: number; lat: number;
   acres: number;
