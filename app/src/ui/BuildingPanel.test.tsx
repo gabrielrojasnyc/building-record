@@ -1,9 +1,13 @@
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { forgetBuildingDetails } from "@/city/buildingDetail";
 import { DEFAULT_VIEW, type View } from "@/domain/query";
 import type { BuildingDetail, Complex, Counts } from "@/domain/types";
 import { BuildingPanel } from "./BuildingPanel";
+
+// The building file is shared and remembered, so each test starts from an empty cache.
+beforeEach(forgetBuildingDetails);
 
 const counts = (overrides: Partial<Counts> = {}): Counts => ({
   structure: 0,

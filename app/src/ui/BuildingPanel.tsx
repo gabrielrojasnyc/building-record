@@ -11,6 +11,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { loadBuildingDetail } from "@/city/buildingDetail";
 import { load311Summary, type RequestTypeCount } from "@/city/requests311";
 import { formatAcres } from "@/domain/format";
 import { HISTORY_START_LONG, HISTORY_START_SHORT } from "@/domain/history";
@@ -96,16 +97,6 @@ function useLoad<S, T>(
     : LOADING;
 }
 
-async function loadHistory(
-  id: string,
-  fetchImpl: typeof fetch,
-): Promise<BuildingDetail> {
-  const response = await fetchImpl(`/data/buildings/${id}.json`);
-  if (!response.ok)
-    throw new Error(`The history for ${id} responded ${response.status}`);
-  return (await response.json()) as BuildingDetail;
-}
-
 /** Calendar dates from the data, formatted in UTC so no time zone can shift the day. */
 function formatDate(
   isoDate: string,
@@ -134,7 +125,7 @@ export function BuildingPanel(props: BuildingPanelProps) {
   const panelRef = useRef<HTMLElement>(null);
 
   const fetchHistory = useCallback(
-    (id: string) => loadHistory(id, fetchImpl),
+    (id: string) => loadBuildingDetail(id, fetchImpl),
     [fetchImpl],
   );
   const fetch311 = useCallback(
