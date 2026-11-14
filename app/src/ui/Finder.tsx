@@ -10,6 +10,7 @@ import {
   type View,
 } from "@/domain/query";
 import type { Complex, Meta } from "@/domain/types";
+import type { CameraPadding } from "@/map/BuildingMap";
 import { Filters } from "./Filters";
 import { IntroSearch } from "./IntroSearch";
 import { Notice } from "./Notice";
@@ -26,6 +27,15 @@ const BuildingMap = dynamic(
 const CITYWIDE: Bounds = [-Infinity, -Infinity, Infinity, Infinity];
 const SELECTION_ZOOM = 14.6;
 const AREA_ZOOM = 13.9;
+
+/*
+  The camera centers on the strip of map the panels leave open. Top clears the intro block
+  (and the filter bar on phones); bottom clears the tray and the data notice below it, which
+  together stand 23 px taller than the mockup's tray on desktop and 61 px taller on a phone.
+*/
+const PHONE_QUERY = "(max-width: 760px)";
+const DESKTOP_PADDING: CameraPadding = { top: 80, right: 0, bottom: 243, left: 0 };
+const PHONE_PADDING: CameraPadding = { top: 170, right: 0, bottom: 261, left: 0 };
 
 interface FlyTarget {
   lon: number;
@@ -45,6 +55,20 @@ function subscribeToQuery(listener: () => void) {
   return () => {
     queryListeners.delete(listener);
   };
+}
+
+function subscribeToViewport(onChange: () => void) {
+  const query = window.matchMedia(PHONE_QUERY);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+function usePhoneLayout(): boolean {
+  return useSyncExternalStore(
+    subscribeToViewport,
+    () => window.matchMedia(PHONE_QUERY).matches,
+    () => false,
+  );
 }
 
 function useViewInUrl(): [View, (view: View) => void] {
@@ -80,6 +104,7 @@ export function Finder({
   meta: Meta;
 }) {
   const [view, changeView] = useViewInUrl();
+  const isPhone = usePhoneLayout();
   const [bounds, setBounds] = useState<Bounds | null>(null);
   const [mapUnavailable, setMapUnavailable] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -119,6 +144,7 @@ export function Finder({
           selectedId={selectedId}
           hoveredId={hoveredId}
           flyTo={flyTo}
+          padding={isPhone ? PHONE_PADDING : DESKTOP_PADDING}
           onBoundsChange={setBounds}
           onSelect={select}
           onHover={setHoveredId}

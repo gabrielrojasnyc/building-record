@@ -148,3 +148,42 @@
   font-size: 10px;
   background: transparent;
 }
+
+/* The pin tooltip. Each anchor colors only the tip's pointing side, so the triangle stays a triangle. */
+.pin-tooltip {
+  --pin-tooltip-fill: color-mix(in srgb, var(--color-navy) 86%, transparent);
+
+  .maplibregl-popup-content {
+    padding: 8px 12px;
+    border-radius: 14px;
+    background: var(--pin-tooltip-fill);
+    color: var(--color-ice);
+    font: 300 13px var(--font-sans);
+    box-shadow: none;
+    pointer-events: none;
+  }
+
+  &.maplibregl-popup-anchor-bottom,
+  &.maplibregl-popup-anchor-bottom-left,
+  &.maplibregl-popup-anchor-bottom-right {
+    .maplibregl-popup-tip {
+      border-top-color: var(--pin-tooltip-fill);
+    }
+  }
+
+  &.maplibregl-popup-anchor-top,
+  &.maplibregl-popup-anchor-top-left,
+  &.maplibregl-popup-anchor-top-right {
+    .maplibregl-popup-tip {
+      border-bottom-color: var(--pin-tooltip-fill);
+    }
+  }
+
+  &.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+    border-right-color: var(--pin-tooltip-fill);
+  }
+
+  &.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+    border-left-color: var(--pin-tooltip-fill);
+  }
+}

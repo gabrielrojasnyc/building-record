@@ -32,6 +32,16 @@ setWorkerUrl(
 const SOURCE_ID = "complexes";
 const FLY_PITCH = 58;
 
+/** Pixels at each edge that the camera treats as covered, so it centers on what stays visible. */
+export interface CameraPadding {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+const NO_PADDING: CameraPadding = { top: 0, right: 0, bottom: 0, left: 0 };
+
 export interface BuildingMapProps {
   complexes: Complex[];
   view: View;
@@ -39,6 +49,8 @@ export interface BuildingMapProps {
   hoveredId: string | null;
   /** Moves the camera each time the object changes to a non-null value, so hold it in state rather than rebuilding it every render. */
   flyTo: { lon: number; lat: number; zoom: number } | null;
+  /** Applied when the map starts and whenever a number changes; a new object with the same numbers does nothing. */
+  padding?: CameraPadding;
   onBoundsChange(bounds: Bounds): void;
   onSelect(id: string): void;
   onHover(id: string | null): void;
@@ -58,6 +70,7 @@ function describeCases(address: string, count: number): string {
 
 export function BuildingMap(props: BuildingMapProps) {
   const { complexes, view, selectedId, hoveredId, flyTo } = props;
+  const { top, right, bottom, left } = props.padding ?? NO_PADDING;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -114,6 +127,7 @@ export function BuildingMap(props: BuildingMapProps) {
         return giveUp();
       }
       mapRef.current = map;
+      map.setPadding(latest.current.padding ?? NO_PADDING);
 
       map.addControl(
         new maplibregl.NavigationControl({ visualizePitch: true }),
@@ -243,6 +257,12 @@ export function BuildingMap(props: BuildingMapProps) {
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!ready || !map) return;
+    map.setPadding({ top, right, bottom, left });
+  }, [ready, top, right, bottom, left]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!ready || !map || !flyTo) return;
     const target = {
       center: [flyTo.lon, flyTo.lat] as [number, number],
@@ -258,23 +278,11 @@ export function BuildingMap(props: BuildingMapProps) {
 
   if (unavailable) return null;
 
+  // MapLibre's stylesheet sets position: relative on its container, so the map fills a wrapper instead of being the absolute box itself.
+  // The pin tooltip is styled by the `.pin-tooltip` rule in globals.css.
   return (
-    <>
-      {/* MapLibre's stylesheet sets position: relative on its container, so the map fills a wrapper instead of being the absolute box itself. */}
-      <div className="absolute inset-0">
-        <div ref={containerRef} className="h-full w-full" />
-      </div>
-      <style>{`
-        .pin-tooltip .maplibregl-popup-content {
-          padding: 4px 8px;
-          border-radius: 6px;
-          background: #0B131F;
-          color: #E8EFF3;
-          font-size: 12px;
-          pointer-events: none;
-        }
-        .pin-tooltip .maplibregl-popup-tip { display: none; }
-      `}</style>
-    </>
+    <div className="absolute inset-0">
+      <div ref={containerRef} className="h-full w-full" />
+    </div>
   );
 }
