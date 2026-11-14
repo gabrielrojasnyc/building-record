@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { austinCalendarDate } from '@/domain/history';
 import { NAMES_SNAPSHOT_PATH, fetchApartmentNames, readNamesSnapshot, type NamesSnapshot } from './names';
@@ -16,7 +16,10 @@ async function main() {
   }
   const snapshot: NamesSnapshot = { fetchedAt: austinCalendarDate(new Date()), places };
   await mkdir(dirname(NAMES_SNAPSHOT_PATH), { recursive: true });
-  await writeFile(NAMES_SNAPSHOT_PATH, serialize(snapshot));
+  // Written beside the snapshot and renamed into place, so an interrupted run cannot leave a truncated file.
+  const temporary = `${NAMES_SNAPSHOT_PATH}.tmp-${process.pid}`;
+  await writeFile(temporary, serialize(snapshot));
+  await rename(temporary, NAMES_SNAPSHOT_PATH);
   console.log(`Wrote ${places.length} places to ${NAMES_SNAPSHOT_PATH}`);
 }
 

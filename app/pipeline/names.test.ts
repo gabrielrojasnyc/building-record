@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Outline } from '@/domain/types';
-import { chooseName, fetchApartmentNames, looksLikeLegalEntity, type NamedPlace } from './names';
+import { chooseName, cleanPlaceName, fetchApartmentNames, looksLikeLegalEntity, type NamedPlace } from './names';
 
 /** A 0.01 degree block. */
 const outline: Outline = [
@@ -52,6 +52,46 @@ describe('chooseName', () => {
     expect(chooseName(outline, [], '1830 W Rundberg Db Llc')).toBeNull();
     expect(looksLikeLegalEntity('Burton Holdings LP')).toBe(true);
     expect(looksLikeLegalEntity('The Social')).toBe(false);
+  });
+});
+
+describe('cleanPlaceName', () => {
+  it.each([
+    ['Travis at the Lake, building 3', 'Travis at the Lake'],
+    ['Griffis at the Domain (Building 1/2/3)', 'Griffis at the Domain'],
+    ['Triangle Building C', 'Triangle'],
+    ['Tower - Bldg. 4', 'Tower'],
+    ['Oak Creek BLDG 2', 'Oak Creek'],
+    ['Oak Creek, Phase II', 'Oak Creek'],
+    ['  Lantana   Trace ', 'Lantana Trace'],
+    ['Colorado D', 'Colorado D'],
+    ['Lamar Place B', 'Lamar Place B'],
+  ])('%s becomes %s', (raw, expected) => expect(cleanPlaceName(raw)).toBe(expected));
+
+  it.each(['Phase 2', 'No Name 6 Plex', 'no name', 'Ab', '12 Oaks'])('gives no title for %s', (raw) =>
+    expect(cleanPlaceName(raw)).toBeNull(),
+  );
+});
+
+describe('chooseName with fragments', () => {
+  it('gives no title for the city placeholder "No Name 6 Plex"', () => {
+    expect(chooseName(outline, [], 'No Name 6 Plex')).toBeNull();
+  });
+
+  it('counts building-suffixed variants of one name as that one name', () => {
+    expect(
+      chooseName(outline, [place('Griffis at the Domain (Building 1)', inside), place('Griffis at the Domain (Building 2)', alsoInside)], null),
+    ).toEqual({ text: 'Griffis at the Domain', source: 'openstreetmap' });
+  });
+
+  it('ignores a phase-only place and still gives none for two genuinely different names', () => {
+    expect(chooseName(outline, [place('Phase 2', inside), place('Lantana Trace', alsoInside)], null)?.text).toBe('Lantana Trace');
+    expect(chooseName(outline, [place('North Phase', inside), place('South Court (Building 2)', alsoInside)], null)).toBeNull();
+  });
+
+  it('cleans the city name too, and still refuses a legal entity after cleaning', () => {
+    expect(chooseName(outline, [], 'Mia Riverside, Building 4')).toEqual({ text: 'Mia Riverside', source: 'city' });
+    expect(chooseName(outline, [], 'Burton Holdings LP Phase 2')).toBeNull();
   });
 });
 

@@ -89,17 +89,36 @@ export function looksLikeLegalEntity(name: string): boolean {
   return LEGAL_ENTITY_WORDS.test(name) || /^\d/.test(name.trim());
 }
 
+const DESIGNATOR = /\s*[,(-]?\s*\b(?:building|bldg|phase)\b.*$/i;
+
+/**
+ * A candidate title from a raw name: whitespace collapsed, a trailing building or phase designator
+ * removed, and null when what is left is too short, starts with a digit or is the "No Name" placeholder.
+ * A trailing letter or number with no designator word before it stays.
+ */
+export function cleanPlaceName(raw: string): string | null {
+  const cleaned = raw.replace(/\s+/g, ' ').trim().replace(DESIGNATOR, '').trim();
+  if (cleaned.length < MIN_NAME_LENGTH || /^\d/.test(cleaned) || /\bno name\b/i.test(cleaned)) return null;
+  return cleaned;
+}
+
 /**
  * A complex's name, or null. Exactly one distinct OpenStreetMap apartment name inside the outline
  * names it; two or more different names name nothing, so a wrong one is never guessed. With none,
- * the city's Repeat Offender registration name serves unless it reads as a company.
+ * the city's Repeat Offender registration name serves unless it reads as a company. Every candidate
+ * is cleaned first, so "Foo (Building 1)" and "Foo (Building 2)" are one name.
  */
 export function chooseName(outline: Outline, places: NamedPlace[], repeatOffenderName: string | null): ComplexName | null {
-  const namesInside = new Set(places.filter(({ lon, lat }) => isInsideOutline(lon, lat, outline)).map(({ name }) => name));
+  const namesInside = new Set(
+    places.flatMap(({ name, lon, lat }) => {
+      const cleaned = cleanPlaceName(name);
+      return cleaned && isInsideOutline(lon, lat, outline) ? [cleaned] : [];
+    }),
+  );
   if (namesInside.size === 1) return { text: [...namesInside][0], source: 'openstreetmap' };
   if (namesInside.size > 1) return null;
 
-  const cityName = repeatOffenderName?.trim();
+  const cityName = repeatOffenderName ? cleanPlaceName(repeatOffenderName) : null;
   if (cityName && !looksLikeLegalEntity(cityName)) return { text: cityName, source: 'city' };
   return null;
 }
