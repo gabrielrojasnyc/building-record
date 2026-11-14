@@ -40,3 +40,16 @@ export interface BuildingDetail {
   /** [west, south, east, north] */
   bbox: [number, number, number, number];
 }
+
+export interface Meta {
+  /** Austin calendar date of the pull, YYYY-MM-DD. */
+  pulledAt: string;
+  since: '2023-11-01';
+  complexCount: number;
+  /** Categorized cases matched to an apartment parcel, since 2023-11-01. */
+  caseCount: number;
+  /** Share of all cases with no parcel ID, 3 decimals. */
+  unmatchedCaseShare: number;
+  /** Cases with a parcel ID and a description the app does not recognise. */
+  uncategorizedCases: number;
+}

@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run data:ensure && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "data": "echo 'data pipeline not built yet'"
+    "data": "tsx pipeline/run.ts",
+    "data:ensure": "tsx pipeline/run.ts --if-missing"
   },
   "dependencies": {
     "next": "16.4.6",
@@ -28,6 +29,7 @@
     "eslint-config-next": "16.4.6",
     "jsdom": "^31.0.1",
     "tailwindcss": "4.3.3",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.1.0"
   },

@@ -1,0 +1,28 @@
+[
+  {
+    "parcelid": "0304070701",
+    "status": "Active",
+    "establishmentname": "Riverside Terrace Apartments",
+    "foldername": "8900 N IH 35 SVRD SB",
+    "numberofunits": "300",
+    "activeviolations": "12",
+    "totalviolations": "41"
+  },
+  {
+    "parcelid": "0234111501",
+    "status": "Suspended",
+    "establishmentname": "Lakeview Commons",
+    "foldername": "1200 EXAMPLE BLVD",
+    "numberofunits": "150",
+    "activeviolations": "0",
+    "totalviolations": "9"
+  },
+  {
+    "parcelid": "0312130115",
+    "status": "Active",
+    "foldername": "PARCEL ONLY NO HOUSE NUMBER",
+    "numberofunits": "0",
+    "activeviolations": "2",
+    "totalviolations": "5"
+  }
+]
