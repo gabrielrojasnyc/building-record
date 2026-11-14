@@ -69,6 +69,43 @@ async function withoutMap(page: Page) {
   });
 }
 
+interface Stop {
+  kind: "search" | "filter" | "map" | "card" | "other";
+  label: string;
+  /** An outline or box shadow, on the element or on the wrapper that takes its focus ring. */
+  ringed: boolean;
+}
+
+/** Presses Tab and describes where focus landed, or null when it left the page's own elements. */
+async function pressTab(page: Page): Promise<Stop | null> {
+  await page.keyboard.press("Tab");
+  return page.evaluate((): Stop | null => {
+    const element = document.activeElement;
+    if (!element || element === document.body) return null;
+    const shows = (target: Element) => {
+      const style = getComputedStyle(target);
+      const outlined = style.outlineStyle !== "none" && parseFloat(style.outlineWidth) > 0;
+      return outlined || style.boxShadow !== "none";
+    };
+    const wrapper = element.closest("[class*='focus-within']");
+    const kind: Stop["kind"] =
+      element.getAttribute("role") === "combobox"
+        ? "search"
+        : element.classList.contains("maplibregl-canvas")
+          ? "map"
+          : element.getAttribute("data-testid") === "card"
+            ? "card"
+            : element.hasAttribute("aria-pressed")
+              ? "filter"
+              : "other";
+    return {
+      kind,
+      label: element.getAttribute("aria-label") ?? element.textContent?.trim().slice(0, 30) ?? "",
+      ringed: shows(element) || (wrapper !== null && shows(wrapper)),
+    };
+  });
+}
+
 const cards = (page: Page) => page.getByTestId("card");
 const panel = (page: Page) => page.getByRole("complementary");
 const trayCount = (page: Page) =>
@@ -259,6 +296,28 @@ test.describe("when the map cannot start", () => {
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 
+  test("the list starts under the title block and filters and ends above the notice", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByText(NO_MAP_SENTENCE)).toBeVisible();
+    await expect(cards(page).first()).toBeVisible();
+
+    const viewport = page.viewportSize();
+    const intro = await page.locator("header").boundingBox();
+    const sentence = await page.getByText(NO_MAP_SENTENCE).boundingBox();
+    const card = await cards(page).first().boundingBox();
+    const notice = await page.getByText(NOT_OFFICIAL).boundingBox();
+    if (!viewport || !intro || !sentence || !card || !notice) throw new Error("Something is not on screen");
+
+    expect(sentence.y).toBeGreaterThanOrEqual(intro.y + intro.height);
+    expect(card.y).toBeLessThan(sentence.y + sentence.height + 120);
+    // The list scrolls inside the space above the notice, and a second row is already in sight on a desktop.
+    expect(card.y + card.height).toBeLessThanOrEqual(notice.y);
+    if (viewport.width > 760) {
+      const second = await cards(page).nth(10).boundingBox();
+      expect(second && second.y + second.height).toBeLessThanOrEqual(notice.y);
+    }
+  });
+
   test("Show 40 more reveals more cards, and filters and order still apply", async ({
     page,
   }) => {
@@ -312,45 +371,57 @@ test.describe("when the map cannot start", () => {
     await expect(panel(page)).toBeFocused();
   });
 
-  test("every control can be reached by Tab, in reading order, with a visible focus ring", async ({
+  test("Tab runs search, filters, order, cards, Show 40 more and the method link, each with a focus indicator", async ({
     page,
   }) => {
     await page.goto("/");
+    await expect(page.getByText(NO_MAP_SENTENCE)).toBeVisible();
     await expect(cards(page).first()).toBeVisible();
 
-    const stops: string[] = [];
-    for (let press = 0; press < 40; press += 1) {
-      await page.keyboard.press("Tab");
-      const stop = await page.evaluate(() => {
-        const element = document.activeElement;
-        if (!element || element === document.body) return null;
-        const style = getComputedStyle(element);
-        const wrapper = element.closest("[class*='focus-within']");
-        const ring = wrapper ? getComputedStyle(wrapper) : style;
-        const outlined =
-          ring.outlineStyle !== "none" && parseFloat(ring.outlineWidth) > 0;
-        return {
-          label:
-            element.getAttribute("aria-label") ??
-            element.textContent?.trim().slice(0, 30) ??
-            "",
-          testId: element.getAttribute("data-testid"),
-          outlined,
-        };
-      });
+    const labels: string[] = [];
+    for (let press = 0; press < 120; press += 1) {
+      const stop = await pressTab(page);
       if (!stop) continue;
-      expect(stop.outlined, `"${stop.label}" shows a focus ring`).toBe(true);
-      stops.push(stop.testId === "card" ? "card" : stop.label);
-      if (stop.testId === "card") break;
+      expect(stop.ringed, `"${stop.label}" shows a focus indicator`).toBe(true);
+      labels.push(stop.kind === "card" ? "card" : stop.label);
+      if (stop.label === "Method and sources") break;
     }
 
-    const search = stops.indexOf("Search an Austin address");
-    const period = stops.indexOf("12 months");
-    const order = stops.indexOf("Fewest first");
-    const firstCard = stops.indexOf("card");
-    expect(search, "search comes first").toBe(0);
-    expect(period).toBeGreaterThan(search);
-    expect(order).toBeGreaterThan(period);
-    expect(firstCard).toBeGreaterThan(order);
+    const at = (label: string) => labels.indexOf(label);
+    expect(at("Search an Austin address"), "search comes first").toBe(0);
+    expect(at("12 months")).toBeGreaterThan(at("Search an Austin address"));
+    expect(at("Fewest first")).toBeGreaterThan(at("12 months"));
+    expect(at("card")).toBeGreaterThan(at("Fewest first"));
+    expect(at("Show 40 more")).toBeGreaterThan(at("card"));
+    expect(at("Method and sources")).toBeGreaterThan(at("Show 40 more"));
   });
+});
+
+test("with the map running, Tab goes search, filters, map, then the first card, each with a focus indicator", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await waitForMap(page);
+
+  const stops: Stop[] = [];
+  for (let press = 0; press < 60; press += 1) {
+    const stop = await pressTab(page);
+    if (!stop) continue;
+    stops.push(stop);
+    if (stop.kind === "card") break;
+  }
+
+  const first = (kind: Stop["kind"]) => stops.findIndex((stop) => stop.kind === kind);
+  const search = first("search");
+  const filter = first("filter");
+  const map = first("map");
+  const card = first("card");
+  expect(search, "the first Tab lands on the search box").toBe(0);
+  expect(filter).toBeGreaterThan(search);
+  expect(map).toBeGreaterThan(filter);
+  expect(card).toBeGreaterThan(map);
+
+  for (const index of [search, filter, map, card]) {
+    expect(stops[index].ringed, `"${stops[index].label}" shows a focus indicator`).toBe(true);
+  }
 });

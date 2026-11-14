@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { CATEGORY_LABEL } from "@/domain/labels";
-import type { Meta } from "@/domain/types";
+import type { Category, Complex, Meta } from "@/domain/types";
 import { Glass } from "@/ui/Glass";
 import { formatPullDate, Notice } from "@/ui/Notice";
 import { readDataFile } from "../dataFiles";
@@ -48,6 +48,13 @@ const SOURCES = [
   },
 ] as const;
 
+const CITY_TERMS: { category: Category; term: string }[] = [
+  { category: "structure", term: "Structure Condition Violation" },
+  { category: "property", term: "Property Abatement" },
+  { category: "landuse", term: "Land Use Violation" },
+  { category: "permit", term: "Work Without Permit" },
+];
+
 const CAUTION =
   "No cases means none reached Code Enforcement. It does not mean the building has no problems.";
 
@@ -73,7 +80,11 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export default async function MethodPage() {
-  const meta = await readDataFile<Meta>("meta.json");
+  const [meta, complexes] = await Promise.all([
+    readDataFile<Meta>("meta.json"),
+    readDataFile<Complex[]>("complexes.json"),
+  ]);
+  const withUnitCounts = complexes.filter(({ units }) => units !== null).length;
   const unmatchedPercent = Math.round(meta.unmatchedCaseShare * 100);
 
   return (
@@ -98,7 +109,7 @@ export default async function MethodPage() {
           <Section title="What this site is">
             <p>
               Building Record is an independent reading of public City of Austin records. It is
-              not a City of Austin site, and the City has not reviewed it. The data comes with no
+              not a City of Austin site, and it is not endorsed by the City of Austin. The data comes with no
               warranty, and so does this site.
             </p>
             <p>
@@ -150,20 +161,21 @@ export default async function MethodPage() {
 
           <Section title="What a code case is">
             <p>
-              A code case is a record the city opens when a possible violation of the city code is
-              reported or found at a property. The city sorts cases into four categories, shown
-              here as:
+              A code case is a record in the city&apos;s Code Complaint Cases dataset, each with a
+              category, a status and the date it was opened. This site shows the four categories
+              under these names, with the city&apos;s own term for each:
             </p>
             <ul className="list-disc pl-5">
-              <li>{CATEGORY_LABEL.structure}, the closest match to housing conditions</li>
-              <li>{CATEGORY_LABEL.property}, which the city calls Property Abatement</li>
-              <li>{CATEGORY_LABEL.landuse}</li>
-              <li>{CATEGORY_LABEL.permit}</li>
+              {CITY_TERMS.map(({ category, term }) => (
+                <li key={category}>
+                  {CATEGORY_LABEL[category]} (the city&apos;s term is {term})
+                </li>
+              ))}
             </ul>
             <p>
               The city&apos;s records do not say whether a case was about pests, mold or anything
-              more specific. A case also does not say who was at fault or whether the problem was
-              real.
+              more specific. This site reads only each case&apos;s category, status and opening date. It
+              does not show what an inspector found or how a case was resolved.
             </p>
           </Section>
 
@@ -189,9 +201,9 @@ export default async function MethodPage() {
           <Section title="Counts, not rates">
             <p>
               Buildings are shown by raw case count with the size of their parcel, not as cases per
-              unit. The city publishes unit counts for only some buildings, so a rate would be
-              missing for many and unreliable for the rest. Unit counts appear where the city
-              publishes them.
+              unit. The city publishes a unit count for {formatCount(withUnitCounts)} of these{" "}
+              {formatCount(meta.complexCount)} complexes, so a per-unit rate cannot be shown for
+              most. Unit counts appear where the city publishes them.
             </p>
           </Section>
 

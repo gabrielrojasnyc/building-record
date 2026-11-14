@@ -158,6 +158,11 @@ export function Finder({
 
   return (
     <main>
+      <div aria-hidden className="fog pointer-events-none fixed inset-0 z-1" />
+
+      <IntroSearch complexes={complexes} onChoose={goToAddress} complexesOnly={mapUnavailable} />
+      <Filters view={view} onChange={changeView} />
+      {/* After the title block and filters and before the tray, so Tab reaches the map between them. It is positioned, so its place in the markup moves nothing. */}
       <div className="fixed inset-0">
         <BuildingMap
           complexes={complexes}
@@ -172,10 +177,6 @@ export function Finder({
           onUnavailable={() => setMapUnavailable(true)}
         />
       </div>
-      <div aria-hidden className="fog pointer-events-none fixed inset-0 z-1" />
-
-      <IntroSearch complexes={complexes} onChoose={goToAddress} complexesOnly={mapUnavailable} />
-      <Filters view={view} onChange={changeView} />
       {selected && (
         <BuildingPanel
           place="map"
@@ -185,9 +186,9 @@ export function Finder({
         />
       )}
 
-      {/* The list is taller than the map's tray, so it makes room for the panel instead of running under it. */}
+      {/* With no map the list fills the screen below the title block and filters, and makes room for the panel instead of running under it. */}
       <div
-        className={`fixed inset-x-0 bottom-0 z-2 flex flex-col gap-2 pb-2 ${mapUnavailable && selected ? "pr-[calc(372px+var(--gutter))] phone:pr-0" : ""}`}
+        className={`fixed inset-x-0 bottom-0 z-2 flex flex-col gap-2 pb-2 ${mapUnavailable ? "top-[228px] phone:top-[178px]" : ""} ${mapUnavailable && selected ? "pr-[calc(372px+var(--gutter))] phone:pr-0" : ""}`}
       >
         {mapUnavailable && (
           <div className="px-(--gutter)">

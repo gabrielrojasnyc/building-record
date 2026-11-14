@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import type { Meta } from "@/domain/types";
+import type { Complex, Meta } from "@/domain/types";
 import MethodPage from "./page";
 
 const meta: Meta = {
@@ -12,7 +12,31 @@ const meta: Meta = {
   uncategorizedCases: 0,
 };
 
-vi.mock("../dataFiles", () => ({ readDataFile: vi.fn(async () => meta) }));
+const counts = { structure: 0, property: 0, landuse: 0, permit: 0 };
+const complex = (id: string, units: Complex["units"]): Complex => ({
+  id,
+  address: id,
+  lon: 0,
+  lat: 0,
+  acres: 1,
+  cases12: counts,
+  cases: counts,
+  open: 0,
+  lastCase: null,
+  repeatOffender: null,
+  units,
+});
+const complexes = [
+  complex("a", { count: 100, source: "repeat-offender" }),
+  complex("b", null),
+  complex("c", { count: 40, source: "affordable-housing" }),
+  complex("d", null),
+  complex("e", null),
+];
+
+vi.mock("../dataFiles", () => ({
+  readDataFile: vi.fn(async (name: string) => (name === "meta.json" ? meta : complexes)),
+}));
 
 async function renderPage() {
   render(await MethodPage());
@@ -31,7 +55,7 @@ it("starts with a way back to the map and has one h1 over a plain heading order"
 it("reads the numbers it names from the data", async () => {
   await renderPage();
 
-  expect(screen.getByText(/2,498 complexes/)).toBeVisible();
+  expect(screen.getByText(/This copy has 2,498 complexes/)).toBeVisible();
   expect(screen.getByText(/About 13% of the city's cases/)).toBeVisible();
   expect(screen.getByText(/17,602 cases/)).toBeVisible();
   expect(screen.getByText("This copy of the data was pulled on November 14, 2026.")).toBeVisible();
@@ -77,4 +101,42 @@ it("uses no score language, em dashes or double dashes", async () => {
   const text = document.body.textContent ?? "";
   expect(text).not.toMatch(/score|grade|rating|rank/i);
   expect(text).not.toMatch(/—|--/);
+});
+
+it("says how many complexes have a published unit count, from the data", async () => {
+  await renderPage();
+
+  expect(
+    screen.getByText(/The city publishes a unit count for 2 of these 2,498 complexes, so a per-unit rate cannot be shown for most\./),
+  ).toBeVisible();
+});
+
+it("gives the city's own term for all four categories", async () => {
+  await renderPage();
+
+  for (const line of [
+    "Structure condition (the city's term is Structure Condition Violation)",
+    "Property upkeep (the city's term is Property Abatement)",
+    "Land use (the city's term is Land Use Violation)",
+    "Work without permit (the city's term is Work Without Permit)",
+  ]) {
+    expect(screen.getByText(line)).toBeVisible();
+  }
+});
+
+it("makes only the claims the data supports", async () => {
+  await renderPage();
+
+  const text = document.body.textContent ?? "";
+  expect(text).toContain("not endorsed by the City of Austin");
+  for (const removed of [
+    "has not reviewed",
+    "reported or found",
+    "closest match",
+    "who was at fault",
+    "whether the problem was real",
+    "unreliable for the rest",
+  ]) {
+    expect(text).not.toContain(removed);
+  }
 });

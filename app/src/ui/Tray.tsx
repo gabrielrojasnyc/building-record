@@ -164,7 +164,7 @@ export function Tray(props: TrayProps) {
   };
 
   return (
-    <section aria-labelledby={countId}>
+    <section aria-labelledby={countId} className={citywide ? "flex min-h-0 flex-1 flex-col" : undefined}>
       <div className="flex items-center gap-2.5 px-(--gutter) pb-2.5">
         <Glass className="flex h-[42px] flex-none items-center gap-2 rounded-full pr-1.5 pl-[18px]">
           <p id={countId} className="flex items-center gap-2">
@@ -206,7 +206,7 @@ export function Tray(props: TrayProps) {
         onMouseLeave={() => props.onHover(null)}
         className={
           citywide
-            ? "flex max-h-[40dvh] flex-wrap content-start gap-3 overflow-y-auto px-(--gutter) pt-2 pb-1.5"
+            ? "flex min-h-0 flex-1 flex-wrap content-start gap-3 overflow-y-auto px-(--gutter) pt-2 pb-1.5"
             : "flex snap-x snap-proximity scroll-px-(--gutter) gap-3 overflow-x-auto px-(--gutter) pt-2 pb-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         }
       >
