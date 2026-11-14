@@ -53,7 +53,7 @@ const PALETTE = {
 } as const;
 
 const HIDDEN_LAYERS =
-  /shield|boundary|aeroway|airport|ice|glacier|label_country|label_state|^building$/;
+  /shield|boundary|aeroway|airport|landcover_ice|glacier|label_country|label_state|^building$/;
 
 type Paint = Record<string, unknown>;
 

@@ -101,17 +101,38 @@ describe("repaint", () => {
     );
   });
 
-  it("removes shields, boundaries, airports, glaciers, country and state labels and the flat building layer", () => {
+  it("removes shields, boundaries, airports, ice, glaciers, country and state labels and the flat building layer", () => {
     const ids = repaint(base).layers.map((layer) => layer.id);
-    expect(
-      ids.some((id) =>
-        /shield|boundary|aeroway|airport|ice|glacier|label_country|label_state|^building$/.test(
-          id,
-        ),
-      ),
-    ).toBe(false);
-    expect(ids).toContain("water");
-    expect(ids).toContain("label_city");
+    const mustBeGone = [
+      "highway-shield-us-interstate",
+      "road_shield_us",
+      "boundary_2",
+      "aeroway-runway",
+      "airport",
+      "landcover_ice_shelf",
+      "landcover_glacier",
+      "label_country_1",
+      "label_state",
+      "building",
+    ];
+    for (const id of mustBeGone) {
+      expect(base.layers.map((layer) => layer.id)).toContain(id);
+      expect(ids).not.toContain(id);
+    }
+  });
+
+  it("keeps rail yards, water, parks, roads and city labels", () => {
+    const ids = repaint(base).layers.map((layer) => layer.id);
+    for (const id of [
+      "railway_service",
+      "railway_service_dashline",
+      "water",
+      "park",
+      "highway_minor",
+      "label_city",
+    ]) {
+      expect(ids).toContain(id);
+    }
   });
 
   it("does not mutate the style it was given", () => {
