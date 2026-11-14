@@ -1,7 +1,8 @@
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { Complex, Meta, PublishedUnits } from '@/domain/types';
-import { buildAddressResolver, formatAddress, loadAddressPoints } from './addresses';
+import { formatAddress } from '@/domain/address';
+import { buildAddressResolver, loadAddressPoints } from './addresses';
 import { emptyCaseSummary, loadCases } from './cases';
 import { loadPublishedUnits, loadRepeatOffenders, type RepeatOffenderRecord } from './context';
 import { loadApartmentParcels } from './parcels';

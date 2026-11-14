@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import type { AddressMatch } from "@/city/addressSearch";
 import {
   complexesInView,
   viewFromSearchParams,
@@ -28,6 +29,7 @@ const BuildingMap = dynamic(
 const CITYWIDE: Bounds = [-Infinity, -Infinity, Infinity, Infinity];
 const SELECTION_ZOOM = 14.6;
 const AREA_ZOOM = 13.9;
+const ADDRESS_ZOOM = 15;
 
 /*
   The camera centers on the strip of map the panels leave open. Top clears the intro block
@@ -139,6 +141,12 @@ export function Finder({
     setFlyTo({ lon: area.lon, lat: area.lat, zoom: AREA_ZOOM });
   };
 
+  const goToAddress = (match: AddressMatch) => {
+    if (match.complexId) return select(match.complexId);
+    setSelectedId(null);
+    setFlyTo({ lon: match.lon, lat: match.lat, zoom: ADDRESS_ZOOM });
+  };
+
   return (
     <main>
       <div className="fixed inset-0">
@@ -157,7 +165,7 @@ export function Finder({
       </div>
       <div aria-hidden className="fog pointer-events-none fixed inset-0 z-1" />
 
-      <IntroSearch />
+      <IntroSearch complexes={complexes} onChoose={goToAddress} />
       <Filters view={view} onChange={changeView} />
       {selected && (
         <BuildingPanel

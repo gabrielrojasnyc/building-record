@@ -1,3 +1,4 @@
+import { formatAddress } from '@/domain/address';
 import type { Parcel } from './parcels';
 import { readAll } from './socrata';
 
@@ -7,8 +8,6 @@ const FALLBACK_RADIUS_METRES = 150;
 const GRID_CELL_DEGREES = 0.002;
 const METRES_PER_DEGREE_LAT = 111_195;
 
-const UPPERCASE_WORDS = new Set(['IH', 'SH', 'FM', 'RM', 'US', 'NB', 'SB', 'EB', 'WB', 'SVRD']);
-const ORDINAL = /^(\d+)(ST|ND|RD|TH)$/;
 
 export interface AddressPoint {
   label: string;
@@ -22,21 +21,6 @@ interface AddressRow {
   full_street_name?: string;
   address?: string;
   the_geom?: GeoJSON.Point;
-}
-
-const titleCase = (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-
-function formatWord(word: string): string {
-  if (UPPERCASE_WORDS.has(word)) return word;
-  const ordinal = ORDINAL.exec(word);
-  if (ordinal) return `${ordinal[1]}${ordinal[2].toLowerCase()}`;
-  if (/^\d/.test(word)) return word;
-  return word.split('-').map(titleCase).join('-');
-}
-
-/** City address strings are upper case. Title-case them, keeping highway and direction codes. */
-export function formatAddress(raw: string): string {
-  return raw.trim().split(/\s+/).map(formatWord).join(' ');
 }
 
 export async function loadAddressPoints(fetchImpl: typeof fetch = fetch): Promise<AddressPoint[]> {
