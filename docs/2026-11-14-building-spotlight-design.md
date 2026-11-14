@@ -1,6 +1,6 @@
 # Building Spotlight: Design
 
-Date: 2026-11-14. Status: draft, awaiting approval. Adds to `2026-11-14-apartment-finder-design.md`.
+Date: 2026-11-14. Status: approved by Gabe on 2026-11-14. Plan: `docs/superpowers/plans/2026-11-14-building-spotlight.md`. Adds to `2026-11-14-apartment-finder-design.md`.
 
 ## Intent
 
@@ -55,14 +55,14 @@ Three mocks were compared on the live mockup (`mockup/select3d.js`): Rise, Model
 | Parcel outline (the navy base) | Already in the pipeline (Land Use Inventory `7vsm-dvxg`) | Every complex | Written into each building's JSON file. |
 | Building shapes and heights | City "Building Footprints Year 2013" `3qcc-8uhz`: 585,916 surveyed footprints with `max_height` in feet | Buildings that existed in 2013 | Public domain. Read live when a building is picked. |
 | Shapes for newer buildings | OpenStreetMap buildings already in the map tiles | Most of the rest | Heights are estimates; shown the same way. |
-| Name | 1. The city's Repeat Offender registration name. 2. OpenStreetMap apartment names | About 4 in 10 complexes (980 of 2,497 in the mock's rough match) | Otherwise the address is the title. |
+| Name | 1. OpenStreetMap apartment names. 2. The city's Repeat Offender registration name, when it is not a company name | About 4 in 10 complexes (980 of 2,497 in the mock's rough match) | Otherwise the address is the title. |
 | Photo | USGS NAIP aerial imagery, framed on the parcel | Every complex | Public domain, top-down, about 60 cm per pixel. |
 
 ## Decisions (Claude's calls, open to change)
 
 1. **Footprints are read live from the city when a building is picked,** not stored. The mock does this in under a second. If the city does not answer, the map falls back to the OpenStreetMap shapes already loaded, and if there are none, the navy base rises alone. Storing them would mean pulling 586,000 shapes into the nightly build for a dataset that has not changed since 2013.
 2. **Names are a saved snapshot, refreshed by hand,** not pulled nightly. A script queries OpenStreetMap once, keeps only features tagged as apartments whose center falls inside a complex's parcel, and writes a small file that is committed. The nightly build never depends on OpenStreetMap being up. Subdivision names (plain residential areas) are excluded because they are not complex names.
-3. **Name order:** the city's Repeat Offender name first, then OpenStreetMap, then none. The address is always shown under a name and stays the unique label everywhere uniqueness matters (page addresses, search results).
+3. **Name order:** OpenStreetMap first, then the city's Repeat Offender registration name, then none. Changed while planning: the city's field often holds the owning company ("1830 W Rundberg Db Llc") where OpenStreetMap has the name on the sign ("Lantana Trace"), so a city name is used only when it does not read as a legal entity. A complex gets an OpenStreetMap name only when exactly one distinct apartment name lies inside its parcel. The address is always shown under a name and stays the unique label everywhere uniqueness matters (page addresses, search results).
 4. **The photo loads straight from USGS** in the person's browser, sized for the card. If it fails or is slow, the card shows the fog gradient with the name and nothing breaks.
 5. **While a building is selected, the card tray keeps the list it had.** The turning camera would otherwise reshuffle the cards every few seconds.
 6. **Search also matches names,** so typing "Array" finds Array Apartments. Suggestions show the name with the address beside it.
