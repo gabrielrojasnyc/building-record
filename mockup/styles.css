@@ -180,3 +180,47 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ---------- mock: the selected building's name, picture and 3D ---------- */
+
+.lab { position: fixed; z-index: 3; bottom: 244px; left: var(--gutter); display: grid; gap: 4px; padding: 10px 10px 8px 16px; border-radius: 22px; font-size: 12.5px; color: var(--slate); }
+.lab .group { margin-left: -8px; }
+.lab button { height: 30px; padding: 0 12px; border-radius: var(--r-pill); font-size: 13px; font-weight: 400; color: var(--slate); transition: background .2s, color .2s; }
+.lab button:hover { background: rgb(255 255 255 / .4); }
+.lab button[aria-pressed="true"] { background: var(--deep); color: var(--ice); }
+
+.detail { padding: 0; }
+#record { padding: 16px 22px 22px; }
+#record .ro-note { margin-top: 0; }
+#record .figure { margin-top: 18px; }
+
+.hero { position: relative; height: 204px; overflow: hidden; border-radius: 27px 27px 0 0; background: linear-gradient(180deg, color-mix(in srgb, var(--ice) 80%, transparent), color-mix(in srgb, var(--mist) 75%, transparent)); }
+.hero-media, .hero-media img, .stage { position: absolute; inset: 0; width: 100%; height: 100%; }
+.hero-media img { object-fit: cover; animation: develop .7s ease-out; }
+@keyframes develop { from { opacity: 0; transform: scale(1.06); } }
+.stage { cursor: grab; touch-action: none; }
+.stage:active { cursor: grabbing; }
+.hero::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, transparent 42%, color-mix(in srgb, var(--navy) 82%, transparent)); }
+.hero-title { position: absolute; z-index: 1; left: 22px; right: 22px; bottom: 16px; color: var(--ice); pointer-events: none; }
+.hero-title b { display: block; font: 400 30px/1.02 var(--display); text-wrap: balance; }
+.hero-title span { display: block; margin-top: 4px; font-size: 13px; opacity: .88; }
+.hero-credit { position: absolute; z-index: 1; right: 14px; top: 58px; font-size: 10.5px; color: var(--ice); opacity: .8; text-shadow: 0 1px 2px color-mix(in srgb, var(--navy) 70%, transparent); pointer-events: none; }
+.hero .close { position: absolute; z-index: 2; top: 14px; right: 14px; float: none; background: rgb(255 255 255 / .72); backdrop-filter: blur(8px); }
+.hero-toggle { position: absolute; z-index: 2; top: 14px; left: 14px; display: flex; gap: 2px; padding: 3px; border-radius: var(--r-pill); background: rgb(255 255 255 / .6); }
+.hero-toggle button { height: 26px; padding: 0 11px; border-radius: var(--r-pill); font-size: 12.5px; color: var(--slate); }
+.hero-toggle button[aria-pressed="true"] { background: var(--deep); color: var(--ice); }
+
+/* Spotlight: the rest of the city falls back into fog. */
+.mist { transition: background .6s; }
+body.spotlight .mist {
+  background:
+    radial-gradient(58% 52% at 46% 46%, transparent 38%, color-mix(in srgb, var(--ice) 90%, transparent) 100%),
+    linear-gradient(180deg, color-mix(in srgb, var(--ice) 88%, transparent) 0%, transparent 30%);
+}
+.map-label { position: relative; padding: 9px 16px; border-radius: var(--r-pill); font: 400 19px/1 var(--display); color: var(--deep); white-space: nowrap; background: rgb(255 255 255 / .7); }
+.map-label::after { content: ""; position: absolute; left: 50%; top: 100%; width: 1px; height: 52px; background: linear-gradient(var(--deep), transparent); }
+
+@media (max-width: 760px) {
+  .lab { top: auto; bottom: 232px; left: var(--gutter); right: var(--gutter); }
+  .hero { height: 170px; }
+}

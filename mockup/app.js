@@ -1,5 +1,6 @@
 import * as maplibregl from "https://unpkg.com/maplibre-gl@6.16.0/dist/maplibre-gl.mjs";
 import { LOOKS, basePaint, pinPaint, skyFor } from "./looks.js";
+import { MODES, aerialUrl, createSelection, mountStage } from "./select3d.js";
 
 const CATEGORY_LABEL = {
   structure: "Structure condition",
@@ -50,6 +51,12 @@ const caseWord = (n) => (n === 1 ? "code case" : "code cases");
 const dataset = await fetch("data.json").then((r) => r.json());
 const complexes = dataset.complexes;
 const byId = new Map(complexes.map((c) => [c.id, c]));
+
+// Complex names from OpenStreetMap, matched to parcels for this mock. About 4 in 10 have one.
+const names = await fetch("names.json")
+  .then((r) => r.json())
+  .catch(() => ({}));
+const titleOf = (complex) => names[complex.id] ?? complex.addr;
 
 const total = (counts) => Object.values(counts).reduce((a, b) => a + b, 0);
 const countFor = (complex) =>
@@ -291,6 +298,7 @@ map.on("load", () => {
   } catch {
     /* sky is decoration */
   }
+  selection.install();
 });
 
 const hasPins = () => Boolean(map.getSource("complexes"));
@@ -360,7 +368,7 @@ function renderTray() {
         <span><span class="card-count num${n === 0 ? " none" : ""}">${n === 0 ? "None" : n}</span><span class="card-unit" style="display:block">${n === 0 ? "no cases on file" : caseWord(n)}</span></span>
         ${c.ro ? '<span class="ro-tag"><i></i>Repeat Offender</span>' : ""}
       </span>
-      <span class="card-addr">${escapeHtml(c.addr)}<small>${cardSub(c)}</small></span>
+      <span class="card-addr">${escapeHtml(titleOf(c))}<small>${names[c.id] ? escapeHtml(c.addr) : cardSub(c)}</small></span>
     </button>`;
     })
     .join("");
@@ -396,23 +404,19 @@ function select(id, { fly = false } = {}) {
   markSelected(state.selectedId, false);
   state.selectedId = id;
   markSelected(id, true);
-  if (fly || map.getZoom() < 13)
-    map.flyTo({
-      center: [complex.lon, complex.lat],
-      zoom: Math.max(map.getZoom(), 14.6),
-      pitch: 58,
-      speed: 0.8,
-    });
   document
     .querySelectorAll(".card.selected")
     .forEach((el) => el.classList.remove("selected"));
   document.querySelector(`.card[data-id="${id}"]`)?.classList.add("selected");
+  renderHero(complex);
   renderDetail(complex);
+  selection.show(complex, titleOf(complex));
 }
 
 function deselect() {
   markSelected(state.selectedId, false);
   state.selectedId = null;
+  selection.clear();
   $("detail").hidden = true;
   document
     .querySelectorAll(".card.selected")
@@ -431,13 +435,8 @@ function renderDetail(complex) {
     })
     .join("");
 
-  const panel = $("detail");
-  panel.hidden = false;
-  panel.scrollTop = 0;
-  panel.innerHTML = `
-    <button class="close" aria-label="Close building details">×</button>
-    <h2>${escapeHtml(complex.addr)}</h2>
-    <div class="meta">Apartment parcel, ${complex.acres} acres</div>
+  $("detail").hidden = false;
+  $("record").innerHTML = `
     ${complex.ro ? `<div class="ro-note"><i class="ro-dot"></i><div><strong>On the city's Repeat Offender list</strong>${escapeHtml(complex.ro.name ?? "Registered property")}, ${complex.ro.units} units. <span class="num">${complex.ro.active}</span> active of <span class="num">${complex.ro.total.toLocaleString()}</span> total violations.</div></div>` : ""}
     <div class="figure">
       <div class="big num${shown === 0 ? " none" : ""}">${shown === 0 ? "None" : shown}</div>
@@ -510,6 +509,75 @@ async function loadHistory(complex) {
       </ul>
     </div>`;
 }
+
+/* ---------- the selected building: name, picture and 3D ---------- */
+
+let stage = null;
+const selection = createSelection(map, {
+  isDesktop,
+  onParcel(complex, parcel) {
+    if (selection.mode !== "model") showPhoto(complex, parcel);
+  },
+  onBuildings(complex, parcel, buildings) {
+    if (selection.mode === "model") showModel(complex, parcel, buildings);
+  },
+  onCleared() {
+    stage?.remove();
+    stage = null;
+    applyPadding();
+  },
+});
+
+function renderHero(complex) {
+  stage?.remove();
+  stage = null;
+  $("detail").scrollTop = 0;
+  const name = names[complex.id];
+  $("hero").innerHTML = `
+    <button class="close" aria-label="Close building details">×</button>
+    <div class="hero-media" id="heroMedia"></div>
+    <div class="hero-title"><b>${escapeHtml(name ?? complex.addr)}</b><span>${name ? escapeHtml(complex.addr) + ", " : ""}${complex.acres} acres</span></div>
+    <span class="hero-credit" id="heroCredit"></span>`;
+}
+
+function showPhoto(complex, parcel) {
+  stage?.remove();
+  stage = null;
+  $("heroMedia").innerHTML = `<img alt="Aerial photo of ${escapeHtml(titleOf(complex))}" src="${aerialUrl(parcel.bbox, 744, 400)}">`;
+  $("heroCredit").textContent = "Aerial photo: USGS";
+}
+
+function showModel(complex, parcel, buildings) {
+  $("heroMedia").innerHTML = `
+    <div class="hero-toggle glass"><button data-show="model" aria-pressed="true">Model</button><button data-show="photo" aria-pressed="false">Photo</button></div>
+    <div class="stage" id="stage"></div>`;
+  $("heroCredit").textContent = "Drag to turn";
+  stage = mountStage($("stage"), parcel, buildings);
+  $("heroMedia").querySelector(".hero-toggle").addEventListener("click", (e) => {
+    const button = e.target.closest("button");
+    if (!button || state.selectedId !== complex.id) return;
+    if (button.dataset.show === "photo") {
+      showPhoto(complex, parcel);
+      $("heroMedia").insertAdjacentHTML("afterbegin", '<div class="hero-toggle glass"><button data-show="model" aria-pressed="false">Model</button><button data-show="photo" aria-pressed="true">Photo</button></div>');
+      $("heroMedia").querySelector(".hero-toggle").addEventListener("click", (again) => {
+        if (again.target.closest('[data-show="model"]')) showModel(complex, parcel, buildings);
+      });
+    }
+  });
+}
+
+$("modes").innerHTML = Object.entries(MODES)
+  .map(([key, label]) => `<button data-mode="${key}" aria-pressed="${key === selection.mode}">${label}</button>`)
+  .join("");
+$("modes").addEventListener("click", (e) => {
+  const button = e.target.closest("button");
+  if (!button) return;
+  $("modes").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
+  const reselect = state.selectedId;
+  if (reselect) deselect();
+  selection.mode = button.dataset.mode;
+  if (reselect) select(reselect);
+});
 
 /* ---------- controls ---------- */
 
