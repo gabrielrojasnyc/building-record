@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, it, vi } from "vitest";
-import { DEFAULT_VIEW } from "@/domain/query";
+import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_VIEW, type View } from "@/domain/query";
 import type { Complex, Counts } from "@/domain/types";
 import { Tray } from "./Tray";
 
@@ -51,12 +51,12 @@ const busy = complex("200", {
 const single = complex("300", { cases12: counts({ landuse: 1 }) });
 const sample = [clean, busy, single];
 
-function renderTray(complexes: Complex[]) {
+function renderTray(complexes: Complex[], view: View = DEFAULT_VIEW) {
   render(
     <Tray
       complexes={complexes}
       {...handlers}
-      view={DEFAULT_VIEW}
+      view={view}
       selectedId={null}
       hoveredId={null}
     />,
@@ -143,6 +143,58 @@ it("reports a chosen card, the order toggle and an area jump", async () => {
     name: "East Riverside",
     lon: -97.725,
     lat: 30.237,
+  });
+});
+
+describe("with one complaint type selected", () => {
+  const permitsOnly: View = { ...DEFAULT_VIEW, category: "permit" };
+
+  it("counts that type and names it as the only one counted", () => {
+    renderTray(
+      [
+        complex("1", { address: "1 Permit Ln", cases12: counts({ permit: 3, property: 10 }) }),
+        complex("2", { address: "2 Permit Ln", cases12: counts({ permit: 1 }) }),
+      ],
+      permitsOnly,
+    );
+
+    expect(card("1 Permit Ln").getByText("3")).toBeVisible();
+    expect(card("1 Permit Ln").getByText("code cases")).toBeVisible();
+    expect(card("1 Permit Ln").getByText("Work without permit only")).toBeVisible();
+    expect(card("2 Permit Ln").getByText("code case")).toBeVisible();
+    expect(card("2 Permit Ln").getByText("Work without permit only")).toBeVisible();
+  });
+
+  it("shows None for that type and how many cases of other types remain", () => {
+    renderTray(
+      [
+        complex("1", { address: "1 Upkeep Ln", cases12: counts({ property: 2, landuse: 1 }) }),
+        complex("2", { address: "2 Upkeep Ln", cases12: counts({ structure: 1 }) }),
+      ],
+      permitsOnly,
+    );
+
+    expect(card("1 Upkeep Ln").getByText("None")).toBeVisible();
+    expect(card("1 Upkeep Ln").getByText("no work without permit cases")).toBeVisible();
+    expect(card("1 Upkeep Ln").getByText("3 other cases")).toBeVisible();
+    expect(card("2 Upkeep Ln").getByText("1 other case")).toBeVisible();
+  });
+
+  it("falls back to acres when the building has no cases at all", () => {
+    renderTray([clean], permitsOnly);
+
+    expect(card("1107 W Gibson St").getByText("None")).toBeVisible();
+    expect(card("1107 W Gibson St").getByText("no work without permit cases")).toBeVisible();
+    expect(card("1107 W Gibson St").getByText("2.4 acres")).toBeVisible();
+  });
+
+  it("counts other types in the selected period only", () => {
+    renderTray(
+      [complex("1", { address: "1 Old Case Ln", cases: counts({ property: 4 }) })],
+      permitsOnly,
+    );
+
+    expect(card("1 Old Case Ln").getByText("2.4 acres")).toBeVisible();
   });
 });
 

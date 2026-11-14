@@ -19,7 +19,7 @@ export function Notice({ meta }: { meta: Meta }) {
   return (
     <Glass
       as="p"
-      className="mx-auto w-fit max-w-full rounded-full px-3 py-1 text-center text-[11px] leading-snug text-navy phone:rounded-2xl"
+      className="mx-auto w-fit max-w-full rounded-full bg-ice/60 px-3 py-1 text-center text-[11px] leading-snug text-navy phone:rounded-2xl"
     >
       {NOT_OFFICIAL} Data pulled {formatPullDate(meta.pulledAt)}.
     </Glass>

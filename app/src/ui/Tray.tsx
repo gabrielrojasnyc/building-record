@@ -48,9 +48,30 @@ function topCategory(counts: Counts): Category {
   );
 }
 
-function caseCaption(count: number): string {
-  if (count === 0) return "no cases on file";
-  return count === 1 ? "code case" : "code cases";
+function totalCases(counts: Counts): number {
+  return Object.values(counts).reduce((sum, count) => sum + count, 0);
+}
+
+/** The caption under a card's figure and the line under its address, both speaking to the same filter as the figure. */
+function cardCopy(complex: Complex, view: View, count: number): { caption: string; detail: string } {
+  const counts = complex[view.period];
+  const acres = `${complex.acres} acres`;
+  const caseWord = count === 1 ? "code case" : "code cases";
+
+  if (view.category === "all") {
+    if (count === 0) return { caption: "no cases on file", detail: acres };
+    return { caption: caseWord, detail: `Mostly ${CATEGORY_LABEL[topCategory(counts)].toLowerCase()}` };
+  }
+
+  const label = CATEGORY_LABEL[view.category];
+  if (count > 0) return { caption: caseWord, detail: `${label} only` };
+
+  // The selected type has none here, so every case in the period belongs to another type.
+  const others = totalCases(counts);
+  return {
+    caption: `no ${label.toLowerCase()} cases`,
+    detail: others === 0 ? acres : `${others} other ${others === 1 ? "case" : "cases"}`,
+  };
 }
 
 function TrayCard(props: {
@@ -63,10 +84,7 @@ function TrayCard(props: {
 }) {
   const { complex, view, selected, hovered } = props;
   const count = countFor(complex, view);
-  const detail =
-    count === 0
-      ? `${complex.acres} acres`
-      : `Mostly ${CATEGORY_LABEL[topCategory(complex[view.period])].toLowerCase()}`;
+  const { caption, detail } = cardCopy(complex, view, count);
 
   return (
     <button
@@ -96,12 +114,12 @@ function TrayCard(props: {
           <span
             className={`mt-1 block text-[12.5px] ${selected ? "text-mist" : "text-steel"}`}
           >
-            {caseCaption(count)}
+            {caption}
           </span>
         </span>
         {complex.repeatOffender && (
           <span
-            className={`inline-flex h-6 flex-none items-center gap-1.5 rounded-full bg-coral/32 pr-[9px] pl-2 text-[11.5px] font-normal ${selected ? "text-ice" : "text-navy"}`}
+            className={`inline-flex h-6 flex-none items-center gap-1.5 rounded-full pr-[9px] pl-2 text-[11.5px] font-normal ${selected ? "bg-coral/20 text-ice" : "bg-coral/32 text-navy"}`}
           >
             <span aria-hidden className="size-[7px] rounded-full bg-coral" />
             Repeat Offender

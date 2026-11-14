@@ -25,7 +25,7 @@ function FilterButton(props: {
       type="button"
       aria-pressed={props.pressed}
       onClick={props.onClick}
-      className="flex h-[34px] cursor-pointer items-center gap-2 rounded-full px-3.5 text-sm font-normal whitespace-nowrap text-slate motion-safe:transition-[background-color,color] motion-safe:duration-200 not-aria-pressed:hover:bg-white/40 aria-pressed:bg-deep aria-pressed:text-ice aria-pressed:shadow-[inset_0_1px_0_rgb(255_255_255/0.18)]"
+      className="flex h-[34px] cursor-pointer items-center gap-2 rounded-full px-3.5 text-sm font-normal whitespace-nowrap text-slate motion-safe:transition-[background-color,color] motion-safe:duration-200 not-aria-pressed:hover:bg-white/40 aria-pressed:bg-deep aria-pressed:text-ice aria-pressed:inset-shadow-2xs aria-pressed:inset-shadow-white/18"
     >
       {props.children}
     </button>
