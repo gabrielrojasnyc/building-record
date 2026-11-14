@@ -29,6 +29,7 @@ const parcel: Parcel = {
   },
   lon: -96.9995,
   lat: 30.0005,
+  squareFeet: 108_900,
   acres: 2.5,
   bbox: [-97.0, 30.0, -96.999, 30.001],
 };
@@ -66,39 +67,42 @@ function fakeFetch(rows: unknown[]) {
 
 describe('chooseAddress', () => {
   it('picks the lowest-numbered address point inside the polygon', () => {
-    expect(chooseAddress(parcel, [inside(1708), inside(1700), outside(12)])).toBe('1700 Burton Dr');
+    expect(chooseAddress(parcel, [inside(1708), inside(1700), outside(12)])).toEqual({ label: '1700 Burton Dr', source: 'inside' });
   });
 
-  it('falls back to the nearest point within 150 m when none is inside', () => {
+  it('names the parcel by ID near the nearest point within 150 m when none is inside', () => {
     const near = metresSouthOfCentroid(2200, 120);
     const nearer = metresSouthOfCentroid(2100, 80);
-    expect(chooseAddress(parcel, [near, nearer, farAway()])).toBe('2100 Burton Dr');
+    expect(chooseAddress(parcel, [near, nearer, farAway()])).toEqual({
+      label: 'Parcel 0304070701, near 2100 Burton Dr',
+      source: 'nearby',
+    });
   });
 
   it('measures the 150 m limit from the parcel centroid', () => {
-    expect(chooseAddress(parcel, [metresSouthOfCentroid(5, 149)])).toBe('5 Burton Dr');
-    expect(chooseAddress(parcel, [metresSouthOfCentroid(5, 151)])).toBe('Parcel 0304070701');
+    expect(chooseAddress(parcel, [metresSouthOfCentroid(5, 149)])).toEqual({ label: 'Parcel 0304070701, near 5 Burton Dr', source: 'nearby' });
+    expect(chooseAddress(parcel, [metresSouthOfCentroid(5, 151)])).toEqual({ label: 'Parcel 0304070701', source: 'none' });
   });
 
   it('labels the parcel by ID when nothing is within 150 m', () => {
-    expect(chooseAddress(parcel, [farAway()])).toBe('Parcel 0304070701');
+    expect(chooseAddress(parcel, [farAway()])).toEqual({ label: 'Parcel 0304070701', source: 'none' });
   });
 
   it('labels the parcel by ID when there are no points at all', () => {
-    expect(chooseAddress(parcel, [])).toBe('Parcel 0304070701');
+    expect(chooseAddress(parcel, [])).toEqual({ label: 'Parcel 0304070701', source: 'none' });
   });
 
   it('breaks a tie on house number by label, whatever order the points arrive in', () => {
     const a: AddressPoint = { ...inside(100), label: '100 ALPHA ST' };
     const b: AddressPoint = { ...inside(100), label: '100 BRAVO ST' };
-    expect(chooseAddress(parcel, [b, a])).toBe('100 Alpha St');
-    expect(chooseAddress(parcel, [a, b])).toBe('100 Alpha St');
+    expect(chooseAddress(parcel, [b, a]).label).toBe('100 Alpha St');
+    expect(chooseAddress(parcel, [a, b]).label).toBe('100 Alpha St');
   });
 
   it('ignores points whose house number is not numeric', () => {
     const unnumbered: AddressPoint = { label: '12A BURTON DR', number: Number.NaN, lon: -96.9995, lat: 30.0005 };
-    expect(chooseAddress(parcel, [unnumbered, inside(1700)])).toBe('1700 Burton Dr');
-    expect(chooseAddress(parcel, [unnumbered])).toBe('Parcel 0304070701');
+    expect(chooseAddress(parcel, [unnumbered, inside(1700)]).label).toBe('1700 Burton Dr');
+    expect(chooseAddress(parcel, [unnumbered]).label).toBe('Parcel 0304070701');
   });
 
   it('does not treat a point in a hole of the polygon as inside', () => {
@@ -122,7 +126,7 @@ describe('chooseAddress', () => {
     };
     const inCourtyard = inside(1);
     const onTheRing: AddressPoint = { ...inside(2), lon: -96.99985, lat: 30.0005 };
-    expect(chooseAddress(withCourtyard, [inCourtyard, onTheRing])).toBe('2 Burton Dr');
+    expect(chooseAddress(withCourtyard, [inCourtyard, onTheRing]).label).toBe('2 Burton Dr');
   });
 
   describe('on real city data', () => {
@@ -130,12 +134,12 @@ describe('chooseAddress', () => {
 
     it('names the Royal Crest complex by its lowest street number, wherever that street is', async () => {
       const burton = await fixtureParcel('0304070701');
-      expect(chooseAddress(burton, await points)).toBe('1515 Royal Crest Dr');
+      expect(chooseAddress(burton, await points)).toEqual({ label: '1515 Royal Crest Dr', source: 'inside' });
     });
 
     it('keeps the city spelling of a service road address', async () => {
       const interstate = await fixtureParcel('0234111501');
-      expect(chooseAddress(interstate, await points)).toBe('8900 N IH 35 SVRD SB');
+      expect(chooseAddress(interstate, await points).label).toBe('8900 N IH 35 SVRD SB');
     });
   });
 });
@@ -147,7 +151,7 @@ describe('buildAddressResolver', () => {
     const resolve = buildAddressResolver(points);
 
     for (const each of parcels) {
-      expect(resolve(each)).toBe(chooseAddress(each, points));
+      expect(resolve(each)).toEqual(chooseAddress(each, points));
     }
   });
 
@@ -155,11 +159,11 @@ describe('buildAddressResolver', () => {
     // 0.002 degree cells: the parcel centroid sits just inside one cell and the point just outside it.
     const edge: Parcel = { ...parcel, lon: -96.9995, lat: 30.00199, bbox: [-96.9996, 30.00198, -96.9994, 30.002] };
     const across: AddressPoint = { label: '7 EDGE ST', number: 7, lon: -96.9995, lat: 30.0022 };
-    expect(buildAddressResolver([across])(edge)).toBe('7 Edge St');
+    expect(buildAddressResolver([across])(edge)).toEqual({ label: 'Parcel 0304070701, near 7 Edge St', source: 'nearby' });
   });
 
   it('labels a parcel by ID when no indexed point is near', () => {
-    expect(buildAddressResolver([farAway()])(parcel)).toBe('Parcel 0304070701');
+    expect(buildAddressResolver([farAway()])(parcel)).toEqual({ label: 'Parcel 0304070701', source: 'none' });
   });
 });
 

@@ -15,6 +15,7 @@ const meta: Meta = {
 const counts = { structure: 0, property: 0, landuse: 0, permit: 0 };
 const complex = (id: string, units: Complex["units"]): Complex => ({
   id,
+  parcelIds: [id],
   address: id,
   lon: 0,
   lat: 0,
@@ -139,4 +140,26 @@ it("makes only the claims the data supports", async () => {
   ]) {
     expect(text).not.toContain(removed);
   }
+});
+
+it("describes each of the four ways a building is labelled", async () => {
+  await renderPage();
+
+  const labelling = screen.getByRole("heading", { name: "How a building is labelled" }).parentElement;
+  expect(labelling).toHaveTextContent("a city address point that falls inside the parcel");
+  expect(labelling).toHaveTextContent("the address the city registered it under");
+  expect(labelling).toHaveTextContent(
+    "its city parcel ID and the nearest address point within 150 meters, such as Parcel 0123456789, near 100 Main St. That address may belong to a neighbor.",
+  );
+  expect(labelling).toHaveTextContent("the label is the parcel ID alone");
+  expect(labelling).not.toHaveTextContent("the city address point inside its parcel, or");
+});
+
+it("says parcels sharing an address are shown as one complex", async () => {
+  await renderPage();
+
+  const complexes = screen.getByRole("heading", { name: "What counts as a complex" }).parentElement;
+  expect(complexes).toHaveTextContent("parcels that share an address are shown as one complex");
+  expect(complexes).toHaveTextContent("within 250 meters of one another");
+  expect(complexes).not.toHaveTextContent("Neighboring parcels are not merged");
 });

@@ -9,6 +9,8 @@ export interface Parcel {
   polygon: GeoJSON.MultiPolygon;
   lon: number;
   lat: number;
+  /** The city's shape_area summed over every row of the parcel. */
+  squareFeet: number;
   acres: number;
   /** [west, south, east, north] over every ring. */
   bbox: [number, number, number, number];
@@ -89,6 +91,7 @@ export async function loadApartmentParcels(fetchImpl: typeof fetch = fetch): Pro
       polygon: { type: 'MultiPolygon', coordinates: polygons },
       lon,
       lat,
+      squareFeet,
       acres: toAcres(squareFeet),
       bbox: boundingBox(polygons),
     };

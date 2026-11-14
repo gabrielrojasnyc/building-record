@@ -14,8 +14,10 @@ export interface PublishedUnits {
 }
 
 export interface Complex {
-  /** City parcel ID: 10 digits in Travis County, R-prefixed in Williamson County. */
+  /** City parcel ID of the member with the most cases since 2023-11-01: 10 digits in Travis County, R-prefixed in Williamson County. */
   id: string;
+  /** Every parcel shown as this complex, sorted. Parcels that share an address within 250 m are one complex. */
+  parcelIds: string[];
   address: string;
   lon: number;
   lat: number;

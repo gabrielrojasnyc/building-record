@@ -17,6 +17,7 @@ const counts = (overrides: Partial<Counts> = {}): Counts => ({
 
 const burton: Complex = {
   id: "0123456789",
+  parcelIds: ["0123456789"],
   address: "1 Burton Dr",
   lon: -97.72,
   lat: 30.23,
@@ -37,6 +38,7 @@ const burton: Complex = {
 const clean: Complex = {
   ...burton,
   id: "0000000001",
+  parcelIds: ["0000000001"],
   address: "2 Quiet Ln",
   cases12: counts(),
   cases: counts(),

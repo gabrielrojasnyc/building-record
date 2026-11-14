@@ -7,6 +7,7 @@ const counts: Counts = { structure: 0, property: 0, landuse: 0, permit: 0 };
 function complex(id: string, address: string): Complex {
   return {
     id,
+    parcelIds: [id],
     address,
     lon: -97.7,
     lat: 30.2,

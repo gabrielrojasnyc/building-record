@@ -5,10 +5,11 @@ import { formatAddress } from '@/domain/address';
 import { buildAddressResolver, loadAddressPoints } from './addresses';
 import { emptyCaseSummary, loadCases } from './cases';
 import { loadPublishedUnits, loadRepeatOffenders, type RepeatOffenderRecord } from './context';
+import { assertUniqueAddresses, combineParcels, type LabelledParcel } from './merge';
 import { loadApartmentParcels } from './parcels';
 
 /** A pull that returns fewer rows than a floor below was cut short. Each is well under the live count. */
-export const MIN_EXPECTED_COMPLEXES = 2000; // live: about 2,500
+export const MIN_EXPECTED_COMPLEXES = 2000; // live: about 2,400 once parcels sharing an address are merged
 export const MIN_EXPECTED_CASES = 50_000; // live: 82,384
 export const MIN_EXPECTED_ADDRESS_POINTS = 300_000; // live: 441,043
 export const MIN_EXPECTED_REPEAT_OFFENDER_ROWS = 40; // live: 80
@@ -42,7 +43,7 @@ const roundTo3 = (value: number) => Math.round(value * 1000) / 1000;
 const startsWithHouseNumber = (address: string) => /^\d/.test(address);
 
 function publishedUnits(
-  offender: RepeatOffenderRecord | undefined,
+  offender: RepeatOffenderRecord | null,
   housingUnits: number | undefined,
 ): PublishedUnits | null {
   if (offender && offender.units > 0) return { count: offender.units, source: 'repeat-offender' };
@@ -64,7 +65,6 @@ async function assemble(pulledAt: Date, fetchImpl: typeof fetch, floors: Require
     loadPublishedUnits(fetchImpl),
   ]);
 
-  requireAtLeast('apartment parcels', parcels.length, floors.minComplexes);
   requireAtLeast('address points', addressPoints.length, floors.minAddressPoints);
   requireAtLeast('code cases', caseIndex.totalCases, floors.minCases);
   requireAtLeast('Repeat Offender rows', repeatOffenders.rowsRead, floors.minRepeatOffenderRows);
@@ -74,36 +74,34 @@ async function assemble(pulledAt: Date, fetchImpl: typeof fetch, floors: Require
   const resolveAddress = buildAddressResolver(addressPoints);
   const sorted = [...parcels].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
-  const files: Files = new Map();
-  const complexes: Complex[] = [];
-
-  for (const parcel of sorted) {
-    const summary = caseIndex.byParcel.get(parcel.id) ?? emptyCaseSummary(parcel.id, pulledAt);
-    const offender = offenders.get(parcel.id);
+  const labelled: LabelledParcel[] = sorted.map((parcel) => {
+    const offender = offenders.get(parcel.id) ?? null;
     const registered = offender?.registeredAddress;
-
-    complexes.push({
+    const { label, source } =
+      registered && startsWithHouseNumber(registered)
+        ? { label: formatAddress(registered), source: 'registered' as const }
+        : resolveAddress(parcel);
+    return {
       id: parcel.id,
-      address: registered && startsWithHouseNumber(registered) ? formatAddress(registered) : resolveAddress(parcel),
+      label,
+      source,
       lon: parcel.lon,
       lat: parcel.lat,
-      acres: parcel.acres,
-      cases12: summary.cases12,
-      cases: summary.cases,
-      open: summary.open,
-      lastCase: summary.lastCase,
-      repeatOffender: offender
-        ? {
-            name: offender.name,
-            units: offender.units,
-            activeViolations: offender.activeViolations,
-            totalViolations: offender.totalViolations,
-          }
-        : null,
+      squareFeet: parcel.squareFeet,
+      bbox: parcel.bbox,
+      summary: caseIndex.byParcel.get(parcel.id) ?? emptyCaseSummary(parcel.id, pulledAt),
+      offender,
       units: publishedUnits(offender, housing.get(parcel.id)),
-    });
-    files.set(`buildings/${parcel.id}.json`, JSON.stringify({ ...summary.detail, bbox: parcel.bbox }));
-  }
+    };
+  });
+
+  const properties = combineParcels(labelled);
+  const complexes: Complex[] = properties.map(({ complex }) => complex);
+  requireAtLeast('apartment complexes', complexes.length, floors.minComplexes);
+  assertUniqueAddresses(complexes);
+
+  const files: Files = new Map();
+  for (const { detail } of properties) files.set(`buildings/${detail.id}.json`, JSON.stringify(detail));
 
   const meta: Meta = {
     pulledAt: austinDate.format(pulledAt),

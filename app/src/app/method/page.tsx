@@ -152,10 +152,13 @@ export default async function MethodPage() {
 
           <Section title="What counts as a complex">
             <p>
-              A parcel the city classifies as apartments is one complex. This copy has{" "}
-              {formatCount(meta.complexCount)} complexes. Neighboring parcels are not merged, so a
-              property that spans several parcels shows up as several complexes. Small multifamily
-              buildings are not included.
+              A parcel the city classifies as apartments is one complex, and parcels that share an
+              address are shown as one complex: when parcels carry the same address, taken from
+              inside the parcel or from a Repeat Offender registration, and sit within 250 meters of
+              one another, their cases are counted together under that address. This copy has{" "}
+              {formatCount(meta.complexCount)} complexes. Other neighboring parcels are not merged, so
+              a property that spans parcels with different addresses can still show up as several
+              complexes. Small multifamily buildings are not included.
             </p>
           </Section>
 
@@ -209,9 +212,24 @@ export default async function MethodPage() {
 
           <Section title="How a building is labelled">
             <p>
-              A building is labelled with the city address point inside its parcel, or with the
-              city&apos;s registered address for properties on the Repeat Offender list. That can
-              differ from the address a leasing office uses.
+              Most buildings are labelled with a city address point that falls inside the parcel.
+              When several do, the one with the lowest street number is used.
+            </p>
+            <p>
+              A property on the Repeat Offender list is labelled with the address the city
+              registered it under.
+            </p>
+            <p>
+              When no address point falls inside a parcel, it is labelled with its city parcel ID and
+              the nearest address point within 150 meters, such as Parcel 0123456789, near 100 Main
+              St. That address may belong to a neighbor.
+            </p>
+            <p>
+              When no address point is within 150 meters either, the label is the parcel ID alone.
+            </p>
+            <p>
+              If two complexes far apart would still share a label, each also carries its parcel ID.
+              Any of these labels can differ from the address a leasing office uses.
             </p>
           </Section>
 

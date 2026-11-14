@@ -15,6 +15,7 @@ const counts = (overrides: Partial<Counts> = {}): Counts => ({
 
 const busy: Complex = {
   id: "0304070701",
+  parcelIds: ["0304070701"],
   address: "1601 Royal Crest Dr",
   lon: -97.7287,
   lat: 30.2379,
@@ -49,6 +50,7 @@ const busyDetail: BuildingDetail = {
 
 const clean: Complex = {
   id: "R039648",
+  parcelIds: ["R039648"],
   address: "9805 Copper Creek Dr",
   lon: -97.788,
   lat: 30.4572,
@@ -183,6 +185,14 @@ it("shows units only when the city publishes them", () => {
   cleanup();
   renderPage(clean, cleanDetail);
   expect(screen.getByText("Apartment parcel, 15 acres")).toBeVisible();
+});
+
+it("says how many parcels a complex covers when parcels sharing an address are shown as one", () => {
+  renderPage(
+    { ...clean, parcelIds: ["0168090512", "R072626"], acres: 13.4 },
+    cleanDetail,
+  );
+  expect(screen.getByText("Apartment parcels (2), 13.4 acres")).toBeVisible();
 });
 
 it("notes a listing on the city's Repeat Offender list with its published figures", () => {

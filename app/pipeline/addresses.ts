@@ -8,6 +8,13 @@ const FALLBACK_RADIUS_METRES = 150;
 const GRID_CELL_DEGREES = 0.002;
 const METRES_PER_DEGREE_LAT = 111_195;
 
+/** How a parcel's label was chosen. `registered` is a Repeat Offender registration, applied by the caller. */
+export type LabelSource = 'inside' | 'nearby' | 'none' | 'registered';
+
+export interface ResolvedLabel {
+  label: string;
+  source: Exclude<LabelSource, 'registered'>;
+}
 
 export interface AddressPoint {
   label: string;
@@ -63,7 +70,7 @@ function inParcel(parcel: Parcel, point: AddressPoint): boolean {
 }
 
 /** Equirectangular distance in metres. Accurate to well under a metre at city scale. */
-function metresBetween(a: { lon: number; lat: number }, b: { lon: number; lat: number }): number {
+export function metresBetween(a: { lon: number; lat: number }, b: { lon: number; lat: number }): number {
   const metresPerDegreeLon = METRES_PER_DEGREE_LAT * Math.cos(((a.lat + b.lat) / 2) * (Math.PI / 180));
   return Math.hypot((a.lon - b.lon) * metresPerDegreeLon, (a.lat - b.lat) * METRES_PER_DEGREE_LAT);
 }
@@ -73,16 +80,17 @@ const isLowerNumbered = (a: AddressPoint, b: AddressPoint) =>
   a.number < b.number || (a.number === b.number && a.label < b.label);
 
 /**
- * The address point inside the polygon with the lowest street number. When none is inside,
- * the nearest point within 150 m of the centroid. Otherwise the parcel ID.
+ * The address point inside the polygon with the lowest street number. When none is inside, the
+ * parcel ID with the nearest point within 150 m of the centroid, since that address may be a
+ * neighbor's. Otherwise the parcel ID alone. Labels that carry the ID are unique by construction.
  */
-export function chooseAddress(parcel: Parcel, points: AddressPoint[]): string {
+export function chooseAddress(parcel: Parcel, points: AddressPoint[]): ResolvedLabel {
   const numbered = points.filter((point) => Number.isFinite(point.number));
 
   const inside = numbered.filter((point) => inParcel(parcel, point));
   if (inside.length > 0) {
     const lowest = inside.reduce((best, point) => (isLowerNumbered(point, best) ? point : best));
-    return formatAddress(lowest.label);
+    return { label: formatAddress(lowest.label), source: 'inside' };
   }
 
   let nearest: AddressPoint | null = null;
@@ -95,7 +103,8 @@ export function chooseAddress(parcel: Parcel, points: AddressPoint[]): string {
       nearestMetres = metres;
     }
   }
-  return nearest ? formatAddress(nearest.label) : `Parcel ${parcel.id}`;
+  if (!nearest) return { label: `Parcel ${parcel.id}`, source: 'none' };
+  return { label: `Parcel ${parcel.id}, near ${formatAddress(nearest.label)}`, source: 'nearby' };
 }
 
 const cellOf = (degrees: number) => Math.floor(degrees / GRID_CELL_DEGREES);
@@ -105,7 +114,7 @@ const cellOf = (degrees: number) => Math.floor(degrees / GRID_CELL_DEGREES);
  * the points near it. Gives the same answer as chooseAddress over the full list, in a fraction
  * of the time: build once with all points, then call per parcel.
  */
-export function buildAddressResolver(points: AddressPoint[]): (parcel: Parcel) => string {
+export function buildAddressResolver(points: AddressPoint[]): (parcel: Parcel) => ResolvedLabel {
   const grid = new Map<string, AddressPoint[]>();
   for (const point of points) {
     const key = `${cellOf(point.lon)},${cellOf(point.lat)}`;

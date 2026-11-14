@@ -199,7 +199,10 @@ export function BuildingPanel(props: BuildingPanelProps) {
           {complex.address}
         </Heading>
         <p className={MESSAGE}>
-          Apartment parcel, {complex.acres} acres
+          {complex.parcelIds.length > 1
+            ? `Apartment parcels (${complex.parcelIds.length})`
+            : "Apartment parcel"}
+          , {complex.acres} acres
           {complex.units && `, ${formatCount(complex.units.count)} units`}
         </p>
 

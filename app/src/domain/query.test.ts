@@ -23,6 +23,7 @@ const counts = (overrides: Partial<Counts> = {}): Counts => ({
 function complex(id: string, overrides: Partial<Complex> = {}): Complex {
   return {
     id,
+    parcelIds: [id],
     address: `${id} Main St`,
     lon: -97.74,
     lat: 30.27,
