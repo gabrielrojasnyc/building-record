@@ -21,7 +21,7 @@
 - Colors come only from the Arctic palette: navy `#0B131F`, deep `#16314A`, slate `#2E4F68`, steel `#5F7F98`, mist `#A9BDC9`, ice `#E8EFF3`, coral `#E9A99E`. Coral is used only for Repeat Offender status.
 - Fonts: Instrument Serif (title italic, headings upright) and Outfit (weights 200, 300, 400, 500).
 - Glass panels: white gradient from 24% to 5% opacity at 145 degrees, `backdrop-filter: blur(10px) saturate(1.7)`, 1px white border at 90% opacity.
-- History window starts `2023-11-01`. The two periods are "last 12 months" (rolling from the pull date) and "since Nov 2023".
+- History window starts `2023-11-01`, inclusive. The two periods are "last 12 months" (rolling from the pull date) and "since Nov 2023". The pull date is the calendar date in Austin (`America/Chicago`), not UTC.
 - Every page footer carries: "Not an official City of Austin site. Data: City of Austin Development Services and Austin 311, with no warranty." plus the date of the last data pull.
 - City API calls send the header `X-App-Token` from env `SOCRATA_APP_TOKEN` when set, and work without it.
 - Commit after every task. Commit messages say why, and end with the trailer `Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>`.
@@ -277,7 +277,7 @@ it('never requests the inspector column', () => {
 ```
 
 - [ ] **Step 2:** Run `npm test -- cases`. Expected: FAIL.
-- [ ] **Step 3:** Implement. Select only `parcelid, description, status, opened_date` where `opened_date > '2023-11-01'`. `categoryOf` matches on the first recognised phrase.
+- [ ] **Step 3:** Implement. Select only `parcelid, description, status, opened_date` where `opened_date >= '2023-11-01'` (the window is inclusive of its first day). `categoryOf` matches on the first recognised phrase.
 - [ ] **Step 4:** Run the tests. Expected: PASS.
 - [ ] **Step 5:** Commit.
 
