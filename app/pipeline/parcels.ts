@@ -61,7 +61,7 @@ function boundingBox(polygons: GeoJSON.Position[][][]): Parcel['bbox'] {
   return [west, south, east, north];
 }
 
-/** Apartment land parcels, one per 10-digit parcel ID. The city lists some parcels on several rows. */
+/** Apartment land parcels, one per parcel ID. IDs are usually 10 digits; Williamson County parcels carry R-prefixed IDs. The city lists some parcels on several rows. */
 export async function loadApartmentParcels(fetchImpl: typeof fetch = fetch): Promise<Parcel[]> {
   const rows = await readAll<LandUseRow>(
     LAND_USE_DATASET,
@@ -74,11 +74,12 @@ export async function loadApartmentParcels(fetchImpl: typeof fetch = fetch): Pro
 
   const byId = new Map<string, { polygons: GeoJSON.Position[][][]; squareFeet: number }>();
   for (const row of rows) {
-    if (!row.parcel_id_10 || !/^\d{10}$/.test(row.parcel_id_10)) continue;
-    const entry = byId.get(row.parcel_id_10) ?? { polygons: [], squareFeet: 0 };
+    const id = row.parcel_id_10?.trim();
+    if (!id) continue;
+    const entry = byId.get(id) ?? { polygons: [], squareFeet: 0 };
     entry.polygons.push(...row.the_geom.coordinates);
     entry.squareFeet += Number(row.shape_area);
-    byId.set(row.parcel_id_10, entry);
+    byId.set(id, entry);
   }
 
   return [...byId].map(([id, { polygons, squareFeet }]) => {

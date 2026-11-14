@@ -72,23 +72,29 @@ describe("loadApartmentParcels", () => {
     const parcels = await loadApartmentParcels(fakeFetch(parcelRows).impl);
     const burton = parcels.find((parcel) => parcel.id === "0304070701");
 
-    expect(parcels).toHaveLength(5);
+    expect(parcels).toHaveLength(6);
     expect(burton?.acres).toBe(20.5);
     expect(burton?.lon).toBeCloseTo(-97.7288, 3);
     expect(burton?.lat).toBeCloseTo(30.2379, 3);
   });
 
-  it("skips rows that do not carry a 10-digit parcel ID", async () => {
+  it("keeps R-prefixed Williamson County IDs and skips rows with no ID", async () => {
     const ring = square(-97, 30, 0.001);
     const { impl } = fakeFetch([
       row("R485525", "5000", ring),
       { shape_area: "5000", the_geom: row("x", "1", ring).the_geom },
+      row("  ", "5000", ring),
       row("0000000002", "5000", ring),
     ]);
 
     const parcels = await loadApartmentParcels(impl);
 
-    expect(parcels.map((parcel) => parcel.id)).toEqual(["0000000002"]);
+    expect(parcels.map((parcel) => parcel.id)).toEqual(["R485525", "0000000002"]);
+  });
+
+  it("keeps a real R-prefixed parcel from the city fixture", async () => {
+    const parcels = await loadApartmentParcels(fakeFetch(parcelRows).impl);
+    expect(parcels.map((parcel) => parcel.id)).toContain("R056943");
   });
 });
 
