@@ -1,0 +1,85 @@
+[
+  {
+    "description": "Structure Condition Violation(s)",
+    "status": "Active",
+    "opened_date": "2026-11-10T00:00:00.000",
+    "parcelid": "0100000001"
+  },
+  {
+    "description": "Property Abatement",
+    "status": "Pending",
+    "opened_date": "2026-11-14T00:00:00.000",
+    "parcelid": "0100000001"
+  },
+  {
+    "description": "Land Use Violation(s)",
+    "status": "Closed",
+    "opened_date": "2025-11-14T00:00:00.000",
+    "parcelid": "0100000001"
+  },
+  {
+    "description": "Work Without Permit",
+    "status": "Closed",
+    "opened_date": "2025-11-13T00:00:00.000",
+    "parcelid": "0100000001"
+  },
+  {
+    "description": "Structure Condition Violation(s)",
+    "status": "Closed",
+    "opened_date": "2025-12-15T00:00:00.000",
+    "parcelid": "0100000001"
+  },
+  {
+    "description": "Property Abatement",
+    "status": "Closed",
+    "opened_date": "2025-10-14T00:00:00.000",
+    "parcelid": "0100000001"
+  },
+  {
+    "description": "Structure Condition Violation(s)",
+    "status": "Closed",
+    "opened_date": "2024-03-05T00:00:00.000",
+    "parcelid": "0100000001"
+  },
+  {
+    "description": "Work Without Permit",
+    "status": "Closed",
+    "opened_date": "2023-11-02T00:00:00.000",
+    "parcelid": "0100000001"
+  },
+  {
+    "description": "Land Use Violation(s)",
+    "status": "Closed",
+    "opened_date": "2026-01-20T00:00:00.000",
+    "parcelid": "0100000001"
+  },
+  {
+    "description": "Property Abatement  Property Abatement",
+    "status": "Closed",
+    "opened_date": "2026-06-01T00:00:00.000",
+    "parcelid": " R056943 "
+  },
+  {
+    "description": "Structure Condition Violation(s)",
+    "status": "Closed",
+    "opened_date": "2024-07-31T00:00:00.000",
+    "parcelid": "R056943"
+  },
+  {
+    "description": "Something New",
+    "status": "Active",
+    "opened_date": "2026-02-02T00:00:00.000",
+    "parcelid": "R056943"
+  },
+  {
+    "description": "Property Abatement",
+    "status": "Active",
+    "opened_date": "2026-05-05T00:00:00.000"
+  },
+  {
+    "description": "Land Use Violation(s)",
+    "status": "Closed",
+    "opened_date": "2025-01-09T00:00:00.000",
+    "parcelid": ""
+  }
+]

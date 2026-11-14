@@ -30,3 +30,13 @@ export interface Complex {
   repeatOffender: RepeatOffender | null;
   units: PublishedUnits | null;
 }
+
+export interface BuildingDetail {
+  id: string;
+  /** 'YYYY-MM', every month from 2023-11 to the pull month, zeros included. */
+  monthly: { month: string; count: number }[];
+  /** Newest first, at most 8. */
+  latest: { opened: string; category: Category; status: string }[];
+  /** [west, south, east, north] */
+  bbox: [number, number, number, number];
+}
