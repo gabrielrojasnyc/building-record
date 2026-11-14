@@ -3,6 +3,15 @@ import type { HISTORY_START } from './history';
 export type Category = 'structure' | 'property' | 'landuse' | 'permit';
 export type Counts = Record<Category, number>;
 
+export type Ring = [lon: number, lat: number][];
+/** Polygons, each a list of rings with the outer ring first. Coordinates rounded to 6 decimals. */
+export type Outline = Ring[][];
+
+export interface ComplexName {
+  text: string;
+  source: 'openstreetmap' | 'city';
+}
+
 export interface RepeatOffender {
   name: string | null;
   units: number;
@@ -16,6 +25,8 @@ export interface Complex {
   /** Every parcel shown as this complex, sorted. Parcels that share an address within 250 m are one complex. */
   parcelIds: string[];
   address: string;
+  /** What the property is called, when a trustworthy name exists. The address stays the unique label. */
+  name: ComplexName | null;
   lon: number;
   lat: number;
   acres: number;
@@ -35,6 +46,8 @@ export interface BuildingDetail {
   monthly: { month: string; count: number }[];
   /** Newest first, at most 8. */
   latest: { opened: string; category: Category; status: string }[];
+  /** Every member parcel's polygons, in member order. */
+  outline: Outline;
   /** [west, south, east, north] */
   bbox: [number, number, number, number];
 }
@@ -54,4 +67,8 @@ export interface Meta {
   futureDatedCases: number;
   /** Land use rows left out: no polygon, a missing or non-numeric area, or an ID that is not letters and digits. */
   skippedParcelRows: number;
+  /** Complexes with a name from OpenStreetMap or the city's Repeat Offender registration. */
+  namedComplexes: number;
+  /** Date the OpenStreetMap names snapshot was fetched, YYYY-MM-DD; null when no snapshot was readable. */
+  namesAsOf: string | null;
 }

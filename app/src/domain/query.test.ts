@@ -42,6 +42,7 @@ function complex(id: string, overrides: Partial<Complex> = {}): Complex {
     id,
     parcelIds: [id],
     address: `${id} Main St`,
+    name: null,
     lon: -97.74,
     lat: 30.27,
     acres: 1,

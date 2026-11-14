@@ -1,3 +1,4 @@
+import type { Outline } from '@/domain/types';
 import { readAll } from './socrata';
 
 const LAND_USE_DATASET = '7vsm-dvxg';
@@ -34,6 +35,12 @@ function areaOf(row: LandUseRow): number | null {
   if (!text) return null;
   const squareFeet = Number(text);
   return Number.isFinite(squareFeet) ? squareFeet : null;
+}
+
+/** A parcel's polygons as published: coordinates rounded to 6 decimals, about 10 cm, to keep the building files light. */
+export function toOutline(polygons: GeoJSON.Position[][][]): Outline {
+  const round = (degrees: number) => Math.round(degrees * 1e6) / 1e6;
+  return polygons.map((polygon) => polygon.map((ring) => ring.map(([lon, lat]): [number, number] => [round(lon), round(lat)])));
 }
 
 export function toAcres(squareFeet: number): number {

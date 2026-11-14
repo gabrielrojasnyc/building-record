@@ -19,7 +19,7 @@ export interface CaseSummary {
   open: number;
   /** ISO date of the most recent categorized case. */
   lastCase: string | null;
-  detail: Omit<BuildingDetail, 'bbox'>;
+  detail: Omit<BuildingDetail, 'bbox' | 'outline'>;
 }
 
 export interface CaseIndex {

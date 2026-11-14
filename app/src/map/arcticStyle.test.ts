@@ -19,6 +19,7 @@ const burton: Complex = {
   id: "0123456789",
   parcelIds: ["0123456789"],
   address: "1 Burton Dr",
+  name: null,
   lon: -97.72,
   lat: 30.23,
   acres: 5,

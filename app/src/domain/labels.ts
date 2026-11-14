@@ -1,4 +1,4 @@
-import type { Category } from "./types";
+import type { Category, Complex } from "./types";
 
 /** Said wherever a count could be read as a verdict on a building. */
 export const NO_CASES_CAUTION =
@@ -11,3 +11,8 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   landuse: "Land use",
   permit: "Work without permit",
 };
+
+/** What a complex is called on screen: its name when it has one, otherwise its address. */
+export function titleOf(complex: Complex): string {
+  return complex.name?.text ?? complex.address;
+}

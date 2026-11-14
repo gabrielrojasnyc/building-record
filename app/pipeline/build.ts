@@ -8,7 +8,8 @@ import { buildAddressResolver, loadAddressPoints } from './addresses';
 import { emptyCaseSummary, loadCases } from './cases';
 import { loadRepeatOffenders } from './context';
 import { assertUniqueAddresses, combineParcels, type LabelledParcel } from './merge';
-import { loadApartmentParcels } from './parcels';
+import { NAMES_SNAPSHOT_PATH, chooseName, readNamesSnapshot } from './names';
+import { loadApartmentParcels, toOutline } from './parcels';
 
 /** A pull that returns fewer rows than a floor below was cut short. Each is well under the live count. */
 export const MIN_EXPECTED_COMPLEXES = 2000; // live: about 2,400 once parcels sharing an address are merged
@@ -24,7 +25,11 @@ export interface BuildOptions {
   minAddressPoints?: number;
   minRepeatOffenderRows?: number;
   maxUncategorizedShare?: number;
+  /** The committed OpenStreetMap names file. Missing or unreadable means no OpenStreetMap names. */
+  namesSnapshotPath?: string;
 }
+
+type Floors = Required<Omit<BuildOptions, 'namesSnapshotPath'>>;
 
 function requireAtLeast(dataset: string, received: number, floor: number): void {
   if (received < floor) {
@@ -43,12 +48,18 @@ const SAFE_PARCEL_ID = /^[A-Za-z0-9]+$/;
 /** Files to publish, keyed by path relative to the output directory. */
 type Files = Map<string, string>;
 
-async function assemble(pulledAt: Date, fetchImpl: typeof fetch, floors: Required<BuildOptions>): Promise<{ files: Files; meta: Meta }> {
-  const [landUse, addressPoints, caseIndex, repeatOffenders] = await Promise.all([
+async function assemble(
+  pulledAt: Date,
+  fetchImpl: typeof fetch,
+  floors: Floors,
+  namesSnapshotPath: string,
+): Promise<{ files: Files; meta: Meta }> {
+  const [landUse, addressPoints, caseIndex, repeatOffenders, namesSnapshot] = await Promise.all([
     loadApartmentParcels(fetchImpl),
     loadAddressPoints(fetchImpl),
     loadCases(pulledAt, fetchImpl),
     loadRepeatOffenders(fetchImpl),
+    readNamesSnapshot(namesSnapshotPath),
   ]);
 
   requireAtLeast('address points', addressPoints.length, floors.minAddressPoints);
@@ -84,12 +95,17 @@ async function assemble(pulledAt: Date, fetchImpl: typeof fetch, floors: Require
       lat: parcel.lat,
       squareFeet: parcel.squareFeet,
       bbox: parcel.bbox,
+      outline: toOutline(parcel.polygon.coordinates),
       summary: caseIndex.byParcel.get(parcel.id) ?? emptyCaseSummary(parcel.id, pulledAt),
       offender,
     };
   });
 
-  const properties = combineParcels(labelled);
+  const places = namesSnapshot?.places ?? [];
+  const properties = combineParcels(labelled).map(({ complex, detail }) => ({
+    complex: { ...complex, name: chooseName(detail.outline, places, complex.repeatOffender?.name ?? null) },
+    detail,
+  }));
   const complexes: Complex[] = properties.map(({ complex }) => complex);
   requireAtLeast('apartment complexes', complexes.length, floors.minComplexes);
   assertUniqueAddresses(complexes);
@@ -106,6 +122,8 @@ async function assemble(pulledAt: Date, fetchImpl: typeof fetch, floors: Require
     uncategorizedCases: caseIndex.uncategorizedCases,
     futureDatedCases: caseIndex.futureDatedCases,
     skippedParcelRows,
+    namedComplexes: complexes.filter(({ name }) => name !== null).length,
+    namesAsOf: namesSnapshot?.fetchedAt ?? null,
   };
   files.set('complexes.json', JSON.stringify(complexes));
   files.set('meta.json', JSON.stringify(meta));
@@ -156,10 +174,11 @@ export async function buildData(
     minAddressPoints = MIN_EXPECTED_ADDRESS_POINTS,
     minRepeatOffenderRows = MIN_EXPECTED_REPEAT_OFFENDER_ROWS,
     maxUncategorizedShare = MAX_UNCATEGORIZED_SHARE,
+    namesSnapshotPath = NAMES_SNAPSHOT_PATH,
   }: BuildOptions = {},
 ): Promise<Meta> {
   const floors = { minComplexes, minCases, minAddressPoints, minRepeatOffenderRows, maxUncategorizedShare };
-  const { files, meta } = await assemble(pulledAt, fetchImpl, floors);
+  const { files, meta } = await assemble(pulledAt, fetchImpl, floors, namesSnapshotPath);
 
   await mkdir(dirname(outDir), { recursive: true });
   const staged = `${outDir}.staging-${process.pid}`;

@@ -9,6 +9,7 @@ function complex(id: string, address: string): Complex {
     id,
     parcelIds: [id],
     address,
+    name: null,
     lon: -97.7,
     lat: 30.2,
     acres: 2,

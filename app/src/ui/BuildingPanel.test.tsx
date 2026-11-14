@@ -17,6 +17,7 @@ const busy: Complex = {
   id: "0304070701",
   parcelIds: ["0304070701"],
   address: "1601 Royal Crest Dr",
+  name: null,
   lon: -97.7287,
   lat: 30.2379,
   acres: 20.5,
@@ -44,6 +45,7 @@ const busyDetail: BuildingDetail = {
     { opened: "2026-05-20", category: "structure", status: "Active" },
     { opened: "2026-04-28", category: "landuse", status: "Closed" },
   ],
+  outline: [],
   bbox: [-97.7308, 30.2361, -97.7277, 30.2408],
 };
 
@@ -51,6 +53,7 @@ const clean: Complex = {
   id: "R039648",
   parcelIds: ["R039648"],
   address: "9805 Copper Creek Dr",
+  name: null,
   lon: -97.788,
   lat: 30.4572,
   acres: 15,
@@ -68,6 +71,7 @@ const cleanDetail: BuildingDetail = {
     { month: "2026-11", count: 0 },
   ],
   latest: [],
+  outline: [],
   bbox: [-97.79, 30.456, -97.787, 30.458],
 };
 

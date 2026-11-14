@@ -91,6 +91,17 @@ function parcel(
       ORIGIN.lon + 0.0005,
       lat + 0.0005,
     ],
+    outline: [
+      [
+        [
+          [ORIGIN.lon - 0.0005, lat - 0.0005],
+          [ORIGIN.lon + 0.0005, lat - 0.0005],
+          [ORIGIN.lon + 0.0005, lat + 0.0005],
+          [ORIGIN.lon - 0.0005, lat + 0.0005],
+          [ORIGIN.lon - 0.0005, lat - 0.0005],
+        ],
+      ],
+    ],
     summary: summary(id),
     offender: null,
     ...overrides,
@@ -175,6 +186,15 @@ describe("combineParcels", () => {
       quiet.bbox[2],
       quiet.bbox[3],
     ]);
+  });
+
+  it("gives a merged complex every member parcel's polygons, in member order, and no name yet", () => {
+    const first = parcel("0000000002");
+    const second = parcel("0000000001", { metresNorth: 20 });
+    const [{ complex, detail }] = combineParcels([first, second]);
+    expect(detail.outline).toEqual([...second.outline, ...first.outline]);
+    expect(detail.outline).toHaveLength(2);
+    expect(complex.name).toBeNull();
   });
 
   it("sums the exact areas before rounding to a tenth of an acre", () => {

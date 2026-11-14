@@ -38,13 +38,18 @@ const STREET_TYPE_ABBREVIATIONS: Record<string, string> = {
   WAY: 'WAY',
 };
 
+/** Frontage-road directions that can follow the street type. */
+const TRAILING_DIRECTIONS = new Set(['NB', 'SB', 'EB', 'WB']);
+
 /**
  * A Repeat Offender registration's address in the address dataset's form: no parenthetical
- * (some list every building number), single spaces, and a trailing street-type word abbreviated.
+ * (some list every building number), single spaces, and the street-type word abbreviated when it
+ * is the last word or is followed only by a trailing direction such as NB.
  */
 export function formatRegisteredAddress(raw: string): string {
   const words = raw.replace(/\([^)]*\)/g, ' ').trim().toUpperCase().split(/\s+/);
   const last = words.length - 1;
-  words[last] = STREET_TYPE_ABBREVIATIONS[words[last]] ?? words[last];
+  const streetType = words.length > 1 && TRAILING_DIRECTIONS.has(words[last]) ? last - 1 : last;
+  words[streetType] = STREET_TYPE_ABBREVIATIONS[words[streetType]] ?? words[streetType];
   return formatAddress(words.join(' '));
 }

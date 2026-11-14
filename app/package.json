@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "data": "tsx pipeline/run.ts",
+    "names": "tsx pipeline/refreshNames.ts",
     "data:ensure": "tsx pipeline/run.ts --if-missing",
     "e2e": "playwright test"
   },

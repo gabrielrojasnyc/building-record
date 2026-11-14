@@ -2,6 +2,7 @@ import type {
   BuildingDetail,
   Complex,
   Counts,
+  Outline,
 } from "@/domain/types";
 import { caseTotal } from "@/domain/query";
 import { metresBetween, type LabelSource } from "./addresses";
@@ -25,6 +26,8 @@ export interface LabelledParcel {
   lat: number;
   squareFeet: number;
   bbox: BuildingDetail["bbox"];
+  /** This parcel's polygons. */
+  outline: Outline;
   summary: CaseSummary;
   /** An active Repeat Offender registration on this parcel. */
   offender: RepeatOffenderRecord | null;
@@ -136,6 +139,8 @@ function combine(group: LabelledParcel[]): Property {
     id: busiest.id,
     parcelIds: members.map(({ id }) => id),
     address: busiest.label,
+    // Chosen later, in the build, from the names snapshot and the registration.
+    name: null,
     lon: roundTo6(largest.lon),
     lat: roundTo6(largest.lat),
     acres: toAcres(members.reduce((sum, member) => sum + member.squareFeet, 0)),
@@ -165,6 +170,7 @@ function combine(group: LabelledParcel[]): Property {
         .flatMap(({ detail }) => detail.latest)
         .sort(newestFirst)
         .slice(0, LATEST_LIMIT),
+      outline: members.flatMap(({ outline }) => outline),
       bbox: unionBox(members.map(({ bbox }) => bbox)),
     },
   };

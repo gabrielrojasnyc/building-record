@@ -53,7 +53,21 @@ describe('formatRegisteredAddress', () => {
 
   it('abbreviates only the last word, so a street named for a street type keeps its name', () => {
     expect(formatRegisteredAddress('12 PARKWAY PLACE')).toBe('12 Parkway Pl');
-    expect(formatRegisteredAddress('8071 N LAMAR BOULEVARD NB')).toBe('8071 N Lamar Boulevard NB');
+  });
+
+  it.each([
+    ['2200 Capital Of Texas Highway NB', '2200 Capital Of Texas Hwy NB'],
+    ['8071 N LAMAR BOULEVARD NB', '8071 N Lamar Blvd NB'],
+    ['5000 BURNET ROAD SB', '5000 Burnet Rd SB'],
+    ['100 SOME PARKWAY EB', '100 Some Pkwy EB'],
+    ['100 SOME PARKWAY WB', '100 Some Pkwy WB'],
+  ])('abbreviates the street type before a trailing direction: %s becomes %s', (raw, expected) => {
+    expect(formatRegisteredAddress(raw)).toBe(expected);
+  });
+
+  it('abbreviates a street type followed by anything other than a trailing direction only when it is last', () => {
+    expect(formatRegisteredAddress('12 LAKE HIGHWAY PLAZA')).toBe('12 Lake Highway Plaza');
+    expect(formatRegisteredAddress('12 BOULEVARD OAKS')).toBe('12 Boulevard Oaks');
   });
 
   it('collapses the space a removed parenthetical leaves behind', () => {

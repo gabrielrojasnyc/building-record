@@ -58,8 +58,10 @@ const FIXTURES: Record<string, unknown[]> = {
   '9s7j-tygf': addressRows,
   '6wtj-zbtb': caseFixture(),
   // Registered the way the city writes some addresses: every building number listed, the street type spelled out.
+  // The registration leads with 1519, while the address point inside the parcel says 1515, so only
+  // the registered-address path can produce '1519 Royal Crest Dr'.
   '86z9-i27i': repeatOffenderRows.map((row) =>
-    row.parcelid === BIG_PARCEL ? { ...row, foldername: '1515 (AKA 1517, 1519) ROYAL CREST DRIVE' } : row,
+    row.parcelid === BIG_PARCEL ? { ...row, foldername: '1519 (AKA 1521, 1523) ROYAL CREST DRIVE' } : row,
   ),
 };
 
@@ -74,7 +76,14 @@ const failingOn = (datasetId: string) =>
       ? new Response('forbidden', { status: 403 })
       : fixtureFetch(url)) as typeof fetch;
 
+/** Written fresh for each test, so no test depends on the committed OpenStreetMap snapshot. */
+let namesRoot: string;
+let namesPath: string;
+const writeNames = (places: { name: string; lon: number; lat: number }[], fetchedAt = '2026-11-10') =>
+  writeFileSync(namesPath, JSON.stringify({ fetchedAt, places }));
+
 const LOW = { minComplexes: 1, minCases: 1, minAddressPoints: 1, minRepeatOffenderRows: 1 };
+const options = () => ({ ...LOW, namesSnapshotPath: namesPath });
 
 const readJson = <T>(path: string) => JSON.parse(readFileSync(path, 'utf8')) as T;
 
@@ -84,14 +93,20 @@ let out: string;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'build-test-'));
   out = join(root, 'data');
+  namesRoot = mkdtempSync(join(tmpdir(), 'names-test-'));
+  namesPath = join(namesRoot, 'apartment-names.json');
+  writeNames([]);
 });
-afterEach(() => rmSync(root, { recursive: true, force: true }));
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true });
+  rmSync(namesRoot, { recursive: true, force: true });
+});
 
 const complexById = (id: string) => readJson<Complex[]>(`${out}/complexes.json`).find((c) => c.id === id)!;
 
 describe('buildData', () => {
   it('writes one Complex per property, including parcels with no cases', async () => {
-    const meta = await buildData(out, NOW, fixtureFetch, LOW);
+    const meta = await buildData(out, NOW, fixtureFetch, options());
     const complexes = readJson<Complex[]>(`${out}/complexes.json`);
     expect(complexes).toHaveLength(6);
     expect(complexes.map((c) => c.id)).toEqual([...complexes.map((c) => c.id)].sort());
@@ -102,7 +117,7 @@ describe('buildData', () => {
   });
 
   it('shows the same land under two parcel IDs as one complex, under the busier ID, with one page', async () => {
-    await buildData(out, NOW, fixtureFetch, LOW);
+    await buildData(out, NOW, fixtureFetch, options());
     const twin = complexById(TWIN);
     expect(twin.parcelIds).toEqual(['0204080102', TWIN]);
     expect(twin.address).toBe('1638 E 2nd St');
@@ -114,7 +129,7 @@ describe('buildData', () => {
   });
 
   it('leaves out a parcel whose ID is not letters and digits before it can name a file', async () => {
-    await buildData(out, NOW, fixtureFetch, LOW);
+    await buildData(out, NOW, fixtureFetch, options());
     const ids = readJson<Complex[]>(`${out}/complexes.json`).flatMap((c) => c.parcelIds);
     expect(ids.every((id) => /^[A-Za-z0-9]+$/.test(id))).toBe(true);
     expect(readdirSync(root)).toEqual(['data']);
@@ -122,7 +137,7 @@ describe('buildData', () => {
   });
 
   it('publishes coordinates to 6 decimals, about 10 cm, to keep the page light', async () => {
-    await buildData(out, NOW, fixtureFetch, LOW);
+    await buildData(out, NOW, fixtureFetch, options());
     for (const { lon, lat } of readJson<Complex[]>(`${out}/complexes.json`)) {
       expect(Math.round(lon * 1e6) / 1e6).toBe(lon);
       expect(Math.round(lat * 1e6) / 1e6).toBe(lat);
@@ -130,13 +145,13 @@ describe('buildData', () => {
   });
 
   it('never publishes two complexes under one address', async () => {
-    await buildData(out, NOW, fixtureFetch, LOW);
+    await buildData(out, NOW, fixtureFetch, options());
     const addresses = readJson<Complex[]>(`${out}/complexes.json`).map((c) => c.address);
     expect(new Set(addresses).size).toBe(addresses.length);
   });
 
   it('publishes meta with the Austin pull date and case shares', async () => {
-    const meta = await buildData(out, NOW, fixtureFetch, LOW);
+    const meta = await buildData(out, NOW, fixtureFetch, options());
     expect(readJson<Meta>(`${out}/meta.json`)).toEqual(meta);
     expect(meta).toEqual({
       pulledAt: '2026-11-14',
@@ -147,17 +162,19 @@ describe('buildData', () => {
       uncategorizedCases: 1,
       futureDatedCases: 1,
       skippedParcelRows: 2,
+      namedComplexes: 1,
+      namesAsOf: '2026-11-10',
     });
   });
 
   it('uses the Austin calendar date even when UTC has already rolled over', async () => {
     const lateEvening = new Date('2026-11-15T03:30:00Z');
-    const meta = await buildData(out, lateEvening, fixtureFetch, LOW);
+    const meta = await buildData(out, lateEvening, fixtureFetch, options());
     expect(meta.pulledAt).toBe('2026-11-14');
   });
 
   it('publishes no unit count of its own: the only one is the Repeat Offender figure', async () => {
-    await buildData(out, NOW, fixtureFetch, LOW);
+    await buildData(out, NOW, fixtureFetch, options());
     for (const complex of readJson<Complex[]>(`${out}/complexes.json`)) {
       expect(Object.keys(complex)).not.toContain('units');
     }
@@ -165,7 +182,7 @@ describe('buildData', () => {
   });
 
   it('uses the Repeat Offender establishment name and never an owner field', async () => {
-    await buildData(out, NOW, fixtureFetch, LOW);
+    await buildData(out, NOW, fixtureFetch, options());
     expect(complexById(BIG_PARCEL).repeatOffender).toEqual({
       name: 'Riverside Terrace Apartments',
       units: 300,
@@ -180,15 +197,15 @@ describe('buildData', () => {
   });
 
   it('takes the address from the city registration for a listed property and from containment otherwise', async () => {
-    await buildData(out, NOW, fixtureFetch, LOW);
-    expect(complexById(BIG_PARCEL).address).toBe('1515 Royal Crest Dr');
+    await buildData(out, NOW, fixtureFetch, options());
+    expect(complexById(BIG_PARCEL).address).toBe('1519 Royal Crest Dr');
     // Active but registered under a name with no house number: containment applies.
     expect(complexById('0312130115').address).not.toMatch(/PARCEL ONLY/i);
     expect(complexById(NO_CASES).address).not.toBe('');
   });
 
   it('writes a BuildingDetail with the parcel bbox for every complex', async () => {
-    await buildData(out, NOW, fixtureFetch, LOW);
+    await buildData(out, NOW, fixtureFetch, options());
     const complexes = readJson<Complex[]>(`${out}/complexes.json`);
     for (const { id } of complexes) {
       const detail = readJson<BuildingDetail>(`${out}/buildings/${id}.json`);
@@ -204,9 +221,73 @@ describe('buildData', () => {
     expect(big.latest).toHaveLength(8);
   });
 
+  it('writes each complex its outline, rounded to 6 decimals, with every member parcel\'s polygons', async () => {
+    await buildData(out, NOW, fixtureFetch, options());
+    for (const { id } of readJson<Complex[]>(`${out}/complexes.json`)) {
+      const { outline } = readJson<BuildingDetail>(`${out}/buildings/${id}.json`);
+      expect(outline.length).toBeGreaterThan(0);
+      for (const polygon of outline) {
+        expect(polygon[0].length).toBeGreaterThanOrEqual(4);
+        for (const [lon, lat] of polygon.flat()) {
+          expect(Math.round(lon * 1e6) / 1e6).toBe(lon);
+          expect(Math.round(lat * 1e6) / 1e6).toBe(lat);
+        }
+      }
+    }
+    const twin = readJson<BuildingDetail>(`${out}/buildings/${TWIN}.json`);
+    expect(twin.outline).toHaveLength(2);
+    const [west, south, east, north] = twin.bbox;
+    for (const [lon, lat] of twin.outline.flat(2)) {
+      expect(lon).toBeGreaterThanOrEqual(west - 1e-6);
+      expect(lon).toBeLessThanOrEqual(east + 1e-6);
+      expect(lat).toBeGreaterThanOrEqual(south - 1e-6);
+      expect(lat).toBeLessThanOrEqual(north + 1e-6);
+    }
+  });
+
+  it('writes each complex its name, and counts named complexes in meta', async () => {
+    const [bigLon, bigLat] = [-97.728744, 30.23791];
+    const [smallLon, smallLat] = [-97.716249, 30.335624];
+    writeNames([
+      { name: 'Royal Crest', lon: bigLon, lat: bigLat },
+      { name: 'Royal Crest', lon: bigLon + 0.0001, lat: bigLat },
+      { name: 'Guadalupe North', lon: smallLon, lat: smallLat },
+      { name: 'Guadalupe South', lon: smallLon, lat: smallLat },
+      { name: 'Somewhere Else', lon: -97.0, lat: 30.0 },
+    ]);
+    const meta = await buildData(out, NOW, fixtureFetch, options());
+    expect(complexById(BIG_PARCEL).name).toEqual({ text: 'Royal Crest', source: 'openstreetmap' });
+    // Two different names inside: no name at all, and the city's name is not used to break the tie.
+    expect(complexById('0231091509').name).toBeNull();
+    expect(complexById(NO_CASES).name).toBeNull();
+    expect(meta.namedComplexes).toBe(1);
+    expect(meta.namesAsOf).toBe('2026-11-10');
+    expect(readJson<Meta>(`${out}/meta.json`)).toEqual(meta);
+  });
+
+  it('falls back to the Repeat Offender registration name when OpenStreetMap has none inside', async () => {
+    await buildData(out, NOW, fixtureFetch, options());
+    expect(complexById(BIG_PARCEL).name).toEqual({ text: 'Riverside Terrace Apartments', source: 'city' });
+  });
+
+  it('builds without names when the snapshot file is missing', async () => {
+    rmSync(namesPath);
+    const meta = await buildData(out, NOW, fixtureFetch, options());
+    expect(meta.namesAsOf).toBeNull();
+    expect(meta.complexCount).toBe(6);
+    expect(complexById(BIG_PARCEL).name?.source).toBe('city');
+  });
+
+  it('builds without OpenStreetMap names when the snapshot file is unreadable', async () => {
+    writeFileSync(namesPath, '{"fetchedAt": ');
+    const meta = await buildData(out, NOW, fixtureFetch, options());
+    expect(meta.namesAsOf).toBeNull();
+    expect(meta.complexCount).toBe(6);
+  });
+
   it('writes nothing when any dataset read fails', async () => {
     for (const dataset of Object.keys(FIXTURES)) {
-      await expect(buildData(out, NOW, failingOn(dataset), LOW)).rejects.toBeInstanceOf(CityApiError);
+      await expect(buildData(out, NOW, failingOn(dataset), options())).rejects.toBeInstanceOf(CityApiError);
       expect(existsSync(out)).toBe(false);
     }
   });
@@ -214,7 +295,7 @@ describe('buildData', () => {
   it('leaves the previous files untouched when a pull fails', async () => {
     mkdirSync(out);
     writeFileSync(`${out}/meta.json`, '{"yesterday":true}');
-    await expect(buildData(out, NOW, failingOn('6wtj-zbtb'), LOW)).rejects.toBeInstanceOf(CityApiError);
+    await expect(buildData(out, NOW, failingOn('6wtj-zbtb'), options())).rejects.toBeInstanceOf(CityApiError);
     expect(readFileSync(`${out}/meta.json`, 'utf8')).toBe('{"yesterday":true}');
     expect(readdirSync(root)).toEqual(['data']);
   });
@@ -222,7 +303,7 @@ describe('buildData', () => {
   it('replaces the previous files completely on success', async () => {
     mkdirSync(`${out}/buildings`, { recursive: true });
     writeFileSync(`${out}/buildings/stale.json`, '{}');
-    await buildData(out, NOW, fixtureFetch, LOW);
+    await buildData(out, NOW, fixtureFetch, options());
     expect(existsSync(`${out}/buildings/stale.json`)).toBe(false);
     expect(existsSync(`${out}/meta.json`)).toBe(true);
     expect(readdirSync(root)).toEqual(['data']);
@@ -235,7 +316,7 @@ describe('buildData', () => {
   ])('refuses to publish over good data when %s is short (%s)', async (_dataset, label, option) => {
     mkdirSync(out);
     writeFileSync(`${out}/meta.json`, '{"yesterday":true}');
-    const tooHigh = { ...LOW, [option]: 1_000_000 };
+    const tooHigh = { ...options(), [option]: 1_000_000 };
     await expect(buildData(out, NOW, fixtureFetch, tooHigh)).rejects.toThrow(new RegExp(`Only \\d+ ${label} came back, expected at least 1000000`));
     expect(readFileSync(`${out}/meta.json`, 'utf8')).toBe('{"yesterday":true}');
     expect(readdirSync(root)).toEqual(['data']);
@@ -250,16 +331,16 @@ describe('buildData', () => {
     mkdirSync(out);
     writeFileSync(`${out}/meta.json`, '{"yesterday":true}');
     // The fixture has 1 unrecognized case in 303, about 0.3%: under the default, over a stricter limit.
-    await expect(buildData(out, NOW, fixtureFetch, { ...LOW, maxUncategorizedShare: 0.001 })).rejects.toThrow(
+    await expect(buildData(out, NOW, fixtureFetch, { ...options(), maxUncategorizedShare: 0.001 })).rejects.toThrow(
       /1 of 303 cases \(0\.3%\) carry a description this site does not recognize/,
     );
     expect(readFileSync(`${out}/meta.json`, 'utf8')).toBe('{"yesterday":true}');
-    await expect(buildData(out, NOW, fixtureFetch, LOW)).resolves.toMatchObject({ uncategorizedCases: 1 });
+    await expect(buildData(out, NOW, fixtureFetch, options())).resolves.toMatchObject({ uncategorizedCases: 1 });
   });
 
   it('refuses to write when fewer than MIN_EXPECTED_COMPLEXES come back', async () => {
     expect(MIN_EXPECTED_COMPLEXES).toBe(2000);
-    await expect(buildData(out, NOW, fixtureFetch, { ...LOW, minComplexes: MIN_EXPECTED_COMPLEXES })).rejects.toThrow(/6 .*2000/);
+    await expect(buildData(out, NOW, fixtureFetch, { ...options(), minComplexes: MIN_EXPECTED_COMPLEXES })).rejects.toThrow(/6 .*2000/);
     expect(existsSync(out)).toBe(false);
   });
 });

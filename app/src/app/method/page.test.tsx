@@ -13,6 +13,8 @@ const meta: Meta = {
   uncategorizedCases: 0,
   futureDatedCases: 0,
   skippedParcelRows: 0,
+  namedComplexes: 0,
+  namesAsOf: null,
 };
 
 vi.mock("../dataFiles", () => ({

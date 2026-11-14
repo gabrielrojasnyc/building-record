@@ -12,6 +12,8 @@ const meta: Meta = {
   uncategorizedCases: 0,
   futureDatedCases: 0,
   skippedParcelRows: 0,
+  namedComplexes: 0,
+  namesAsOf: null,
 };
 
 it("says the site is not official, gives the pull date and links to the method page", () => {
