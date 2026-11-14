@@ -24,7 +24,7 @@
 - History window starts `2023-11-01`. The two periods are "last 12 months" (rolling from the pull date) and "since Nov 2023".
 - Every page footer carries: "Not an official City of Austin site. Data: City of Austin Development Services and Austin 311, with no warranty." plus the date of the last data pull.
 - City API calls send the header `X-App-Token` from env `SOCRATA_APP_TOKEN` when set, and work without it.
-- Commit after every task. Commit messages say why.
+- Commit after every task. Commit messages say why, and end with the trailer `Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>`.
 
 ## Decisions made in this plan
 
@@ -60,7 +60,7 @@ app/
     context.ts               Repeat Offender and published unit counts
     build.ts                 run all of the above, write data/
     fixtures/                small recorded API responses for tests
-  data/                      generated; git-ignored
+  public/data/               generated; git-ignored; read by server components from disk and by the browser over HTTP
     complexes.json           Complex[] for the map and tray
     buildings/<id>.json      BuildingDetail per parcel
     meta.json                Meta
@@ -93,7 +93,7 @@ app/
 **Interfaces:**
 - Produces: Tailwind theme colors `navy deep slate steel mist ice coral`; font families `font-display` (Instrument Serif) and `font-sans` (Outfit); `<Glass as? className?>` component rendering the glass surface; npm scripts `test` (vitest run), `data` (runs the pipeline), `build`.
 
-- [ ] **Step 1:** Run `git init` at the repo root if `.git` is absent. Add `.gitignore` entries: `app/node_modules`, `app/.next`, `app/data`, `.env*`.
+- [ ] **Step 1:** Run `git init` at the repo root if `.git` is absent. The repo and `.gitignore` already exist (branch `apartment-finder`); confirm `.gitignore` lists `app/node_modules`, `app/.next`, `app/public/data`, `.env*`.
 - [ ] **Step 2:** Look up current `create-next-app` flags and Tailwind theme configuration in Context7, then scaffold `app/`.
 - [ ] **Step 3:** Write the failing test.
 
@@ -301,7 +301,8 @@ export function loadPublishedUnits(fetchImpl?: typeof fetch): Promise<Map<string
 export interface Meta { pulledAt: string; since: '2023-11-01'; complexCount: number; caseCount: number; unmatchedCaseShare: number; uncategorizedCases: number }
 
 // pipeline/build.ts
-export function buildData(outDir: string, pulledAt: Date, fetchImpl?: typeof fetch): Promise<Meta>
+export const MIN_EXPECTED_COMPLEXES = 2000;
+export function buildData(outDir: string, pulledAt: Date, fetchImpl?: typeof fetch, options?: { minComplexes?: number }): Promise<Meta>   // minComplexes defaults to MIN_EXPECTED_COMPLEXES
 ```
 
 Output: `complexes.json` (`Complex[]`, sorted by `id`), `buildings/<id>.json` (`BuildingDetail`), `meta.json` (`Meta`).
@@ -310,7 +311,7 @@ Output: `complexes.json` (`Complex[]`, sorted by `id`), `buildings/<id>.json` (`
 
 ```ts
 it('writes one Complex per apartment parcel, including parcels with no cases', async () => {
-  const meta = await buildData(tmp, new Date('2026-11-14'), fixtureFetch);
+  const meta = await buildData(tmp, new Date('2026-11-14'), fixtureFetch, { minComplexes: 1 });
   const complexes = readJson(`${tmp}/complexes.json`);
   expect(complexes).toHaveLength(5);
   expect(complexes.find(c => c.id === '0304070701').cases.structure).toBe(254);
@@ -325,12 +326,12 @@ it('writes nothing when any dataset read fails', async () => {
   await expect(buildData(tmp, now, failingOn('6wtj-zbtb'))).rejects.toBeInstanceOf(CityApiError);
   expect(existsSync(`${tmp}/complexes.json`)).toBe(false);
 });
-it('refuses to write when fewer than 2,000 complexes come back', ...);   // guards against a silently truncated pull
+it('refuses to write when fewer than MIN_EXPECTED_COMPLEXES come back', ...);   // default floor, 5 fixture parcels; guards against a silently truncated pull
 ```
 
 - [ ] **Step 2:** Run `npm test -- build context`. Expected: FAIL.
-- [ ] **Step 3:** Implement. Build everything in memory, write to a temporary directory, then rename it into place so a failure leaves the old files untouched. The 2,000 floor is a named constant, `MIN_EXPECTED_COMPLEXES`.
-- [ ] **Step 4:** Wire `npm run data` to run `buildData('data', new Date())`. Make `npm run build` run `data` first.
+- [ ] **Step 3:** Implement. Build everything in memory, write to a temporary directory, then rename it into place so a failure leaves the old files untouched. Task 5 builds its own cases fixture for this integration test, generated in code so parcel `0304070701` has 254 structure, 24 property, 5 land use and 1 permit case; Task 4's 12-case fixture stays as it is.
+- [ ] **Step 4:** Wire `npm run data` to run `buildData('public/data', new Date())`. Add `npm run data:ensure`, which runs `data` only when `public/data/meta.json` is missing or env `REFRESH_DATA=1`, and make `npm run build` run `data:ensure` first. (A fresh deploy checkout never has the files, so every deploy pulls; local rebuilds do not hammer the city API.)
 - [ ] **Step 5:** Run the tests. Expected: PASS. Then run `npm run data` once for real. Expected: about 2,500 complexes, `meta.unmatchedCaseShare` near 0.13, and parcel `0304070701` showing 284 cases since Nov 2023 (the figure verified on 2026-11-14; a slightly higher number is fine).
 - [ ] **Step 6:** Commit.
 
@@ -477,6 +478,7 @@ Fixed copy and values:
 - Card: the count in weight 200; `None` in italic Instrument Serif when zero; caption `code cases` / `code case` / `no cases on file`; address; second line `Mostly <category label, lowercase>` or `<acres> acres` when there are no cases; a coral `Repeat Offender` tag when applicable.
 - Category labels: `Structure condition`, `Property upkeep`, `Land use`, `Work without permit`.
 - The tray renders at most 40 cards, then one card reading `<n> more in view. Zoom in to narrow them down.` Empty state: `No apartment complexes in this part of the map. Zoom out or jump to an area.`
+- Each tray card is a `<button data-testid="card">`.
 - `AREAS`: Downtown `[-97.7431, 30.2680]`, The Domain `[-97.7220, 30.4020]`, East Riverside `[-97.7250, 30.2370]`, South Lamar `[-97.7700, 30.2480]`, Rundberg `[-97.7030, 30.3620]`, Mueller `[-97.7050, 30.2980]`; jump zoom 13.9.
 - A fixed, click-through fog layer sits between the map and the panels: ice at 88% fading out by 36% from the top, slate at 30% fading out by 40% from the bottom (the `.mist` rule in `mockup/styles.css`).
 - Layout and sizes: copy from `mockup/styles.css` (intro 340 px wide; cards 232 by 148 px; panel radius 28 px, card radius 22 px; phone breakpoint 760 px).
@@ -502,7 +504,7 @@ it('never renders the words score, grade, rating or rank', () => {
 ```
 
 - [ ] **Step 2:** Run `npm test -- Filters Tray`. Expected: FAIL.
-- [ ] **Step 3:** Implement the components. `page.tsx` is a server component that reads `data/complexes.json` and `data/meta.json` and hands them to one client component holding `view`, `bounds`, `selectedId` and `hoveredId`. The view is kept in the URL query string so a filtered map can be shared.
+- [ ] **Step 3:** Implement the components. `page.tsx` is a server component that reads `public/data/complexes.json` and `public/data/meta.json` from disk and hands them to one client component holding `view`, `bounds`, `selectedId` and `hoveredId`. The view is kept in the URL query string so a filtered map can be shared.
 - [ ] **Step 4:** Run the tests and `npm run build`. Expected: PASS.
 - [ ] **Step 5:** Commit.
 
@@ -525,7 +527,7 @@ export interface RequestTypeCount { type: string; count: number }
 export function load311Summary(bbox: BuildingDetail['bbox'], fetchImpl?: typeof fetch): Promise<RequestTypeCount[]>   // top 6 types since 2023-11-01, dataset xwdj-i9he
 ```
 
-Content, top to bottom: address; `Apartment parcel, <acres> acres` plus `, <n> units` when published; Repeat Offender note (`On the city's Repeat Offender list`, name, units, `<active> active of <total> total violations`); the count for the current period with caption; three figures (the other period, `open now`, latest case date); `What the cases were about` (four bars); `Month by month` (one bar per month, caption `Busiest month: <n>`); `Latest cases` (date, category label, status); `311 requests at this address` (loaded in the browser); source line linking `https://data.austintexas.gov/d/6wtj-zbtb` and `https://data.austintexas.gov/d/xwdj-i9he`, followed by: `No cases means none reached Code Enforcement. It does not mean the building has no problems.`
+Content, top to bottom: address; `Apartment parcel, <acres> acres` plus `, <n> units` when published; Repeat Offender note (`On the city's Repeat Offender list`, name, units, `<active> active of <total> total violations`); the count for the current period with caption; three figures (the other period, `open now`, latest case date); `What the cases were about` (four bars); `Month by month` (one bar per month, each `data-testid="month-bar"`, caption `Busiest month: <n>`); `Latest cases` (date, category label, status); `311 requests at this address` (loaded in the browser); source line linking `https://data.austintexas.gov/d/6wtj-zbtb` and `https://data.austintexas.gov/d/xwdj-i9he`, followed by: `No cases means none reached Code Enforcement. It does not mean the building has no problems.`
 
 - [ ] **Step 1:** Write the failing tests.
 
@@ -546,7 +548,7 @@ it('queries 311 by the parcel box and the history start date', async () => {
 ```
 
 - [ ] **Step 2:** Run `npm test -- BuildingPanel requests311`. Expected: FAIL.
-- [ ] **Step 3:** Implement. On the map screen the panel loads `buildings/<id>.json` on selection and rises in as in the mockup; on phones it is a bottom sheet 72% of the viewport tall. `building/[id]/page.tsx` is statically generated for every complex (`generateStaticParams`), renders the same panel full-width without a map, and sets the page title to `<address>: code complaint record`.
+- [ ] **Step 3:** Implement. On the map screen the panel fetches `/data/buildings/<id>.json` on selection and rises in as in the mockup; on phones it is a bottom sheet 72% of the viewport tall. `building/[id]/page.tsx` is statically generated for every complex (`generateStaticParams`), renders the same panel full-width without a map, and sets the page title to `<address>: code complaint record`.
 - [ ] **Step 4:** Run the tests and `npm run build`. Expected: PASS, with about 2,500 building pages generated.
 - [ ] **Step 5:** Commit.
 

@@ -1,6 +1,6 @@
 app/node_modules
 app/.next
-app/data
+app/public/data
 .env*
 .superpowers
 .DS_Store
