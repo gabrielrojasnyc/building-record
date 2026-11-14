@@ -14,7 +14,7 @@ export interface PublishedUnits {
 }
 
 export interface Complex {
-  /** 10-digit parcel ID. */
+  /** City parcel ID: 10 digits in Travis County, R-prefixed in Williamson County. */
   id: string;
   address: string;
   lon: number;

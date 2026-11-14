@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { Complex } from "@/domain/types";
 import parcelRows from "./fixtures/parcels.json";
 import { loadApartmentParcels, toAcres } from "./parcels";
 
@@ -100,21 +99,6 @@ describe("loadApartmentParcels", () => {
 
 describe("domain types", () => {
   it("resolve through the @/ alias", async () => {
-    const complex: Complex = {
-      id: "0304070701",
-      address: "1700 Burton Dr",
-      lon: -97.7288,
-      lat: 30.2379,
-      acres: 20.5,
-      cases12: { structure: 0, property: 0, landuse: 0, permit: 0 },
-      cases: { structure: 0, property: 0, landuse: 0, permit: 0 },
-      open: 0,
-      lastCase: null,
-      repeatOffender: null,
-      units: null,
-    };
-
     await expect(import("@/domain/types")).resolves.toBeDefined();
-    expect(complex.id).toHaveLength(10);
   });
 });

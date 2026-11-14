@@ -129,9 +129,9 @@ describe('chooseAddress', () => {
   describe('on real city data', () => {
     const points = loadFixturePoints();
 
-    it('names the Burton Dr complex by its lowest street number', async () => {
+    it('names the Royal Crest complex by its lowest street number, wherever that street is', async () => {
       const burton = await fixtureParcel('0304070701');
-      expect(chooseAddress(burton, await points)).toBe('1516 Burton Dr');
+      expect(chooseAddress(burton, await points)).toBe('1515 Royal Crest Dr');
     });
 
     it('keeps the city spelling of a service road address', async () => {
