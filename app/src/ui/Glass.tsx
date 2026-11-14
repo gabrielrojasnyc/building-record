@@ -1,8 +1,8 @@
-import type { ComponentPropsWithoutRef, ElementType } from 'react';
+import type { ComponentPropsWithRef, ElementType } from 'react';
 
 type GlassProps<T extends ElementType> = {
   as?: T;
-} & Omit<ComponentPropsWithoutRef<T>, 'as'>;
+} & Omit<ComponentPropsWithRef<T>, 'as'>;
 
 export function Glass<T extends ElementType = 'div'>({
   as,

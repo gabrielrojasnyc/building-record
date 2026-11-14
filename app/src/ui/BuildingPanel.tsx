@@ -124,6 +124,7 @@ export function BuildingPanel(props: BuildingPanelProps) {
   const onClose = props.place === "map" ? props.onClose : null;
   const headingId = useId();
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
 
   const fetchHistory = useCallback(
     (id: string) => loadHistory(id, fetchImpl),
@@ -159,11 +160,19 @@ export function BuildingPanel(props: BuildingPanelProps) {
     if (scrollerRef.current) scrollerRef.current.scrollTop = 0;
   }, [complex.id]);
 
+  // Over the map the panel is a new region of the screen, so keyboard and screen reader users start in it.
+  const opensOverMap = props.place === "map";
+  useEffect(() => {
+    if (opensOverMap) panelRef.current?.focus({ preventScroll: true });
+  }, [opensOverMap, complex.id]);
+
   const Heading = props.place === "page" ? "h1" : "h2";
 
   return (
     <Glass
       as={props.place === "page" ? "article" : "aside"}
+      ref={panelRef}
+      tabIndex={opensOverMap ? -1 : undefined}
       aria-labelledby={headingId}
       className={props.place === "page" ? "rounded-[28px]" : MAP_PLACEMENT}
     >

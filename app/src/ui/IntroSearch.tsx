@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { searchAddresses, type AddressMatch } from "@/city/addressSearch";
+import { searchAddresses, searchComplexes, type AddressMatch } from "@/city/addressSearch";
 import type { Complex } from "@/domain/types";
 import { Glass } from "./Glass";
 
 const PLACEHOLDER = "Search an Austin address";
 const NO_MATCH = "No Austin address starts with that.";
+const NO_COMPLEX_MATCH = "No apartment complex address starts with or contains that.";
 const TYPING_PAUSE_MS = 250;
 const MIN_CHARACTERS = 3;
 
@@ -19,9 +20,12 @@ interface Suggestions {
 export function IntroSearch({
   complexes,
   onChoose,
+  complexesOnly = false,
 }: {
   complexes: Complex[];
   onChoose: (match: AddressMatch) => void;
+  /** With no map, an address elsewhere in Austin has nowhere to go, so only complexes are offered. */
+  complexesOnly?: boolean;
 }) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -36,7 +40,7 @@ export function IntroSearch({
     if (query.length < MIN_CHARACTERS) return;
     let superseded = false;
     const timer = setTimeout(async () => {
-      const matches = await searchAddresses(query, complexes);
+      const matches = complexesOnly ? searchComplexes(query, complexes) : await searchAddresses(query, complexes);
       if (superseded) return;
       setSuggestions({ query, matches });
       setActiveIndex(-1);
@@ -45,7 +49,7 @@ export function IntroSearch({
       superseded = true;
       clearTimeout(timer);
     };
-  }, [query, complexes]);
+  }, [query, complexes, complexesOnly]);
 
   const shown = suggestions?.query === query && dismissedQuery !== query ? suggestions : null;
   const matches = shown?.matches ?? [];
@@ -169,7 +173,7 @@ export function IntroSearch({
         )}
         {showsNoMatch && (
           <p role="status" className={`${SURFACE} px-[18px] py-3.5 text-slate`}>
-            {NO_MATCH}
+            {complexesOnly ? NO_COMPLEX_MATCH : NO_MATCH}
           </p>
         )}
       </div>

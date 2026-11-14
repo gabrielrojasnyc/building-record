@@ -58,6 +58,13 @@ async function matchCity(text: string, limit: number, fetchImpl: typeof fetch): 
   });
 }
 
+/** Matching complexes alone, for a device with no map to fly to an address. At most 6. */
+export function searchComplexes(text: string, complexes: Complex[]): AddressMatch[] {
+  const trimmed = text.trim();
+  if (trimmed.length < MIN_CHARACTERS) return [];
+  return matchComplexes(trimmed, complexes).slice(0, MAX_SUGGESTIONS);
+}
+
 /** Complexes first (matched locally), then other city addresses (dataset 9s7j-tygf). At most 6. Never rejects. */
 export async function searchAddresses(
   text: string,

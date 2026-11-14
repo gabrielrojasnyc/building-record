@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Complex, Counts } from "@/domain/types";
-import { escapeSoql, searchAddresses } from "./addressSearch";
+import { escapeSoql, searchAddresses, searchComplexes } from "./addressSearch";
 
 const counts: Counts = { structure: 0, property: 0, landuse: 0, permit: 0 };
 
@@ -113,5 +113,20 @@ describe("searchAddresses", () => {
       "address_type='1' AND upper(full_street_name) like upper('o''b\\_\\%%')",
     );
     expect(url.searchParams.get("$limit")).toBe("6");
+  });
+});
+
+describe("searchComplexes", () => {
+  it("matches complexes only, never asking the city, with the same ordering as the full search", () => {
+    expect(searchComplexes("royal crest", complexes).map((match) => match.complexId)).toEqual(["a", "b"]);
+  });
+
+  it("returns nothing for fewer than 3 characters", () => {
+    expect(searchComplexes("16", complexes)).toEqual([]);
+  });
+
+  it("returns at most 6", () => {
+    const many = Array.from({ length: 9 }, (_, index) => complex(String(index), `${index} Oak Ln`));
+    expect(searchComplexes("oak", many)).toHaveLength(6);
   });
 });

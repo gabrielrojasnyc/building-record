@@ -1,6 +1,6 @@
-import { useId, useRef } from "react";
+import { useId, useRef, useState } from "react";
 import { CATEGORY_LABEL } from "@/domain/labels";
-import { countFor, type View } from "@/domain/query";
+import { countFor, viewToSearchParams, type View } from "@/domain/query";
 import type { Category, Complex, Counts } from "@/domain/types";
 import { Glass } from "./Glass";
 
@@ -25,6 +25,8 @@ const CARD_SIZE = "h-[148px] rounded-[22px] px-[18px] py-4 phone:h-[136px]";
 
 interface TrayProps {
   complexes: Complex[];
+  /** Every complex in Austin as a wrapping list the page scrolls, for a device where the map cannot start. */
+  citywide?: boolean;
   view: View;
   selectedId: string | null;
   hoveredId: string | null;
@@ -83,6 +85,7 @@ function TrayCard(props: {
     <button
       type="button"
       data-testid="card"
+      data-complex-id={complex.id}
       aria-current={selected ? "true" : undefined}
       data-hovered={hovered ? "" : undefined}
       onClick={() => props.onSelect(complex.id)}
@@ -145,8 +148,15 @@ export function Tray(props: TrayProps) {
   const { complexes, view, selectedId, hoveredId } = props;
   const countId = useId();
   const cardsRef = useRef<HTMLDivElement>(null);
+  const citywide = props.citywide === true;
   const total = complexes.length;
-  const hidden = total - CARD_LIMIT;
+
+  // Pages of 40 apply to the view they were asked for; any other view starts again at one page.
+  const viewKey = viewToSearchParams(view).toString();
+  const [revealed, setRevealed] = useState({ viewKey, pages: 1 });
+  const pages = revealed.viewKey === viewKey ? revealed.pages : 1;
+  const shown = citywide ? Math.min(total, CARD_LIMIT * pages) : Math.min(total, CARD_LIMIT);
+  const hidden = total - shown;
 
   const toggleOrder = () => {
     props.onToggleOrder();
@@ -162,7 +172,7 @@ export function Tray(props: TrayProps) {
               {total.toLocaleString("en-US")}
             </strong>{" "}
             <span className="text-sm text-slate">
-              {total === 1 ? "complex in view" : "complexes in view"}
+              {total === 1 ? "complex" : "complexes"} {citywide ? "in Austin" : "in view"}
             </span>
           </p>
           <button
@@ -173,28 +183,34 @@ export function Tray(props: TrayProps) {
             {view.order === "fewest" ? "Fewest first" : "Most first"}
           </button>
         </Glass>
-        <nav
-          aria-label="Jump to an area"
-          className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] phone:hidden [&::-webkit-scrollbar]:hidden"
-        >
-          {AREAS.map((area) => (
-            <button
-              key={area.name}
-              type="button"
-              onClick={() => props.onJump(area)}
-              className="h-[30px] flex-none cursor-pointer rounded-full border border-ice/50 bg-deep/28 px-[13px] text-[13px] font-normal text-ice backdrop-blur-[10px] hover:bg-deep/50"
-            >
-              {area.name}
-            </button>
-          ))}
-        </nav>
+        {!citywide && (
+          <nav
+            aria-label="Jump to an area"
+            className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] phone:hidden [&::-webkit-scrollbar]:hidden"
+          >
+            {AREAS.map((area) => (
+              <button
+                key={area.name}
+                type="button"
+                onClick={() => props.onJump(area)}
+                className="h-[30px] flex-none cursor-pointer rounded-full border border-ice/50 bg-deep/28 px-[13px] text-[13px] font-normal text-ice backdrop-blur-[10px] hover:bg-deep/50"
+              >
+                {area.name}
+              </button>
+            ))}
+          </nav>
+        )}
       </div>
       <div
         ref={cardsRef}
         onMouseLeave={() => props.onHover(null)}
-        className="flex snap-x snap-proximity scroll-px-(--gutter) gap-3 overflow-x-auto px-(--gutter) pt-2 pb-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className={
+          citywide
+            ? "flex max-h-[40dvh] flex-wrap content-start gap-3 overflow-y-auto px-(--gutter) pt-2 pb-1.5"
+            : "flex snap-x snap-proximity scroll-px-(--gutter) gap-3 overflow-x-auto px-(--gutter) pt-2 pb-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        }
       >
-        {complexes.slice(0, CARD_LIMIT).map((complex) => (
+        {complexes.slice(0, shown).map((complex) => (
           <TrayCard
             key={complex.id}
             complex={complex}
@@ -207,12 +223,31 @@ export function Tray(props: TrayProps) {
         ))}
         {total === 0 && (
           <TrayNote>
-            No apartment complexes in this part of the map. Zoom out or jump to
-            an area.
+            {citywide
+              ? "No apartment complexes match these filters."
+              : "No apartment complexes in this part of the map. Zoom out or jump to an area."}
           </TrayNote>
         )}
-        {hidden > 0 && (
+        {!citywide && hidden > 0 && (
           <TrayNote>{`${hidden.toLocaleString("en-US")} more in view. Zoom in to narrow them down.`}</TrayNote>
+        )}
+        {citywide && total > CARD_LIMIT && (
+          <div className="flex w-full items-center gap-3 pt-1 pb-1 text-[13px] text-slate">
+            {hidden > 0 && (
+              <button
+                type="button"
+                onClick={() => setRevealed({ viewKey, pages: pages + 1 })}
+                className="h-[30px] cursor-pointer rounded-full bg-white/55 px-3 text-[13px] font-normal text-deep hover:bg-white/85"
+              >
+                {`Show ${CARD_LIMIT} more`}
+              </button>
+            )}
+            <span>
+              {hidden > 0
+                ? `Showing ${shown.toLocaleString("en-US")} of ${total.toLocaleString("en-US")}`
+                : `Showing all ${total.toLocaleString("en-US")}`}
+            </span>
+          </div>
         )}
       </div>
     </section>

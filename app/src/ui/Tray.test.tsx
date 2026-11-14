@@ -210,3 +210,70 @@ it("never renders the words score, grade, rating or rank", () => {
   );
   expect(document.body.textContent).not.toMatch(/score|grade|rating|rank/i);
 });
+
+describe("as a citywide list, for a device with no map", () => {
+  const many = Array.from({ length: 95 }, (_, index) => complex(String(index)));
+
+  function renderList(complexes: Complex[], view: View = DEFAULT_VIEW) {
+    const utils = render(
+      <Tray
+        citywide
+        complexes={complexes}
+        {...handlers}
+        view={view}
+        selectedId={null}
+        hoveredId={null}
+      />,
+    );
+    return {
+      ...utils,
+      again: (next: View) =>
+        utils.rerender(
+          <Tray
+            citywide
+            complexes={complexes}
+            {...handlers}
+            view={next}
+            selectedId={null}
+            hoveredId={null}
+          />,
+        ),
+    };
+  }
+
+  it("shows 40 cards and reveals 40 more each time Show 40 more is pressed", async () => {
+    renderList(many);
+    expect(screen.getAllByTestId("card")).toHaveLength(40);
+    expect(screen.getByText("Showing 40 of 95")).toBeVisible();
+    expect(screen.queryByText(/zoom in/i)).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Show 40 more" }));
+    expect(screen.getAllByTestId("card")).toHaveLength(80);
+
+    await userEvent.click(screen.getByRole("button", { name: "Show 40 more" }));
+    expect(screen.getAllByTestId("card")).toHaveLength(95);
+    expect(screen.queryByRole("button", { name: "Show 40 more" })).toBeNull();
+    expect(screen.getByText("Showing all 95")).toBeVisible();
+  });
+
+  it("offers no more when everything already fits", () => {
+    renderList(sample);
+    expect(screen.queryByRole("button", { name: "Show 40 more" })).toBeNull();
+  });
+
+  it("starts again at 40 when the filters or order change", async () => {
+    const { again } = renderList(many);
+    await userEvent.click(screen.getByRole("button", { name: "Show 40 more" }));
+    expect(screen.getAllByTestId("card")).toHaveLength(80);
+
+    again({ ...DEFAULT_VIEW, order: "most" });
+    expect(screen.getAllByTestId("card")).toHaveLength(40);
+  });
+
+  it("drops the area shortcuts and names the whole city", () => {
+    renderList(sample);
+    expect(screen.queryByRole("navigation", { name: "Jump to an area" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Downtown" })).toBeNull();
+    expect(screen.getByRole("region", { name: "3 complexes in Austin" })).toBeVisible();
+  });
+});

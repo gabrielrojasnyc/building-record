@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Meta } from "@/domain/types";
 import { Glass } from "./Glass";
 
@@ -5,7 +6,7 @@ const NOT_OFFICIAL =
   "Not an official City of Austin site. Data: City of Austin Development Services and Austin 311, with no warranty.";
 
 /** `2026-11-14` becomes `November 14, 2026`, read as a calendar date so no time zone can shift the day. */
-function formatPullDate(isoDate: string): string {
+export function formatPullDate(isoDate: string): string {
   const [year, month, day] = isoDate.split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-US", {
     month: "long",
@@ -21,7 +22,10 @@ export function Notice({ meta }: { meta: Meta }) {
       as="p"
       className="mx-auto w-fit max-w-full rounded-full bg-ice/60 px-3 py-1 text-center text-[11px] leading-snug text-navy phone:rounded-2xl"
     >
-      {NOT_OFFICIAL} Data pulled {formatPullDate(meta.pulledAt)}.
+      {NOT_OFFICIAL} Data pulled {formatPullDate(meta.pulledAt)}.{" "}
+      <Link href="/method" className="text-deep underline">
+        Method and sources
+      </Link>
     </Glass>
   );
 }

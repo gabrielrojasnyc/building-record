@@ -14,6 +14,7 @@ import type { Complex, Meta } from "@/domain/types";
 import type { CameraPadding } from "@/map/BuildingMap";
 import { BuildingPanel } from "./BuildingPanel";
 import { Filters } from "./Filters";
+import { Glass } from "./Glass";
 import { IntroSearch } from "./IntroSearch";
 import { Notice } from "./Notice";
 import { Tray, type Area } from "./Tray";
@@ -127,7 +128,15 @@ export function Finder({
   );
 
   const selected = selectedId === null ? undefined : byId.get(selectedId);
-  const clearSelection = useCallback(() => setSelectedId(null), []);
+  // Closing the panel hands focus back to the card for the building that was open.
+  const clearSelection = useCallback(() => {
+    if (selectedId !== null) {
+      document
+        .querySelector<HTMLElement>(`[data-testid="card"][data-complex-id="${CSS.escape(selectedId)}"]`)
+        ?.focus();
+    }
+    setSelectedId(null);
+  }, [selectedId]);
 
   const select = (id: string) => {
     const complex = byId.get(id);
@@ -165,7 +174,7 @@ export function Finder({
       </div>
       <div aria-hidden className="fog pointer-events-none fixed inset-0 z-1" />
 
-      <IntroSearch complexes={complexes} onChoose={goToAddress} />
+      <IntroSearch complexes={complexes} onChoose={goToAddress} complexesOnly={mapUnavailable} />
       <Filters view={view} onChange={changeView} />
       {selected && (
         <BuildingPanel
@@ -176,8 +185,19 @@ export function Finder({
         />
       )}
 
-      <div className="fixed inset-x-0 bottom-0 z-2 flex flex-col gap-2 pb-2">
+      {/* The list is taller than the map's tray, so it makes room for the panel instead of running under it. */}
+      <div
+        className={`fixed inset-x-0 bottom-0 z-2 flex flex-col gap-2 pb-2 ${mapUnavailable && selected ? "pr-[calc(372px+var(--gutter))] phone:pr-0" : ""}`}
+      >
+        {mapUnavailable && (
+          <div className="px-(--gutter)">
+            <Glass as="p" className="w-fit max-w-full rounded-2xl px-4 py-2.5 text-deep">
+              The map could not load on this device. You can still browse the list below.
+            </Glass>
+          </div>
+        )}
         <Tray
+          citywide={mapUnavailable}
           complexes={inView}
           view={view}
           selectedId={selectedId}

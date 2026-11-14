@@ -430,6 +430,17 @@ describe("over the map", () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
+  it("takes focus when it opens over the map, and not on the building's own page", () => {
+    renderOnMap(busy, { [HISTORY]: pending });
+    expect(
+      screen.getByRole("complementary", { name: "1601 Royal Crest Dr" }),
+    ).toHaveFocus();
+
+    cleanup();
+    renderPage(busy, busyDetail);
+    expect(document.body).toHaveFocus();
+  });
+
   it("links to the building's own page", () => {
     renderOnMap(busy, { [HISTORY]: pending });
     expect(

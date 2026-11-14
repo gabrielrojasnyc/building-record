@@ -1,12 +1,13 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { searchAddresses, type AddressMatch } from "@/city/addressSearch";
+import { searchAddresses, searchComplexes, type AddressMatch } from "@/city/addressSearch";
 import type { Complex } from "@/domain/types";
 import { IntroSearch } from "./IntroSearch";
 
-vi.mock("@/city/addressSearch", () => ({ searchAddresses: vi.fn() }));
+vi.mock("@/city/addressSearch", () => ({ searchAddresses: vi.fn(), searchComplexes: vi.fn() }));
 const search = vi.mocked(searchAddresses);
+const searchLocal = vi.mocked(searchComplexes);
 
 const apartments: AddressMatch = { label: "1601 Royal Crest Dr", lon: -97.7, lat: 30.2, complexId: "a" };
 const street: AddressMatch = { label: "1601 Royal Oak Ln", lon: -97.8, lat: 30.3, complexId: null };
@@ -178,5 +179,29 @@ describe("IntroSearch", () => {
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     await user.click(input);
     expect(screen.getByRole("listbox")).toBeInTheDocument();
+  });
+});
+
+describe("IntroSearch without a map", () => {
+  it("offers matching complexes only and never asks the city for other addresses", async () => {
+    searchLocal.mockReturnValue([apartments]);
+    const user = userEvent.setup({ delay: null });
+    render(<IntroSearch complexes={complexes} onChoose={vi.fn()} complexesOnly />);
+    await user.type(screen.getByRole("combobox"), "1601 Roy");
+    await settle();
+
+    expect(searchLocal).toHaveBeenCalledWith("1601 Roy", complexes);
+    expect(search).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["1601 Royal Crest Dr" + "apartments"]);
+  });
+
+  it("says no complex matches when none does", async () => {
+    searchLocal.mockReturnValue([]);
+    const user = userEvent.setup({ delay: null });
+    render(<IntroSearch complexes={complexes} onChoose={vi.fn()} complexesOnly />);
+    await user.type(screen.getByRole("combobox"), "zzzz");
+    await settle();
+
+    expect(screen.getByText("No apartment complex address starts with or contains that.")).toBeInTheDocument();
   });
 });
