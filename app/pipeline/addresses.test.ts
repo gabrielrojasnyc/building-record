@@ -99,6 +99,24 @@ describe('chooseAddress', () => {
     expect(chooseAddress(parcel, [a, b]).label).toBe('100 Alpha St');
   });
 
+  it('prefers a whole address to a fractional one with the same house number', () => {
+    const half: AddressPoint = { ...inside(310), label: '310 1/2 COMAL ST' };
+    const whole: AddressPoint = { ...inside(310), label: '310 COMAL ST' };
+    expect(chooseAddress(parcel, [half, whole]).label).toBe('310 Comal St');
+    expect(chooseAddress(parcel, [whole, half]).label).toBe('310 Comal St');
+  });
+
+  it('prefers any whole address inside the parcel to a lower-numbered fractional one', () => {
+    const lowHalf: AddressPoint = { ...inside(300), label: '300 1/2 COMAL ST' };
+    expect(chooseAddress(parcel, [lowHalf, inside(1700)]).label).toBe('1700 Burton Dr');
+  });
+
+  it('takes a fractional address when it is the only kind inside the parcel', () => {
+    const half: AddressPoint = { ...inside(310), label: '310 1/2 COMAL ST' };
+    const quarter: AddressPoint = { ...inside(308), label: '308 1/4 COMAL ST' };
+    expect(chooseAddress(parcel, [half, quarter])).toEqual({ label: '308 1/4 Comal St', source: 'inside' });
+  });
+
   it('ignores points whose house number is not numeric', () => {
     const unnumbered: AddressPoint = { label: '12A BURTON DR', number: Number.NaN, lon: -96.9995, lat: 30.0005 };
     expect(chooseAddress(parcel, [unnumbered, inside(1700)]).label).toBe('1700 Burton Dr');

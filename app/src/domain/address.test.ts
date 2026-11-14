@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAddress } from './address';
+import { formatAddress, formatRegisteredAddress } from './address';
 
 describe('formatAddress', () => {
   it('formats city casing', () => {
@@ -18,5 +18,45 @@ describe('formatAddress', () => {
     ['9 SPRING-WELL WB', '9 Spring-Well WB'],
   ])('%s becomes %s', (raw, expected) => {
     expect(formatAddress(raw)).toBe(expected);
+  });
+});
+
+describe('formatRegisteredAddress', () => {
+  it.each([
+    ['1901 (aka 1903, 1905, 1907, 1911, 1913, 1915, 1917, 1919, 1921&) WILLOW CREEK DR', '1901 Willow Creek Dr'],
+    ['1515 WICKERSHAM LANE', '1515 Wickersham Ln'],
+    ['1157 SALINA STREET', '1157 Salina St'],
+    ['8207 SAM RAYBURN DRIVE', '8207 Sam Rayburn Dr'],
+    ['6407 SPRINGDALE ROAD', '6407 Springdale Rd'],
+    ['8600 N LAMAR BOULEVARD', '8600 N Lamar Blvd'],
+    ['303 JOHN NANCE GARNER CIRCLE', '303 John Nance Garner Cir'],
+    ['1221 ALGARITA AVENUE', '1221 Algarita Ave'],
+    ['8312 FATHOM CIR', '8312 Fathom Cir'],
+    ['8900 N IH 35 SVRD SB', '8900 N IH 35 SVRD SB'],
+  ])('%s becomes %s', (raw, expected) => {
+    expect(formatRegisteredAddress(raw)).toBe(expected);
+  });
+
+  it.each([
+    ['Court', 'Ct'],
+    ['Cove', 'Cv'],
+    ['Highway', 'Hwy'],
+    ['Parkway', 'Pkwy'],
+    ['Place', 'Pl'],
+    ['Terrace', 'Ter'],
+    ['Trail', 'Trl'],
+    ['Way', 'Way'],
+  ])('abbreviates a trailing %s to %s, in any case', (word, abbreviation) => {
+    expect(formatRegisteredAddress(`10 Oak ${word}`)).toBe(`10 Oak ${abbreviation}`);
+    expect(formatRegisteredAddress(`10 OAK ${word.toUpperCase()}`)).toBe(`10 Oak ${abbreviation}`);
+  });
+
+  it('abbreviates only the last word, so a street named for a street type keeps its name', () => {
+    expect(formatRegisteredAddress('12 PARKWAY PLACE')).toBe('12 Parkway Pl');
+    expect(formatRegisteredAddress('8071 N LAMAR BOULEVARD NB')).toBe('8071 N Lamar Boulevard NB');
+  });
+
+  it('collapses the space a removed parenthetical leaves behind', () => {
+    expect(formatRegisteredAddress('  12  (rear)   ELM   STREET ')).toBe('12 Elm St');
   });
 });

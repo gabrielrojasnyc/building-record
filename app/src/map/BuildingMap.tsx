@@ -8,7 +8,7 @@ import {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
-import type { Bounds, View } from "@/domain/query";
+import type { Corner, View, ViewArea } from "@/domain/query";
 import type { Complex } from "@/domain/types";
 import {
   BASE_STYLE_URL,
@@ -51,7 +51,8 @@ export interface BuildingMapProps {
   flyTo: { lon: number; lat: number; zoom: number } | null;
   /** Applied when the map starts and whenever a number changes; a new object with the same numbers does nothing. */
   padding?: CameraPadding;
-  onBoundsChange(bounds: Bounds): void;
+  /** The ground visible inside the padding, reported when the map starts, after every move and when the padding changes. */
+  onViewAreaChange(area: ViewArea): void;
   onSelect(id: string): void;
   onHover(id: string | null): void;
   /** Called once if the map cannot start. The component then renders nothing. */
@@ -61,6 +62,21 @@ export interface BuildingMapProps {
 function hasWebGL(): boolean {
   const canvas = document.createElement("canvas");
   return Boolean(canvas.getContext("webgl2") ?? canvas.getContext("webgl"));
+}
+
+/** The padded viewport's corners on the ground, clockwise from the top left. A pitched, turned camera sees a quadrilateral, not a box. */
+function viewAreaOf(map: maplibregl.Map, padding: CameraPadding): ViewArea {
+  const { clientWidth: width, clientHeight: height } = map.getContainer();
+  const corner = (x: number, y: number): Corner => {
+    const { lng, lat } = map.unproject([x, y]);
+    return [lng, lat];
+  };
+  return [
+    corner(padding.left, padding.top),
+    corner(width - padding.right, padding.top),
+    corner(width - padding.right, height - padding.bottom),
+    corner(padding.left, height - padding.bottom),
+  ];
 }
 
 function describeCases(address: string, count: number): string {
@@ -141,15 +157,11 @@ export function BuildingMap(props: BuildingMapProps) {
         className: "pin-tooltip",
       });
       let hoverReported: string | null = null;
-      const reportBounds = () => {
+      const reportViewArea = () => {
         if (!map) return;
-        const bounds = map.getBounds();
-        latest.current.onBoundsChange([
-          bounds.getWest(),
-          bounds.getSouth(),
-          bounds.getEast(),
-          bounds.getNorth(),
-        ]);
+        latest.current.onViewAreaChange(
+          viewAreaOf(map, latest.current.padding ?? NO_PADDING),
+        );
       };
 
       map.on("load", () => {
@@ -194,10 +206,10 @@ export function BuildingMap(props: BuildingMapProps) {
           const id = event.features?.[0]?.properties.id;
           if (id !== undefined) latest.current.onSelect(String(id));
         });
-        map.on("moveend", reportBounds);
+        map.on("moveend", reportViewArea);
 
         setReady(true);
-        reportBounds();
+        reportViewArea();
       });
     };
 
@@ -258,7 +270,9 @@ export function BuildingMap(props: BuildingMapProps) {
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map) return;
-    map.setPadding({ top, right, bottom, left });
+    const padding = { top, right, bottom, left };
+    map.setPadding(padding);
+    latest.current.onViewAreaChange(viewAreaOf(map, padding));
   }, [ready, top, right, bottom, left]);
 
   useEffect(() => {

@@ -26,7 +26,6 @@ function complex(id: string, overrides: Partial<Complex> = {}): Complex {
     open: 0,
     lastCase: null,
     repeatOffender: null,
-    units: null,
     ...overrides,
   };
 }
@@ -87,6 +86,31 @@ it("shows None for a complex with no cases and the count otherwise", () => {
 
   expect(card("300 Main St").getByText("code case")).toBeVisible();
   expect(card("300 Main St").getByText("Mostly land use")).toBeVisible();
+});
+
+describe("the line under the address, with every complaint type counted", () => {
+  const line = (cases12: Partial<Counts>) => {
+    renderTray([complex("1", { address: "1 Mix Ln", cases12: counts(cases12) })]);
+    return card("1 Mix Ln");
+  };
+
+  it("says Mostly only when one type has more than half the cases", () => {
+    expect(line({ property: 5, structure: 1 }).getByText("Mostly property upkeep")).toBeVisible();
+  });
+
+  it("names both types, in the fixed order, on a one and one split", () => {
+    expect(line({ property: 1, structure: 1 }).getByText("Structure condition and property upkeep")).toBeVisible();
+  });
+
+  it("names the two largest types, largest first, when the largest has half or less", () => {
+    expect(line({ landuse: 3, permit: 2, property: 2 }).getByText("Land use and property upkeep")).toBeVisible();
+    expect(line({ structure: 2, property: 1, landuse: 1 }).queryByText(/^Mostly/)).toBeNull();
+  });
+});
+
+it("says a sliver parcel is under a tenth of an acre", () => {
+  renderTray([complex("1", { address: "1 Sliver Ln", acres: 0 })]);
+  expect(card("1 Sliver Ln").getByText("under 0.1 acres")).toBeVisible();
 });
 
 it("caps the tray at 40 cards and says how many more are in view", () => {

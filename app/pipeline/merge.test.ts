@@ -93,7 +93,6 @@ function parcel(
     ],
     summary: summary(id),
     offender: null,
-    units: null,
     ...overrides,
   };
 }

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { CATEGORY_LABEL } from "@/domain/labels";
-import type { Category, Complex, Meta } from "@/domain/types";
+import type { Category, Meta } from "@/domain/types";
 import { Glass } from "@/ui/Glass";
 import { formatPullDate, Notice } from "@/ui/Notice";
 import { readDataFile } from "../dataFiles";
@@ -35,11 +35,6 @@ const SOURCES = [
     name: "Repeat Offender Registrations",
     id: "86z9-i27i",
     use: "the properties on the city's Repeat Offender list.",
-  },
-  {
-    name: "Affordable Housing Inventory",
-    id: "ifzc-3xz8",
-    use: "unit counts for the buildings it lists.",
   },
   {
     name: "Austin 311 Public Data",
@@ -80,11 +75,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export default async function MethodPage() {
-  const [meta, complexes] = await Promise.all([
-    readDataFile<Meta>("meta.json"),
-    readDataFile<Complex[]>("complexes.json"),
-  ]);
-  const withUnitCounts = complexes.filter(({ units }) => units !== null).length;
+  const meta = await readDataFile<Meta>("meta.json");
   const unmatchedPercent = Math.round(meta.unmatchedCaseShare * 100);
 
   return (
@@ -127,16 +118,8 @@ export default async function MethodPage() {
               ))}
             </ul>
             <p>
-              All six datasets are published by the City of Austin on its open data portal. Credit
-              goes to the City of Austin and its Development Services, Housing and 311
-              departments.
-            </p>
-            <p>
-              The Affordable Housing Inventory is licensed{" "}
-              <ExternalLink href="https://creativecommons.org/licenses/by-sa/4.0/">
-                CC BY-SA 4.0
-              </ExternalLink>
-              . The unit counts taken from it are shared here under the same license.
+              All five datasets are published by the City of Austin on its open data portal. Credit
+              goes to the City of Austin and its Development Services and 311 departments.
             </p>
             <p>
               Map data is from OpenStreetMap contributors, delivered through OpenMapTiles and
@@ -198,22 +181,26 @@ export default async function MethodPage() {
               not apartments are not shown either. This copy counts{" "}
               {formatCount(meta.caseCount)} cases matched to apartment parcels since November
               2023.
+              {meta.uncategorizedCases > 0 &&
+                (meta.uncategorizedCases === 1
+                  ? " 1 case carries a description this site does not recognize and is not counted."
+                  : ` ${formatCount(meta.uncategorizedCases)} cases carry a description this site does not recognize and are not counted.`)}
             </p>
           </Section>
 
           <Section title="Counts, not rates">
             <p>
               Buildings are shown by raw case count with the size of their parcel, not as cases per
-              unit. The city publishes a unit count for {formatCount(withUnitCounts)} of these{" "}
-              {formatCount(meta.complexCount)} complexes, so a per-unit rate cannot be shown for
-              most. Unit counts appear where the city publishes them.
+              unit. The city does not publish unit counts for most of these buildings, so a per-unit
+              rate cannot be shown.
             </p>
           </Section>
 
           <Section title="How a building is labelled">
             <p>
               Most buildings are labelled with a city address point that falls inside the parcel.
-              When several do, the one with the lowest street number is used.
+              When several do, a whole address is used before a fractional one such as 310 1/2 Comal
+              St, then the lowest street number.
             </p>
             <p>
               A property on the Repeat Offender list is labelled with the address the city

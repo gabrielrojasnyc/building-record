@@ -17,7 +17,6 @@ function complex(id: string, address: string): Complex {
     open: 0,
     lastCase: null,
     repeatOffender: null,
-    units: null,
   };
 }
 

@@ -10,7 +10,9 @@ export interface View {
   order: 'fewest' | 'most';
 }
 
-export type Bounds = [west: number, south: number, east: number, north: number];
+export type Corner = [lon: number, lat: number];
+/** The ground the map shows inside its padding: the four screen corners unprojected, in order around the edge. */
+export type ViewArea = [Corner, Corner, Corner, Corner];
 
 export const DEFAULT_VIEW: View = {
   period: 'cases12',
@@ -31,19 +33,36 @@ export function countFor(complex: Complex, view: View): number {
   return counts[view.category];
 }
 
-function isInBounds(complex: Complex, [west, south, east, north]: Bounds): boolean {
-  return complex.lon >= west && complex.lon <= east && complex.lat >= south && complex.lat <= north;
+/** How far from an edge, as a cross product in square degrees, a point still counts as on it. */
+const ON_EDGE = 1e-12;
+
+function isOnEdge(lon: number, lat: number, [ax, ay]: Corner, [bx, by]: Corner): boolean {
+  const cross = (bx - ax) * (lat - ay) - (by - ay) * (lon - ax);
+  if (Math.abs(cross) > ON_EDGE) return false;
+  return lon >= Math.min(ax, bx) && lon <= Math.max(ax, bx) && lat >= Math.min(ay, by) && lat <= Math.max(ay, by);
+}
+
+/** Whether a point is inside the area or on its edge. Ray casting, so any simple quadrilateral works, in either winding. */
+export function isInViewArea(lon: number, lat: number, area: ViewArea): boolean {
+  let inside = false;
+  for (let i = 0, j = area.length - 1; i < area.length; j = i++) {
+    const [xi, yi] = area[i];
+    const [xj, yj] = area[j];
+    if (isOnEdge(lon, lat, area[j], area[i])) return true;
+    if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
 }
 
 function compareText(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-export function complexesInView(all: Complex[], bounds: Bounds, view: View): Complex[] {
+export function complexesInView(all: Complex[], area: ViewArea, view: View): Complex[] {
   const direction = view.order === 'fewest' ? 1 : -1;
 
   return all
-    .filter((complex) => isInBounds(complex, bounds))
+    .filter((complex) => isInViewArea(complex.lon, complex.lat, area))
     .filter((complex) => !view.repeatOffendersOnly || complex.repeatOffender !== null)
     .map((complex) => ({ complex, count: countFor(complex, view) }))
     .sort(

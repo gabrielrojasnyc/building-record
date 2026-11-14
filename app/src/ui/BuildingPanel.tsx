@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { load311Summary, type RequestTypeCount } from "@/city/requests311";
+import { formatAcres } from "@/domain/format";
 import { CATEGORY_LABEL } from "@/domain/labels";
 import { countFor, DEFAULT_VIEW, type Period, type View } from "@/domain/query";
 import type { BuildingDetail, Category, Complex } from "@/domain/types";
@@ -202,8 +203,7 @@ export function BuildingPanel(props: BuildingPanelProps) {
           {complex.parcelIds.length > 1
             ? `Apartment parcels (${complex.parcelIds.length})`
             : "Apartment parcel"}
-          , {complex.acres} acres
-          {complex.units && `, ${formatCount(complex.units.count)} units`}
+          , {formatAcres(complex.acres)}
         </p>
 
         {complex.repeatOffender && (
@@ -294,7 +294,7 @@ function RepeatOffenderNote({
           On the city&apos;s Repeat Offender list
         </strong>{" "}
         {listing.name ?? "Registered property"}, {formatCount(listing.units)}{" "}
-        units.{" "}
+        {listing.units === 1 ? "unit" : "units"}.{" "}
         <span className="tabular-nums">
           {formatCount(listing.activeViolations)}
         </span>{" "}

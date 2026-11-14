@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import repeatOffenderRows from './fixtures/repeat-offenders.json';
-import housingRows from './fixtures/housing-inventory.json';
-import { loadPublishedUnits, loadRepeatOffenders } from './context';
+import { loadRepeatOffenders } from './context';
 
 function fakeFetch(rows: unknown[]) {
   const urls: string[] = [];
@@ -47,21 +46,5 @@ describe('loadRepeatOffenders', () => {
     const { impl, urls } = fakeFetch(repeatOffenderRows);
     await loadRepeatOffenders(impl);
     expect(decodeURIComponent(urls[0])).not.toMatch(/owner/i);
-  });
-});
-
-describe('loadPublishedUnits', () => {
-  it('pages in a stable order, with the row ID breaking ties between repeated parcels', async () => {
-    const { impl, urls } = fakeFetch(housingRows);
-    await loadPublishedUnits(impl);
-    expect(new URL(urls[0]).searchParams.get('$order')).toBe('parcel_id,:id');
-  });
-
-  it('takes the largest total per parcel and skips rows with no parcel ID', async () => {
-    const { impl } = fakeFetch(housingRows);
-    const units = await loadPublishedUnits(impl);
-    expect(units.get('0312130115')).toBe(60);
-    expect(units.get('R056943')).toBe(80);
-    expect(units.size).toBe(4);
   });
 });

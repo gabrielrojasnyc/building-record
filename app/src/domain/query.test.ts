@@ -4,13 +4,30 @@ import {
   DEFAULT_VIEW,
   complexesInView,
   countFor,
+  isInViewArea,
   viewFromSearchParams,
   viewToSearchParams,
-  type Bounds,
   type View,
+  type ViewArea,
 } from './query';
 
-const WORLD: Bounds = [-180, -90, 180, 90];
+const WORLD: ViewArea = [
+  [-180, 90],
+  [180, 90],
+  [180, -90],
+  [-180, -90],
+];
+
+/**
+ * What a camera pitched toward the north-north-east sees: a far edge wider than the near one,
+ * turned off the axes. Corners clockwise from the far left.
+ */
+const PITCHED: ViewArea = [
+  [-97.8, 30.3],
+  [-97.7, 30.32],
+  [-97.72, 30.22],
+  [-97.76, 30.21],
+];
 
 const counts = (overrides: Partial<Counts> = {}): Counts => ({
   structure: 0,
@@ -33,7 +50,6 @@ function complex(id: string, overrides: Partial<Complex> = {}): Complex {
     open: 0,
     lastCase: null,
     repeatOffender: null,
-    units: null,
     ...overrides,
   };
 }
@@ -105,21 +121,33 @@ describe('complexesInView filtering', () => {
     expect(complexesInView([plain, ro], WORLD, view).map((x) => x.id)).toEqual(['ro']);
   });
 
-  it('drops complexes outside the bounds', () => {
-    const inside = complex('inside', { lon: -97.7, lat: 30.3 });
-    const west = complex('west', { lon: -98.5, lat: 30.3 });
-    const north = complex('north', { lon: -97.7, lat: 31.5 });
-    const bounds: Bounds = [-98, 30, -97, 31];
-    expect(complexesInView([west, inside, north], bounds, DEFAULT_VIEW).map((x) => x.id)).toEqual(['inside']);
+  it('keeps only complexes inside the area the map shows, not the box around it', () => {
+    const inside = complex('inside', { lon: -97.75, lat: 30.27 });
+    // Inside the axis-aligned box around PITCHED, outside the area itself.
+    const besideNearEdge = complex('besideNearEdge', { lon: -97.79, lat: 30.215 });
+    const farAway = complex('farAway', { lon: -97.6, lat: 30.27 });
+    expect(complexesInView([besideNearEdge, inside, farAway], PITCHED, DEFAULT_VIEW).map((x) => x.id)).toEqual(['inside']);
+  });
+});
+
+describe('isInViewArea', () => {
+  it('tells a point inside a turned, non-rectangular area from one in its bounding box', () => {
+    expect(isInViewArea(-97.75, 30.27, PITCHED)).toBe(true);
+    expect(isInViewArea(-97.79, 30.215, PITCHED)).toBe(false);
+    expect(isInViewArea(-97.705, 30.23, PITCHED)).toBe(false);
+    expect(isInViewArea(-97.75, 30.33, PITCHED)).toBe(false);
   });
 
-  it('treats all four bounds edges as inclusive', () => {
-    const bounds: Bounds = [-98, 30, -97, 31];
-    const corners = [
-      complex('sw', { lon: -98, lat: 30 }),
-      complex('ne', { lon: -97, lat: 31 }),
-    ];
-    expect(complexesInView(corners, bounds, DEFAULT_VIEW)).toHaveLength(2);
+  it('counts the corners and edges as inside', () => {
+    for (const [lon, lat] of PITCHED) expect(isInViewArea(lon, lat, PITCHED)).toBe(true);
+    expect(isInViewArea(-97.75, 30.31, PITCHED)).toBe(true); // halfway along the far edge
+    expect(isInViewArea(-97.74, 30.215, PITCHED)).toBe(true); // halfway along the near edge
+  });
+
+  it('works whichever way round the corners are listed', () => {
+    const counterClockwise = [...PITCHED].reverse() as ViewArea;
+    expect(isInViewArea(-97.75, 30.27, counterClockwise)).toBe(true);
+    expect(isInViewArea(-97.79, 30.215, counterClockwise)).toBe(false);
   });
 });
 

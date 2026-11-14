@@ -1,4 +1,5 @@
 import { useId, useRef, useState } from "react";
+import { formatAcres } from "@/domain/format";
 import { CATEGORY_LABEL } from "@/domain/labels";
 import { countFor, viewToSearchParams, type View } from "@/domain/query";
 import type { Category, Complex, Counts } from "@/domain/types";
@@ -36,11 +37,17 @@ interface TrayProps {
   onJump(area: Area): void;
 }
 
-function topCategory(counts: Counts): Category {
-  const categories = Object.keys(CATEGORY_LABEL) as Category[];
-  return categories.reduce((top, category) =>
-    counts[category] > counts[top] ? category : top,
-  );
+/**
+ * What most of a building's cases were about: one type when it has more than half of them,
+ * otherwise the two largest, largest first, ties in the display order.
+ */
+function mainCategories(counts: Counts, total: number): string {
+  const [first, second] = (Object.keys(CATEGORY_LABEL) as Category[])
+    .map((category, order) => ({ category, order }))
+    .sort((a, b) => counts[b.category] - counts[a.category] || a.order - b.order)
+    .map(({ category }) => category);
+  if (counts[first] * 2 > total) return `Mostly ${CATEGORY_LABEL[first].toLowerCase()}`;
+  return `${CATEGORY_LABEL[first]} and ${CATEGORY_LABEL[second].toLowerCase()}`;
 }
 
 function totalCases(counts: Counts): number {
@@ -50,12 +57,12 @@ function totalCases(counts: Counts): number {
 /** The caption under a card's figure and the line under its address, both speaking to the same filter as the figure. */
 function cardCopy(complex: Complex, view: View, count: number): { caption: string; detail: string } {
   const counts = complex[view.period];
-  const acres = `${complex.acres} acres`;
+  const acres = formatAcres(complex.acres);
   const caseWord = count === 1 ? "code case" : "code cases";
 
   if (view.category === "all") {
     if (count === 0) return { caption: "no cases on file", detail: acres };
-    return { caption: caseWord, detail: `Mostly ${CATEGORY_LABEL[topCategory(counts)].toLowerCase()}` };
+    return { caption: caseWord, detail: mainCategories(counts, count) };
   }
 
   const label = CATEGORY_LABEL[view.category];

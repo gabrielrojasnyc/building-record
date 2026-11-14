@@ -7,8 +7,8 @@ import {
   complexesInView,
   viewFromSearchParams,
   viewToSearchParams,
-  type Bounds,
   type View,
+  type ViewArea,
 } from "@/domain/query";
 import type { Complex, Meta } from "@/domain/types";
 import type { CameraPadding } from "@/map/BuildingMap";
@@ -27,7 +27,12 @@ const BuildingMap = dynamic(
   },
 );
 
-const CITYWIDE: Bounds = [-Infinity, -Infinity, Infinity, Infinity];
+const CITYWIDE: ViewArea = [
+  [-180, 90],
+  [180, 90],
+  [180, -90],
+  [-180, -90],
+];
 const SELECTION_ZOOM = 14.6;
 const AREA_ZOOM = 13.9;
 const ADDRESS_ZOOM = 15;
@@ -109,7 +114,7 @@ export function Finder({
 }) {
   const [view, changeView] = useViewInUrl();
   const isPhone = usePhoneLayout();
-  const [bounds, setBounds] = useState<Bounds | null>(null);
+  const [viewArea, setViewArea] = useState<ViewArea | null>(null);
   const [mapUnavailable, setMapUnavailable] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -121,10 +126,10 @@ export function Finder({
   );
 
   // Citywide until the map first reports where it is looking, and for good if it never can.
-  const trayBounds = mapUnavailable ? CITYWIDE : (bounds ?? CITYWIDE);
+  const trayArea = mapUnavailable ? CITYWIDE : (viewArea ?? CITYWIDE);
   const inView = useMemo(
-    () => complexesInView(complexes, trayBounds, view),
-    [complexes, trayBounds, view],
+    () => complexesInView(complexes, trayArea, view),
+    [complexes, trayArea, view],
   );
 
   const selected = selectedId === null ? undefined : byId.get(selectedId);
@@ -171,7 +176,7 @@ export function Finder({
           hoveredId={hoveredId}
           flyTo={flyTo}
           padding={isPhone ? PHONE_PADDING : DESKTOP_PADDING}
-          onBoundsChange={setBounds}
+          onViewAreaChange={setViewArea}
           onSelect={select}
           onHover={setHoveredId}
           onUnavailable={() => setMapUnavailable(true)}

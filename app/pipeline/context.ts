@@ -2,7 +2,6 @@ import type { RepeatOffender } from '@/domain/types';
 import { readAll } from './socrata';
 
 const REPEAT_OFFENDER_DATASET = '86z9-i27i';
-const AFFORDABLE_HOUSING_DATASET = 'ifzc-3xz8';
 const ACTIVE_STATUS = 'Active';
 
 /** A Repeat Offender entry plus the street address the city registered it under. The address never reaches the published files as such. */
@@ -18,11 +17,6 @@ interface RepeatOffenderRow {
   numberofunits?: string;
   activeviolations?: string;
   totalviolations?: string;
-}
-
-interface HousingRow {
-  parcel_id?: string;
-  total_units?: string;
 }
 
 const count = (value: string | undefined) => {
@@ -61,22 +55,4 @@ export async function loadRepeatOffenders(fetchImpl: typeof fetch = fetch): Prom
     });
   }
   return { offenders, rowsRead: rows.length };
-}
-
-/** Affordable Housing Inventory unit counts, the largest total when a parcel has several rows. */
-export async function loadPublishedUnits(fetchImpl: typeof fetch = fetch): Promise<Map<string, number>> {
-  const rows = await readAll<HousingRow>(
-    AFFORDABLE_HOUSING_DATASET,
-    { select: 'parcel_id,total_units', order: 'parcel_id,:id' },
-    fetchImpl,
-  );
-
-  const units = new Map<string, number>();
-  for (const row of rows) {
-    const id = row.parcel_id?.trim();
-    if (!id) continue;
-    const total = count(row.total_units);
-    if (total > (units.get(id) ?? 0)) units.set(id, total);
-  }
-  return units;
 }

@@ -4,14 +4,13 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { BuildingDetail, Complex, Meta } from '@/domain/types';
 import addressRows from './fixtures/addresses.json';
-import housingRows from './fixtures/housing-inventory.json';
 import parcelRows from './fixtures/parcels.json';
 import repeatOffenderRows from './fixtures/repeat-offenders.json';
 import {
   MIN_EXPECTED_ADDRESS_POINTS,
   MIN_EXPECTED_CASES,
   MIN_EXPECTED_COMPLEXES,
-  MIN_EXPECTED_HOUSING_PARCELS,
+  MAX_UNCATEGORIZED_SHARE,
   MIN_EXPECTED_REPEAT_OFFENDER_ROWS,
   buildData,
 } from './build';
@@ -46,6 +45,8 @@ function caseFixture() {
     ...repeat(3, () => caseRow('9999999999', 'Property Abatement', '2026-05-05')),
     ...repeat(10, () => caseRow(null, 'Property Abatement', '2026-05-05')),
     caseRow('R056943', 'Something New', '2026-05-05'),
+    // Opened after the pull date: left out of every count.
+    caseRow(BIG_PARCEL, 'Property Abatement', '2026-11-20'),
   ];
 }
 
@@ -53,8 +54,10 @@ const FIXTURES: Record<string, unknown[]> = {
   '7vsm-dvxg': [...parcelRows, twinRow],
   '9s7j-tygf': addressRows,
   '6wtj-zbtb': caseFixture(),
-  '86z9-i27i': repeatOffenderRows,
-  'ifzc-3xz8': housingRows,
+  // Registered the way the city writes some addresses: every building number listed, the street type spelled out.
+  '86z9-i27i': repeatOffenderRows.map((row) =>
+    row.parcelid === BIG_PARCEL ? { ...row, foldername: '1515 (AKA 1517, 1519) ROYAL CREST DRIVE' } : row,
+  ),
 };
 
 const datasetOf = (url: string | URL | Request) => /resource\/([^.]+)\.json/.exec(String(url))![1];
@@ -68,7 +71,7 @@ const failingOn = (datasetId: string) =>
       ? new Response('forbidden', { status: 403 })
       : fixtureFetch(url)) as typeof fetch;
 
-const LOW = { minComplexes: 1, minCases: 1, minAddressPoints: 1, minRepeatOffenderRows: 1, minHousingParcels: 1 };
+const LOW = { minComplexes: 1, minCases: 1, minAddressPoints: 1, minRepeatOffenderRows: 1 };
 
 const readJson = <T>(path: string) => JSON.parse(readFileSync(path, 'utf8')) as T;
 
@@ -123,6 +126,7 @@ describe('buildData', () => {
       caseCount: 284 + 2 + 2,
       unmatchedCaseShare: 0.033,
       uncategorizedCases: 1,
+      futureDatedCases: 1,
     });
   });
 
@@ -132,19 +136,12 @@ describe('buildData', () => {
     expect(meta.pulledAt).toBe('2026-11-14');
   });
 
-  it('prefers Repeat Offender units over the housing inventory when both exist', async () => {
+  it('publishes no unit count of its own: the only one is the Repeat Offender figure', async () => {
     await buildData(out, NOW, fixtureFetch, LOW);
-    expect(complexById(BIG_PARCEL).units).toEqual({ count: 300, source: 'repeat-offender' });
-  });
-
-  it('falls back to the housing inventory for a Suspended registration, a zero unit count and a parcel not on the list', async () => {
-    await buildData(out, NOW, fixtureFetch, LOW);
-    const suspended = complexById('0234111501');
-    expect(suspended.repeatOffender).toBeNull();
-    expect(suspended.units).toEqual({ count: 120, source: 'affordable-housing' });
-    expect(complexById('0312130115').units).toEqual({ count: 60, source: 'affordable-housing' });
-    expect(complexById('R056943').units).toEqual({ count: 80, source: 'affordable-housing' });
-    expect(complexById(NO_CASES).units).toBeNull();
+    for (const complex of readJson<Complex[]>(`${out}/complexes.json`)) {
+      expect(Object.keys(complex)).not.toContain('units');
+    }
+    expect(complexById(BIG_PARCEL).repeatOffender?.units).toBe(300);
   });
 
   it('uses the Repeat Offender establishment name and never an owner field', async () => {
@@ -164,10 +161,7 @@ describe('buildData', () => {
 
   it('takes the address from the city registration for a listed property and from containment otherwise', async () => {
     await buildData(out, NOW, fixtureFetch, LOW);
-    // The fixture registers the big parcel under the address of parcel 0234111501, kilometres away,
-    // so both keep the address and each names its parcel.
-    expect(complexById(BIG_PARCEL).address).toBe('8900 N IH 35 SVRD SB (parcel 0304070701)');
-    expect(complexById('0234111501').address).toBe('8900 N IH 35 SVRD SB (parcel 0234111501)');
+    expect(complexById(BIG_PARCEL).address).toBe('1515 Royal Crest Dr');
     // Active but registered under a name with no house number: containment applies.
     expect(complexById('0312130115').address).not.toMatch(/PARCEL ONLY/i);
     expect(complexById(NO_CASES).address).not.toBe('');
@@ -218,7 +212,6 @@ describe('buildData', () => {
     ['6wtj-zbtb', 'code cases', 'minCases'],
     ['9s7j-tygf', 'address points', 'minAddressPoints'],
     ['86z9-i27i', 'Repeat Offender rows', 'minRepeatOffenderRows'],
-    ['ifzc-3xz8', 'housing inventory parcels', 'minHousingParcels'],
   ])('refuses to publish over good data when %s is short (%s)', async (_dataset, label, option) => {
     mkdirSync(out);
     writeFileSync(`${out}/meta.json`, '{"yesterday":true}');
@@ -229,7 +222,19 @@ describe('buildData', () => {
   });
 
   it('declares a floor for every dataset', () => {
-    expect([MIN_EXPECTED_CASES, MIN_EXPECTED_ADDRESS_POINTS, MIN_EXPECTED_REPEAT_OFFENDER_ROWS, MIN_EXPECTED_HOUSING_PARCELS]).toEqual([50_000, 300_000, 40, 1_000]);
+    expect([MIN_EXPECTED_CASES, MIN_EXPECTED_ADDRESS_POINTS, MIN_EXPECTED_REPEAT_OFFENDER_ROWS]).toEqual([50_000, 300_000, 40]);
+  });
+
+  it('refuses to publish when more than 1% of cases carry a description it does not recognize', async () => {
+    expect(MAX_UNCATEGORIZED_SHARE).toBe(0.01);
+    mkdirSync(out);
+    writeFileSync(`${out}/meta.json`, '{"yesterday":true}');
+    // The fixture has 1 unrecognized case in 303, about 0.3%: under the default, over a stricter limit.
+    await expect(buildData(out, NOW, fixtureFetch, { ...LOW, maxUncategorizedShare: 0.001 })).rejects.toThrow(
+      /1 of 303 cases \(0\.3%\) carry a description this site does not recognize/,
+    );
+    expect(readFileSync(`${out}/meta.json`, 'utf8')).toBe('{"yesterday":true}');
+    await expect(buildData(out, NOW, fixtureFetch, LOW)).resolves.toMatchObject({ uncategorizedCases: 1 });
   });
 
   it('refuses to write when fewer than MIN_EXPECTED_COMPLEXES come back', async () => {

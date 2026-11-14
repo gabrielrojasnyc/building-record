@@ -15,3 +15,33 @@ function formatWord(word: string): string {
 export function formatAddress(raw: string): string {
   return raw.trim().split(/\s+/).map(formatWord).join(' ');
 }
+
+/** Street-type words as the city's address dataset abbreviates them. */
+const STREET_TYPE_ABBREVIATIONS: Record<string, string> = {
+  AVENUE: 'AVE',
+  BOULEVARD: 'BLVD',
+  CIRCLE: 'CIR',
+  COURT: 'CT',
+  COVE: 'CV',
+  DRIVE: 'DR',
+  HIGHWAY: 'HWY',
+  LANE: 'LN',
+  PARKWAY: 'PKWY',
+  PLACE: 'PL',
+  ROAD: 'RD',
+  STREET: 'ST',
+  TERRACE: 'TER',
+  TRAIL: 'TRL',
+  WAY: 'WAY',
+};
+
+/**
+ * A Repeat Offender registration's address in the address dataset's form: no parenthetical
+ * (some list every building number), single spaces, and a trailing street-type word abbreviated.
+ */
+export function formatRegisteredAddress(raw: string): string {
+  const words = raw.replace(/\([^)]*\)/g, ' ').trim().toUpperCase().split(/\s+/);
+  const last = words.length - 1;
+  words[last] = STREET_TYPE_ABBREVIATIONS[words[last]] ?? words[last];
+  return formatAddress(words.join(' '));
+}

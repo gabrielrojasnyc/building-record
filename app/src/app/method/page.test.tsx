@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import type { Complex, Meta } from "@/domain/types";
+import type { Meta } from "@/domain/types";
+import { readDataFile } from "../dataFiles";
 import MethodPage from "./page";
 
 const meta: Meta = {
@@ -10,33 +11,11 @@ const meta: Meta = {
   caseCount: 17602,
   unmatchedCaseShare: 0.131,
   uncategorizedCases: 0,
+  futureDatedCases: 0,
 };
 
-const counts = { structure: 0, property: 0, landuse: 0, permit: 0 };
-const complex = (id: string, units: Complex["units"]): Complex => ({
-  id,
-  parcelIds: [id],
-  address: id,
-  lon: 0,
-  lat: 0,
-  acres: 1,
-  cases12: counts,
-  cases: counts,
-  open: 0,
-  lastCase: null,
-  repeatOffender: null,
-  units,
-});
-const complexes = [
-  complex("a", { count: 100, source: "repeat-offender" }),
-  complex("b", null),
-  complex("c", { count: 40, source: "affordable-housing" }),
-  complex("d", null),
-  complex("e", null),
-];
-
 vi.mock("../dataFiles", () => ({
-  readDataFile: vi.fn(async (name: string) => (name === "meta.json" ? meta : complexes)),
+  readDataFile: vi.fn(async () => meta),
 }));
 
 async function renderPage() {
@@ -62,7 +41,7 @@ it("reads the numbers it names from the data", async () => {
   expect(screen.getByText("This copy of the data was pulled on November 14, 2026.")).toBeVisible();
 });
 
-it("links and names every source, with the license and the map credit", async () => {
+it("links and names all five sources, with the map credit", async () => {
   await renderPage();
 
   const sources = {
@@ -70,16 +49,13 @@ it("links and names every source, with the license and the map credit", async ()
     Addresses: "https://data.austintexas.gov/d/9s7j-tygf",
     "Austin Code Complaint Cases": "https://data.austintexas.gov/d/6wtj-zbtb",
     "Repeat Offender Registrations": "https://data.austintexas.gov/d/86z9-i27i",
-    "Affordable Housing Inventory": "https://data.austintexas.gov/d/ifzc-3xz8",
     "Austin 311 Public Data": "https://data.austintexas.gov/d/xwdj-i9he",
   };
   for (const [name, href] of Object.entries(sources)) {
     expect(screen.getByRole("link", { name })).toHaveAttribute("href", href);
   }
-  expect(screen.getByRole("link", { name: "CC BY-SA 4.0" })).toHaveAttribute(
-    "href",
-    "https://creativecommons.org/licenses/by-sa/4.0/",
-  );
+  expect(screen.getByText(/All five datasets are published by the City of Austin/)).toBeVisible();
+  expect(document.body.textContent).not.toMatch(/Affordable Housing|CC BY-SA|six datasets/);
   expect(
     screen.getByText(/Map data is from OpenStreetMap contributors, delivered through OpenMapTiles and OpenFreeMap/),
   ).toBeVisible();
@@ -104,11 +80,13 @@ it("uses no score language, em dashes or double dashes", async () => {
   expect(text).not.toMatch(/—|--/);
 });
 
-it("says how many complexes have a published unit count, from the data", async () => {
+it("explains why counts are not shown per unit", async () => {
   await renderPage();
 
   expect(
-    screen.getByText(/The city publishes a unit count for 2 of these 2,498 complexes, so a per-unit rate cannot be shown for most\./),
+    screen.getByText(
+      "Buildings are shown by raw case count with the size of their parcel, not as cases per unit. The city does not publish unit counts for most of these buildings, so a per-unit rate cannot be shown.",
+    ),
   ).toBeVisible();
 });
 
@@ -147,6 +125,7 @@ it("describes each of the four ways a building is labelled", async () => {
 
   const labelling = screen.getByRole("heading", { name: "How a building is labelled" }).parentElement;
   expect(labelling).toHaveTextContent("a city address point that falls inside the parcel");
+  expect(labelling).toHaveTextContent("a whole address is used before a fractional one such as 310 1/2 Comal St, then the lowest street number");
   expect(labelling).toHaveTextContent("the address the city registered it under");
   expect(labelling).toHaveTextContent(
     "its city parcel ID and the nearest address point within 150 meters, such as Parcel 0123456789, near 100 Main St. That address may belong to a neighbor.",
@@ -162,4 +141,15 @@ it("says parcels sharing an address are shown as one complex", async () => {
   expect(complexes).toHaveTextContent("parcels that share an address are shown as one complex");
   expect(complexes).toHaveTextContent("within 250 meters of one another");
   expect(complexes).not.toHaveTextContent("Neighboring parcels are not merged");
+});
+
+it("says how many cases carry an unrecognized description, only when there are some", async () => {
+  await renderPage();
+  expect(document.body.textContent).not.toContain("does not recognize");
+
+  vi.mocked(readDataFile).mockResolvedValueOnce({ ...meta, uncategorizedCases: 12 });
+  render(await MethodPage());
+  expect(
+    screen.getByText(/12 cases carry a description this site does not recognize and are not counted\./),
+  ).toBeVisible();
 });

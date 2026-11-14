@@ -30,7 +30,6 @@ const busy: Complex = {
     activeViolations: 0,
     totalViolations: 166,
   },
-  units: { count: 562, source: "repeat-offender" },
 };
 
 const busyDetail: BuildingDetail = {
@@ -60,7 +59,6 @@ const clean: Complex = {
   open: 0,
   lastCase: null,
   repeatOffender: null,
-  units: null,
 };
 
 const cleanDetail: BuildingDetail = {
@@ -176,15 +174,18 @@ it('shows None and "no code cases" for a clean building', () => {
   expect(screen.queryByText("Latest cases")).toBeNull();
 });
 
-it("shows units only when the city publishes them", () => {
+it("gives the parcel size and no unit count on the parcel line", () => {
   renderPage(busy, busyDetail);
-  expect(
-    screen.getByText("Apartment parcel, 20.5 acres, 562 units"),
-  ).toBeVisible();
+  expect(screen.getByText("Apartment parcel, 20.5 acres")).toBeVisible();
 
   cleanup();
   renderPage(clean, cleanDetail);
   expect(screen.getByText("Apartment parcel, 15 acres")).toBeVisible();
+});
+
+it("says a sliver parcel is under a tenth of an acre", () => {
+  renderPage({ ...clean, acres: 0 }, cleanDetail);
+  expect(screen.getByText("Apartment parcel, under 0.1 acres")).toBeVisible();
 });
 
 it("says how many parcels a complex covers when parcels sharing an address are shown as one", () => {
@@ -204,6 +205,19 @@ it("notes a listing on the city's Repeat Offender list with its published figure
   expect(note).toHaveTextContent(
     "On the city's Repeat Offender list Mia Riverside, 562 units. 0 active of 166 total violations.",
   );
+});
+
+it("counts a single registered unit in the singular", () => {
+  renderPage(
+    {
+      ...busy,
+      repeatOffender: { name: null, units: 1, activeViolations: 1, totalViolations: 1 },
+    },
+    busyDetail,
+  );
+  expect(
+    screen.getByText("On the city's Repeat Offender list").parentElement,
+  ).toHaveTextContent("Registered property, 1 unit. 1 active of 1 total violations.");
 });
 
 it("keeps the full record whatever complaint type the map is filtered to", () => {

@@ -8,11 +8,6 @@ export interface RepeatOffender {
   totalViolations: number;
 }
 
-export interface PublishedUnits {
-  count: number;
-  source: 'repeat-offender' | 'affordable-housing';
-}
-
 export interface Complex {
   /** City parcel ID of the member with the most cases since 2023-11-01: 10 digits in Travis County, R-prefixed in Williamson County. */
   id: string;
@@ -30,7 +25,6 @@ export interface Complex {
   /** ISO date of the most recent case. */
   lastCase: string | null;
   repeatOffender: RepeatOffender | null;
-  units: PublishedUnits | null;
 }
 
 export interface BuildingDetail {
@@ -54,4 +48,6 @@ export interface Meta {
   unmatchedCaseShare: number;
   /** Cases with a parcel ID and a description the app does not recognise. */
   uncategorizedCases: number;
+  /** Categorized cases opened after the pull date, left out of every count. */
+  futureDatedCases: number;
 }

@@ -1,10 +1,10 @@
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { Complex, Meta, PublishedUnits } from '@/domain/types';
-import { formatAddress } from '@/domain/address';
+import type { Complex, Meta } from '@/domain/types';
+import { formatRegisteredAddress } from '@/domain/address';
 import { buildAddressResolver, loadAddressPoints } from './addresses';
 import { emptyCaseSummary, loadCases } from './cases';
-import { loadPublishedUnits, loadRepeatOffenders, type RepeatOffenderRecord } from './context';
+import { loadRepeatOffenders } from './context';
 import { assertUniqueAddresses, combineParcels, type LabelledParcel } from './merge';
 import { loadApartmentParcels } from './parcels';
 
@@ -13,14 +13,15 @@ export const MIN_EXPECTED_COMPLEXES = 2000; // live: about 2,400 once parcels sh
 export const MIN_EXPECTED_CASES = 50_000; // live: 82,384
 export const MIN_EXPECTED_ADDRESS_POINTS = 300_000; // live: 441,043
 export const MIN_EXPECTED_REPEAT_OFFENDER_ROWS = 40; // live: 80
-export const MIN_EXPECTED_HOUSING_PARCELS = 1_000; // live: 1,969
+/** More unrecognized descriptions than this share of all cases read means the city changed its categories. */
+export const MAX_UNCATEGORIZED_SHARE = 0.01;
 
 export interface BuildOptions {
   minComplexes?: number;
   minCases?: number;
   minAddressPoints?: number;
   minRepeatOffenderRows?: number;
-  minHousingParcels?: number;
+  maxUncategorizedShare?: number;
 }
 
 function requireAtLeast(dataset: string, received: number, floor: number): void {
@@ -42,33 +43,28 @@ const roundTo3 = (value: number) => Math.round(value * 1000) / 1000;
 
 const startsWithHouseNumber = (address: string) => /^\d/.test(address);
 
-function publishedUnits(
-  offender: RepeatOffenderRecord | null,
-  housingUnits: number | undefined,
-): PublishedUnits | null {
-  if (offender && offender.units > 0) return { count: offender.units, source: 'repeat-offender' };
-  if (housingUnits && housingUnits > 0) return { count: housingUnits, source: 'affordable-housing' };
-  return null;
-}
-
 const sumCounts = (counts: Complex['cases']) => counts.structure + counts.property + counts.landuse + counts.permit;
 
 /** Files to publish, keyed by path relative to the output directory. */
 type Files = Map<string, string>;
 
 async function assemble(pulledAt: Date, fetchImpl: typeof fetch, floors: Required<BuildOptions>): Promise<{ files: Files; meta: Meta }> {
-  const [parcels, addressPoints, caseIndex, repeatOffenders, housing] = await Promise.all([
+  const [parcels, addressPoints, caseIndex, repeatOffenders] = await Promise.all([
     loadApartmentParcels(fetchImpl),
     loadAddressPoints(fetchImpl),
     loadCases(pulledAt, fetchImpl),
     loadRepeatOffenders(fetchImpl),
-    loadPublishedUnits(fetchImpl),
   ]);
 
   requireAtLeast('address points', addressPoints.length, floors.minAddressPoints);
   requireAtLeast('code cases', caseIndex.totalCases, floors.minCases);
   requireAtLeast('Repeat Offender rows', repeatOffenders.rowsRead, floors.minRepeatOffenderRows);
-  requireAtLeast('housing inventory parcels', housing.size, floors.minHousingParcels);
+  const uncategorizedShare = caseIndex.totalCases === 0 ? 0 : caseIndex.uncategorizedCases / caseIndex.totalCases;
+  if (uncategorizedShare > floors.maxUncategorizedShare) {
+    throw new Error(
+      `${caseIndex.uncategorizedCases} of ${caseIndex.totalCases} cases (${(uncategorizedShare * 100).toFixed(1)}%) carry a description this site does not recognize, more than the ${floors.maxUncategorizedShare * 100}% allowed. Refusing to write.`,
+    );
+  }
   const { offenders } = repeatOffenders;
 
   const resolveAddress = buildAddressResolver(addressPoints);
@@ -76,10 +72,10 @@ async function assemble(pulledAt: Date, fetchImpl: typeof fetch, floors: Require
 
   const labelled: LabelledParcel[] = sorted.map((parcel) => {
     const offender = offenders.get(parcel.id) ?? null;
-    const registered = offender?.registeredAddress;
+    const registered = offender?.registeredAddress ? formatRegisteredAddress(offender.registeredAddress) : null;
     const { label, source } =
       registered && startsWithHouseNumber(registered)
-        ? { label: formatAddress(registered), source: 'registered' as const }
+        ? { label: registered, source: 'registered' as const }
         : resolveAddress(parcel);
     return {
       id: parcel.id,
@@ -91,7 +87,6 @@ async function assemble(pulledAt: Date, fetchImpl: typeof fetch, floors: Require
       bbox: parcel.bbox,
       summary: caseIndex.byParcel.get(parcel.id) ?? emptyCaseSummary(parcel.id, pulledAt),
       offender,
-      units: publishedUnits(offender, housing.get(parcel.id)),
     };
   });
 
@@ -110,6 +105,7 @@ async function assemble(pulledAt: Date, fetchImpl: typeof fetch, floors: Require
     caseCount: complexes.reduce((sum, c) => sum + sumCounts(c.cases), 0),
     unmatchedCaseShare: caseIndex.totalCases === 0 ? 0 : roundTo3(caseIndex.unmatchedCases / caseIndex.totalCases),
     uncategorizedCases: caseIndex.uncategorizedCases,
+    futureDatedCases: caseIndex.futureDatedCases,
   };
   files.set('complexes.json', JSON.stringify(complexes));
   files.set('meta.json', JSON.stringify(meta));
@@ -159,10 +155,10 @@ export async function buildData(
     minCases = MIN_EXPECTED_CASES,
     minAddressPoints = MIN_EXPECTED_ADDRESS_POINTS,
     minRepeatOffenderRows = MIN_EXPECTED_REPEAT_OFFENDER_ROWS,
-    minHousingParcels = MIN_EXPECTED_HOUSING_PARCELS,
+    maxUncategorizedShare = MAX_UNCATEGORIZED_SHARE,
   }: BuildOptions = {},
 ): Promise<Meta> {
-  const floors = { minComplexes, minCases, minAddressPoints, minRepeatOffenderRows, minHousingParcels };
+  const floors = { minComplexes, minCases, minAddressPoints, minRepeatOffenderRows, maxUncategorizedShare };
   const { files, meta } = await assemble(pulledAt, fetchImpl, floors);
 
   await mkdir(dirname(outDir), { recursive: true });

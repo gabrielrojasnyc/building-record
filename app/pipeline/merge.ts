@@ -2,7 +2,6 @@ import type {
   BuildingDetail,
   Complex,
   Counts,
-  PublishedUnits,
 } from "@/domain/types";
 import { metresBetween, type LabelSource } from "./addresses";
 import type { CaseSummary } from "./cases";
@@ -25,7 +24,6 @@ export interface LabelledParcel {
   summary: CaseSummary;
   /** An active Repeat Offender registration on this parcel. */
   offender: RepeatOffenderRecord | null;
-  units: PublishedUnits | null;
 }
 
 /** A published complex and the history file that goes with it. */
@@ -155,8 +153,6 @@ function combine(group: LabelledParcel[]): Property {
           totalViolations: offender.totalViolations,
         }
       : null,
-    // A count published for one parcel does not describe a property of several.
-    units: members.length === 1 ? members[0].units : null,
   };
 
   return {

@@ -32,7 +32,6 @@ const burton: Complex = {
     activeViolations: 9,
     totalViolations: 90,
   },
-  units: null,
 };
 
 const clean: Complex = {

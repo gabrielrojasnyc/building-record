@@ -10,6 +10,7 @@ const meta: Meta = {
   caseCount: 17602,
   unmatchedCaseShare: 0.131,
   uncategorizedCases: 0,
+  futureDatedCases: 0,
 };
 
 it("says the site is not official, gives the pull date and links to the method page", () => {
