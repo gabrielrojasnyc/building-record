@@ -11,6 +11,7 @@ import {
 } from "@/domain/query";
 import type { Complex, Meta } from "@/domain/types";
 import type { CameraPadding } from "@/map/BuildingMap";
+import { BuildingPanel } from "./BuildingPanel";
 import { Filters } from "./Filters";
 import { IntroSearch } from "./IntroSearch";
 import { Notice } from "./Notice";
@@ -123,6 +124,9 @@ export function Finder({
     [complexes, trayBounds, view],
   );
 
+  const selected = selectedId === null ? undefined : byId.get(selectedId);
+  const clearSelection = useCallback(() => setSelectedId(null), []);
+
   const select = (id: string) => {
     const complex = byId.get(id);
     if (!complex) return;
@@ -155,6 +159,14 @@ export function Finder({
 
       <IntroSearch />
       <Filters view={view} onChange={changeView} />
+      {selected && (
+        <BuildingPanel
+          place="map"
+          complex={selected}
+          view={view}
+          onClose={clearSelection}
+        />
+      )}
 
       <div className="fixed inset-x-0 bottom-0 z-2 flex flex-col gap-2 pb-2">
         <Tray

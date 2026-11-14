@@ -1,4 +1,5 @@
 import { useId, useRef } from "react";
+import { CATEGORY_LABEL } from "@/domain/labels";
 import { countFor, type View } from "@/domain/query";
 import type { Category, Complex, Counts } from "@/domain/types";
 import { Glass } from "./Glass";
@@ -19,14 +20,6 @@ export const AREAS: Area[] = [
 ];
 
 const CARD_LIMIT = 40;
-
-/** Listed in the order that breaks ties when a building's top category is chosen. */
-const CATEGORY_LABEL: Record<Category, string> = {
-  structure: "Structure condition",
-  property: "Property upkeep",
-  landuse: "Land use",
-  permit: "Work without permit",
-};
 
 const CARD_SIZE = "h-[148px] rounded-[22px] px-[18px] py-4 phone:h-[136px]";
 
