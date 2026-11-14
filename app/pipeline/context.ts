@@ -30,13 +30,20 @@ const count = (value: string | undefined) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+export interface RepeatOffenderList {
+  /** Active registrations, keyed by parcel ID. */
+  offenders: Map<string, RepeatOffenderRecord>;
+  /** Every row the city returned, Suspended included. Lets the caller spot a truncated read. */
+  rowsRead: number;
+}
+
 /** Active Repeat Offender registrations, keyed by parcel ID. The owner field is never requested. */
-export async function loadRepeatOffenders(fetchImpl: typeof fetch = fetch): Promise<Map<string, RepeatOffenderRecord>> {
+export async function loadRepeatOffenders(fetchImpl: typeof fetch = fetch): Promise<RepeatOffenderList> {
   const rows = await readAll<RepeatOffenderRow>(
     REPEAT_OFFENDER_DATASET,
     {
       select: 'parcelid,status,establishmentname,foldername,numberofunits,activeviolations,totalviolations',
-      order: 'parcelid',
+      order: 'parcelid,:id',
     },
     fetchImpl,
   );
@@ -53,14 +60,14 @@ export async function loadRepeatOffenders(fetchImpl: typeof fetch = fetch): Prom
       registeredAddress: row.foldername?.trim() || null,
     });
   }
-  return offenders;
+  return { offenders, rowsRead: rows.length };
 }
 
 /** Affordable Housing Inventory unit counts, the largest total when a parcel has several rows. */
 export async function loadPublishedUnits(fetchImpl: typeof fetch = fetch): Promise<Map<string, number>> {
   const rows = await readAll<HousingRow>(
     AFFORDABLE_HOUSING_DATASET,
-    { select: 'parcel_id,total_units', order: 'parcel_id' },
+    { select: 'parcel_id,total_units', order: 'parcel_id,:id' },
     fetchImpl,
   );
 

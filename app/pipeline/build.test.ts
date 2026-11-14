@@ -7,7 +7,14 @@ import addressRows from './fixtures/addresses.json';
 import housingRows from './fixtures/housing-inventory.json';
 import parcelRows from './fixtures/parcels.json';
 import repeatOffenderRows from './fixtures/repeat-offenders.json';
-import { MIN_EXPECTED_COMPLEXES, buildData } from './build';
+import {
+  MIN_EXPECTED_ADDRESS_POINTS,
+  MIN_EXPECTED_CASES,
+  MIN_EXPECTED_COMPLEXES,
+  MIN_EXPECTED_HOUSING_PARCELS,
+  MIN_EXPECTED_REPEAT_OFFENDER_ROWS,
+  buildData,
+} from './build';
 import { CityApiError } from './socrata';
 
 const NOW = new Date('2026-11-14T15:00:00Z');
@@ -56,6 +63,8 @@ const failingOn = (datasetId: string) =>
       ? new Response('forbidden', { status: 403 })
       : fixtureFetch(url)) as typeof fetch;
 
+const LOW = { minComplexes: 1, minCases: 1, minAddressPoints: 1, minRepeatOffenderRows: 1, minHousingParcels: 1 };
+
 const readJson = <T>(path: string) => JSON.parse(readFileSync(path, 'utf8')) as T;
 
 let root: string;
@@ -71,7 +80,7 @@ const complexById = (id: string) => readJson<Complex[]>(`${out}/complexes.json`)
 
 describe('buildData', () => {
   it('writes one Complex per apartment parcel, including parcels with no cases', async () => {
-    const meta = await buildData(out, NOW, fixtureFetch, { minComplexes: 1 });
+    const meta = await buildData(out, NOW, fixtureFetch, LOW);
     const complexes = readJson<Complex[]>(`${out}/complexes.json`);
     expect(complexes).toHaveLength(6);
     expect(complexes.map((c) => c.id)).toEqual([...complexes.map((c) => c.id)].sort());
@@ -81,7 +90,7 @@ describe('buildData', () => {
   });
 
   it('publishes meta with the Austin pull date and case shares', async () => {
-    const meta = await buildData(out, NOW, fixtureFetch, { minComplexes: 1 });
+    const meta = await buildData(out, NOW, fixtureFetch, LOW);
     expect(readJson<Meta>(`${out}/meta.json`)).toEqual(meta);
     expect(meta).toEqual({
       pulledAt: '2026-11-14',
@@ -95,17 +104,17 @@ describe('buildData', () => {
 
   it('uses the Austin calendar date even when UTC has already rolled over', async () => {
     const lateEvening = new Date('2026-11-15T03:30:00Z');
-    const meta = await buildData(out, lateEvening, fixtureFetch, { minComplexes: 1 });
+    const meta = await buildData(out, lateEvening, fixtureFetch, LOW);
     expect(meta.pulledAt).toBe('2026-11-14');
   });
 
   it('prefers Repeat Offender units over the housing inventory when both exist', async () => {
-    await buildData(out, NOW, fixtureFetch, { minComplexes: 1 });
+    await buildData(out, NOW, fixtureFetch, LOW);
     expect(complexById(BIG_PARCEL).units).toEqual({ count: 300, source: 'repeat-offender' });
   });
 
   it('falls back to the housing inventory for a Suspended registration, a zero unit count and a parcel not on the list', async () => {
-    await buildData(out, NOW, fixtureFetch, { minComplexes: 1 });
+    await buildData(out, NOW, fixtureFetch, LOW);
     const suspended = complexById('0234111501');
     expect(suspended.repeatOffender).toBeNull();
     expect(suspended.units).toEqual({ count: 120, source: 'affordable-housing' });
@@ -115,7 +124,7 @@ describe('buildData', () => {
   });
 
   it('uses the Repeat Offender establishment name and never an owner field', async () => {
-    await buildData(out, NOW, fixtureFetch, { minComplexes: 1 });
+    await buildData(out, NOW, fixtureFetch, LOW);
     expect(complexById(BIG_PARCEL).repeatOffender).toEqual({
       name: 'Riverside Terrace Apartments',
       units: 300,
@@ -130,7 +139,7 @@ describe('buildData', () => {
   });
 
   it('takes the address from the city registration for a listed property and from containment otherwise', async () => {
-    await buildData(out, NOW, fixtureFetch, { minComplexes: 1 });
+    await buildData(out, NOW, fixtureFetch, LOW);
     expect(complexById(BIG_PARCEL).address).toBe('8900 N IH 35 SVRD SB');
     // Active but registered under a name with no house number: containment applies.
     expect(complexById('0312130115').address).not.toMatch(/PARCEL ONLY/i);
@@ -138,7 +147,7 @@ describe('buildData', () => {
   });
 
   it('writes a BuildingDetail with the parcel bbox for every complex', async () => {
-    await buildData(out, NOW, fixtureFetch, { minComplexes: 1 });
+    await buildData(out, NOW, fixtureFetch, LOW);
     const complexes = readJson<Complex[]>(`${out}/complexes.json`);
     for (const { id } of complexes) {
       const detail = readJson<BuildingDetail>(`${out}/buildings/${id}.json`);
@@ -156,7 +165,7 @@ describe('buildData', () => {
 
   it('writes nothing when any dataset read fails', async () => {
     for (const dataset of Object.keys(FIXTURES)) {
-      await expect(buildData(out, NOW, failingOn(dataset), { minComplexes: 1 })).rejects.toBeInstanceOf(CityApiError);
+      await expect(buildData(out, NOW, failingOn(dataset), LOW)).rejects.toBeInstanceOf(CityApiError);
       expect(existsSync(out)).toBe(false);
     }
   });
@@ -164,7 +173,7 @@ describe('buildData', () => {
   it('leaves the previous files untouched when a pull fails', async () => {
     mkdirSync(out);
     writeFileSync(`${out}/meta.json`, '{"yesterday":true}');
-    await expect(buildData(out, NOW, failingOn('6wtj-zbtb'), { minComplexes: 1 })).rejects.toBeInstanceOf(CityApiError);
+    await expect(buildData(out, NOW, failingOn('6wtj-zbtb'), LOW)).rejects.toBeInstanceOf(CityApiError);
     expect(readFileSync(`${out}/meta.json`, 'utf8')).toBe('{"yesterday":true}');
     expect(readdirSync(root)).toEqual(['data']);
   });
@@ -172,15 +181,33 @@ describe('buildData', () => {
   it('replaces the previous files completely on success', async () => {
     mkdirSync(`${out}/buildings`, { recursive: true });
     writeFileSync(`${out}/buildings/stale.json`, '{}');
-    await buildData(out, NOW, fixtureFetch, { minComplexes: 1 });
+    await buildData(out, NOW, fixtureFetch, LOW);
     expect(existsSync(`${out}/buildings/stale.json`)).toBe(false);
     expect(existsSync(`${out}/meta.json`)).toBe(true);
     expect(readdirSync(root)).toEqual(['data']);
   });
 
+  it.each([
+    ['6wtj-zbtb', 'code cases', 'minCases'],
+    ['9s7j-tygf', 'address points', 'minAddressPoints'],
+    ['86z9-i27i', 'Repeat Offender rows', 'minRepeatOffenderRows'],
+    ['ifzc-3xz8', 'housing inventory parcels', 'minHousingParcels'],
+  ])('refuses to publish over good data when %s is short (%s)', async (_dataset, label, option) => {
+    mkdirSync(out);
+    writeFileSync(`${out}/meta.json`, '{"yesterday":true}');
+    const tooHigh = { ...LOW, [option]: 1_000_000 };
+    await expect(buildData(out, NOW, fixtureFetch, tooHigh)).rejects.toThrow(new RegExp(`Only \\d+ ${label} came back, expected at least 1000000`));
+    expect(readFileSync(`${out}/meta.json`, 'utf8')).toBe('{"yesterday":true}');
+    expect(readdirSync(root)).toEqual(['data']);
+  });
+
+  it('declares a floor for every dataset', () => {
+    expect([MIN_EXPECTED_CASES, MIN_EXPECTED_ADDRESS_POINTS, MIN_EXPECTED_REPEAT_OFFENDER_ROWS, MIN_EXPECTED_HOUSING_PARCELS]).toEqual([50_000, 300_000, 40, 1_000]);
+  });
+
   it('refuses to write when fewer than MIN_EXPECTED_COMPLEXES come back', async () => {
     expect(MIN_EXPECTED_COMPLEXES).toBe(2000);
-    await expect(buildData(out, NOW, fixtureFetch)).rejects.toThrow(/6 .*2000/);
+    await expect(buildData(out, NOW, fixtureFetch, { ...LOW, minComplexes: MIN_EXPECTED_COMPLEXES })).rejects.toThrow(/6 .*2000/);
     expect(existsSync(out)).toBe(false);
   });
 });

@@ -6,8 +6,26 @@ import { emptyCaseSummary, loadCases } from './cases';
 import { loadPublishedUnits, loadRepeatOffenders, type RepeatOffenderRecord } from './context';
 import { loadApartmentParcels } from './parcels';
 
-/** A pull that returns fewer apartment parcels than this was cut short. The city lists about 2,500. */
-export const MIN_EXPECTED_COMPLEXES = 2000;
+/** A pull that returns fewer rows than a floor below was cut short. Each is well under the live count. */
+export const MIN_EXPECTED_COMPLEXES = 2000; // live: about 2,500
+export const MIN_EXPECTED_CASES = 50_000; // live: 82,384
+export const MIN_EXPECTED_ADDRESS_POINTS = 300_000; // live: 441,043
+export const MIN_EXPECTED_REPEAT_OFFENDER_ROWS = 40; // live: 80
+export const MIN_EXPECTED_HOUSING_PARCELS = 1_000; // live: 1,969
+
+export interface BuildOptions {
+  minComplexes?: number;
+  minCases?: number;
+  minAddressPoints?: number;
+  minRepeatOffenderRows?: number;
+  minHousingParcels?: number;
+}
+
+function requireAtLeast(dataset: string, received: number, floor: number): void {
+  if (received < floor) {
+    throw new Error(`Only ${received} ${dataset} came back, expected at least ${floor}. Refusing to write.`);
+  }
+}
 
 const WRITE_BATCH = 100;
 
@@ -36,8 +54,8 @@ const sumCounts = (counts: Complex['cases']) => counts.structure + counts.proper
 /** Files to publish, keyed by path relative to the output directory. */
 type Files = Map<string, string>;
 
-async function assemble(pulledAt: Date, fetchImpl: typeof fetch, minComplexes: number): Promise<{ files: Files; meta: Meta }> {
-  const [parcels, addressPoints, caseIndex, offenders, housing] = await Promise.all([
+async function assemble(pulledAt: Date, fetchImpl: typeof fetch, floors: Required<BuildOptions>): Promise<{ files: Files; meta: Meta }> {
+  const [parcels, addressPoints, caseIndex, repeatOffenders, housing] = await Promise.all([
     loadApartmentParcels(fetchImpl),
     loadAddressPoints(fetchImpl),
     loadCases(pulledAt, fetchImpl),
@@ -45,9 +63,12 @@ async function assemble(pulledAt: Date, fetchImpl: typeof fetch, minComplexes: n
     loadPublishedUnits(fetchImpl),
   ]);
 
-  if (parcels.length < minComplexes) {
-    throw new Error(`Only ${parcels.length} apartment parcels came back, expected at least ${minComplexes}. Refusing to write.`);
-  }
+  requireAtLeast('apartment parcels', parcels.length, floors.minComplexes);
+  requireAtLeast('address points', addressPoints.length, floors.minAddressPoints);
+  requireAtLeast('code cases', caseIndex.totalCases, floors.minCases);
+  requireAtLeast('Repeat Offender rows', repeatOffenders.rowsRead, floors.minRepeatOffenderRows);
+  requireAtLeast('housing inventory parcels', housing.size, floors.minHousingParcels);
+  const { offenders } = repeatOffenders;
 
   const resolveAddress = buildAddressResolver(addressPoints);
   const sorted = [...parcels].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -134,9 +155,16 @@ export async function buildData(
   outDir: string,
   pulledAt: Date,
   fetchImpl: typeof fetch = fetch,
-  { minComplexes = MIN_EXPECTED_COMPLEXES }: { minComplexes?: number } = {},
+  {
+    minComplexes = MIN_EXPECTED_COMPLEXES,
+    minCases = MIN_EXPECTED_CASES,
+    minAddressPoints = MIN_EXPECTED_ADDRESS_POINTS,
+    minRepeatOffenderRows = MIN_EXPECTED_REPEAT_OFFENDER_ROWS,
+    minHousingParcels = MIN_EXPECTED_HOUSING_PARCELS,
+  }: BuildOptions = {},
 ): Promise<Meta> {
-  const { files, meta } = await assemble(pulledAt, fetchImpl, minComplexes);
+  const floors = { minComplexes, minCases, minAddressPoints, minRepeatOffenderRows, minHousingParcels };
+  const { files, meta } = await assemble(pulledAt, fetchImpl, floors);
 
   await mkdir(dirname(outDir), { recursive: true });
   const staged = `${outDir}.staging-${process.pid}`;
