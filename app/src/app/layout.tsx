@@ -16,13 +16,17 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "Austin Apartment Finder",
-  description: "City code complaint records for Austin apartment buildings, on a map.",
+  title: "Building Record",
+  description:
+    "Austin apartments, seen through the city's own complaint files.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${instrumentSerif.variable} ${outfit.variable} h-full`}>
+    <html
+      lang="en"
+      className={`${instrumentSerif.variable} ${outfit.variable} h-full`}
+    >
       <body className="min-h-full font-sans">{children}</body>
     </html>
   );
