@@ -81,5 +81,23 @@
     "status": "Closed",
     "opened_date": "2025-01-09T00:00:00.000",
     "parcelid": ""
+  },
+  {
+    "parcelid": "0100000001",
+    "description": "Structure Condition Violation(s)",
+    "status": "Closed",
+    "opened_date": "2023-11-01T00:00:00.000"
+  },
+  {
+    "parcelid": "0100000001",
+    "description": "Property Abatement",
+    "status": "Active",
+    "opened_date": "2026-11-20T00:00:00.000"
+  },
+  {
+    "parcelid": "0100000003",
+    "description": "Land Use Violation(s)",
+    "status": "Active",
+    "opened_date": "2026-12-01T00:00:00.000"
   }
 ]

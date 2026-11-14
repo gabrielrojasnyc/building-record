@@ -31,6 +31,8 @@ export interface CaseIndex {
   unmatchedCases: number;
   /** Rows with a parcel ID and a description this app does not recognise. */
   uncategorizedCases: number;
+  /** Categorized rows opened after the pull date. Left out of every count and series, still in totalCases. */
+  futureDatedCases: number;
 }
 
 interface CaseRow {
@@ -52,8 +54,15 @@ const pad = (n: number) => String(n).padStart(2, '0');
 
 const daysInMonth = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
 
-/** The pull date as a UTC calendar date, YYYY-MM-DD. */
-const isoDate = (date: Date) => date.toISOString().slice(0, 10);
+const austinDate = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Chicago',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/** The pull date as an Austin calendar date, YYYY-MM-DD. */
+const isoDate = (date: Date) => austinDate.format(date);
 
 /** Same day of month, 12 months earlier, clamped for 29 February. */
 function twelveMonthsBefore(pulled: string): string {
@@ -89,6 +98,32 @@ interface Accumulator {
   recent: { opened: string; category: Category; status: string }[];
 }
 
+const emptyAccumulator = (months: string[]): Accumulator => ({
+  cases12: emptyCounts(),
+  cases: emptyCounts(),
+  open: 0,
+  lastCase: null,
+  monthly: new Map(months.map((month) => [month, 0])),
+  recent: [],
+});
+
+function summarise(id: string, acc: Accumulator, months: string[]): CaseSummary {
+  const latest = [...acc.recent].sort((a, b) => (a.opened < b.opened ? 1 : a.opened > b.opened ? -1 : 0)).slice(0, LATEST_LIMIT);
+  return {
+    cases12: acc.cases12,
+    cases: acc.cases,
+    open: acc.open,
+    lastCase: acc.lastCase,
+    detail: { id, monthly: months.map((month) => ({ month, count: acc.monthly.get(month) ?? 0 })), latest },
+  };
+}
+
+/** A parcel with no cases: zero counts and a zero-filled monthly series for the pull date. */
+export function emptyCaseSummary(id: string, pulledAt: Date): CaseSummary {
+  const months = monthRange(isoDate(pulledAt));
+  return summarise(id, emptyAccumulator(months), months);
+}
+
 /** Reads code complaint cases since 2023-11-01 and summarises them per parcel. */
 export async function loadCases(pulledAt: Date, fetchImpl: typeof fetch = fetch): Promise<CaseIndex> {
   const pulled = isoDate(pulledAt);
@@ -99,7 +134,7 @@ export async function loadCases(pulledAt: Date, fetchImpl: typeof fetch = fetch)
     CODE_CASES_DATASET,
     {
       select: 'parcelid,description,status,opened_date',
-      where: `opened_date > '2023-11-01'`,
+      where: `opened_date >= '2023-11-01'`,
       order: 'case_id',
     },
     fetchImpl,
@@ -108,6 +143,7 @@ export async function loadCases(pulledAt: Date, fetchImpl: typeof fetch = fetch)
   const accumulators = new Map<string, Accumulator>();
   let unmatchedCases = 0;
   let uncategorizedCases = 0;
+  let futureDatedCases = 0;
 
   for (const row of rows) {
     const parcelId = row.parcelid?.trim();
@@ -122,15 +158,12 @@ export async function loadCases(pulledAt: Date, fetchImpl: typeof fetch = fetch)
     }
 
     const opened = (row.opened_date ?? '').slice(0, 10);
+    if (opened > pulled) {
+      futureDatedCases += 1;
+      continue;
+    }
     const status = row.status ?? '';
-    const acc: Accumulator = accumulators.get(parcelId) ?? {
-      cases12: emptyCounts(),
-      cases: emptyCounts(),
-      open: 0,
-      lastCase: null,
-      monthly: new Map(months.map((month) => [month, 0])),
-      recent: [],
-    };
+    const acc = accumulators.get(parcelId) ?? emptyAccumulator(months);
     accumulators.set(parcelId, acc);
 
     acc.cases[category] += 1;
@@ -138,25 +171,12 @@ export async function loadCases(pulledAt: Date, fetchImpl: typeof fetch = fetch)
     if (status !== 'Closed') acc.open += 1;
     if (acc.lastCase === null || opened > acc.lastCase) acc.lastCase = opened;
     const month = opened.slice(0, 7);
-    if (acc.monthly.has(month)) acc.monthly.set(month, (acc.monthly.get(month) ?? 0) + 1);
+    acc.monthly.set(month, (acc.monthly.get(month) ?? 0) + 1);
     acc.recent.push({ opened, category, status });
   }
 
   const byParcel = new Map<string, CaseSummary>();
-  for (const [id, acc] of accumulators) {
-    const latest = acc.recent.sort((a, b) => (a.opened < b.opened ? 1 : a.opened > b.opened ? -1 : 0)).slice(0, LATEST_LIMIT);
-    byParcel.set(id, {
-      cases12: acc.cases12,
-      cases: acc.cases,
-      open: acc.open,
-      lastCase: acc.lastCase,
-      detail: {
-        id,
-        monthly: months.map((month) => ({ month, count: acc.monthly.get(month) ?? 0 })),
-        latest,
-      },
-    });
-  }
+  for (const [id, acc] of accumulators) byParcel.set(id, summarise(id, acc, months));
 
-  return { byParcel, totalCases: rows.length, unmatchedCases, uncategorizedCases };
+  return { byParcel, totalCases: rows.length, unmatchedCases, uncategorizedCases, futureDatedCases };
 }
