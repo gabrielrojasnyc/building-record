@@ -4,3 +4,7 @@ app/public/data
 .env*
 .superpowers
 .DS_Store
+.playwright-mcp
+app/.vitest
+app/test-results
+app/playwright-report
