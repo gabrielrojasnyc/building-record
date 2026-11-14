@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Austin Building Record (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Outfit:wght@200;300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.16.0/dist/maplibre-gl.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="map" aria-label="Map of Austin apartment complexes"></div>
+<div class="mist" aria-hidden="true"></div>
+
+<header class="intro glass">
+  <h1>Building Record</h1>
+  <p>Austin apartments, seen through the city's own complaint files.</p>
+  <div class="search">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="4.6"/><path d="m10.6 10.6 3.4 3.4"/></svg>
+    <input id="search" type="search" placeholder="Search a street or address" autocomplete="off" aria-label="Search a street or address">
+    <div class="suggest glass" id="suggest" hidden></div>
+  </div>
+</header>
+
+<div class="filters glass">
+  <div class="group" id="range" role="group" aria-label="Period">
+    <button data-range="cases12" aria-pressed="true">12 months</button>
+    <button data-range="cases" aria-pressed="false">3 years</button>
+  </div>
+  <i class="rule"></i>
+  <div class="group" id="category" role="group" aria-label="Complaint type">
+    <button data-cat="all" aria-pressed="true">All</button>
+    <button data-cat="structure" aria-pressed="false">Structure</button>
+    <button data-cat="property" aria-pressed="false">Property</button>
+    <button data-cat="landuse" aria-pressed="false">Land use</button>
+  </div>
+  <i class="rule"></i>
+  <div class="group"><button id="roOnly" aria-pressed="false"><i class="ro-dot"></i>Repeat Offenders</button></div>
+</div>
+
+<aside class="detail glass" id="detail" hidden></aside>
+
+<section class="tray" aria-label="Complexes in view">
+  <div class="tray-head">
+    <div class="glass tray-title"><strong id="count" class="num">0</strong><span id="countLabel">complexes in view</span><button id="sort">Fewest first</button></div>
+    <nav class="areas" id="areas" aria-label="Jump to an area"></nav>
+  </div>
+  <div class="cards" id="cards"></div>
+</section>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
