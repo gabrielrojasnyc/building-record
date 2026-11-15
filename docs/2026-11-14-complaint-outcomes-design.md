@@ -1,6 +1,6 @@
 # Complaint Outcomes, Clearer Categories and Three Periods: Design
 
-Date: 2026-11-14. Status: draft, awaiting approval. Adds to `2026-11-14-apartment-finder-design.md`.
+Date: 2026-11-14. Status: approved by Gabe on 2026-11-14. Plan: `docs/superpowers/plans/2026-11-14-complaint-outcomes.md`. Adds to `2026-11-14-apartment-finder-design.md`.
 
 ## Intent
 
