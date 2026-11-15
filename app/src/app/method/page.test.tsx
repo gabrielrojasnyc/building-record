@@ -622,6 +622,10 @@ describe("names, building shapes and photos", () => {
     expect(section).toHaveTextContent(
       "A registration that reads as a company's name is not compared.",
     );
+    // Names were checked against current listings; the ones found wrong are held back, and the page says when.
+    expect(section).toHaveTextContent(
+      "Names that a check against current rental listings found to be out of date, misplaced or misspelled are not shown. The last full check was in November 2026.",
+    );
     // A few names come from the city, so the page must not say every name is from OpenStreetMap.
     expect(section).toHaveTextContent(
       "When OpenStreetMap has no name inside the parcel, the name the property is registered under on the city's Repeat Offender list is shown only after a person has checked and approved it, and never when it reads as a company's.",

@@ -73,6 +73,8 @@ const SOURCES = [
 const NAIP =
   "https://www.usgs.gov/centers/eros/science/usgs-eros-archive-aerial-photography-national-agriculture-imagery-program-naip";
 const ODBL = "https://opendatacommons.org/licenses/odbl/";
+/** When every name was last checked against current rental listings. Change it when that check is run again. */
+const NAMES_LAST_CHECKED = "November 2026";
 
 const CATEGORIES: Category[] = ["structure", "property", "landuse", "permit"];
 
@@ -546,7 +548,9 @@ export default async function MethodPage() {
               If the property is registered on the city&apos;s Repeat Offender
               list under a different property name, neither name is shown. A
               registration that reads as a company&apos;s name is not compared.
-              When OpenStreetMap
+              Names that a check against current rental listings found to be out
+              of date, misplaced or misspelled are not shown. The last full
+              check was in {NAMES_LAST_CHECKED}. When OpenStreetMap
               has no name inside the parcel, the name the property is registered
               under on the city&apos;s Repeat Offender list is shown only after
               a person has checked and approved it, and never when it reads as a
