@@ -1182,6 +1182,47 @@ test.describe("a building's complaint types", () => {
     await expect(links.first()).toHaveAttribute("target", "_blank");
   });
 
+  /** The one-parcel complex with the longest list of building complaints, so its record scrolls a long way. */
+  const longestBuildingRecord = () =>
+    complexes
+      .filter((complex) => complex.parcelIds.length === 1)
+      .sort(
+        (a, b) =>
+          complaintsOfType(b, "y3", "structure") -
+          complaintsOfType(a, "y3", "structure"),
+      )[0];
+
+  test("a link brought into view at the top of a scrolled record lands below the band that fades", async ({
+    page,
+  }) => {
+    const longest = longestBuildingRecord();
+    await page.goto("/");
+    await waitForMap(page);
+    await pickFromSearch(page, longest.address, longest);
+    await typeRow(page, "Building condition").click();
+    const complaints = panel(page).getByRole("region", {
+      name: "Complaints in the last 3 years, newest first",
+    });
+    await complaints.getByRole("button", { name: /^Show all/ }).click();
+    const scroller = panel(page).locator(".record-scroller");
+    await scroller.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+
+    // Shift+Tab to a link far above scrolls it into view. Chromium centres a focused element; other browsers bring
+    // it to the nearest edge, which is what `nearest` asks for here: the link arrives at the top of what scrolls.
+    const record = complaints.getByRole("link", { name: /^City record/ }).first();
+    await record.evaluate((element) =>
+      element.scrollIntoView({ block: "nearest" }),
+    );
+    const [link, record_scroller] = await Promise.all([
+      record.boundingBox(),
+      scroller.boundingBox(),
+    ]);
+    // The top 66 px of a scrolled record fade out under the close button; a focused link must sit below them.
+    expect(link!.y - record_scroller!.y).toBeGreaterThanOrEqual(66);
+  });
+
   test("on a phone, the close button stays in reach at the end of a long record, and closes it", async ({
     page,
   }) => {
@@ -1189,13 +1230,7 @@ test.describe("a building's complaint types", () => {
       !onPhone(),
       "The phone's record sheet is the one a long record scrolls out from under.",
     );
-    const longest = complexes
-      .filter((complex) => complex.parcelIds.length === 1)
-      .sort(
-        (a, b) =>
-          complaintsOfType(b, "y3", "structure") -
-          complaintsOfType(a, "y3", "structure"),
-      )[0];
+    const longest = longestBuildingRecord();
     expect(
       complaintsOfType(longest, "y3", "structure"),
       "the data has a long list of building complaints",

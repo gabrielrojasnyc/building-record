@@ -189,7 +189,7 @@ export function IntroSearch({
         {showsSurface && (
           <div className={SURFACE}>
             {isOpen && (
-              <ul id={listId} role="listbox" aria-label="Address suggestions">
+              <ul id={listId} role="listbox" aria-label="Address and building suggestions">
                 {matches.map((match, index) => (
                   <li
                     key={`${match.label}-${match.complexId ?? "city"}`}

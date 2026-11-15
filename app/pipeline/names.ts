@@ -213,9 +213,11 @@ function placeWords(name: string): string[] {
 /**
  * True when every word one name has left is found in the other, so "Menlo at Mueller" agrees with "Menlo
  * Apartments", or when the two are the same once spaces are removed, so "Parkside" agrees with "Park Side".
+ * A name with no word left, such as "Austin Apartments", says nothing about which place it is and agrees with none.
  */
 export function namesAgree(a: string, b: string): boolean {
   const [wordsA, wordsB] = [placeWords(a), placeWords(b)];
+  if (wordsA.length === 0 || wordsB.length === 0) return false;
   const within = (words: string[], other: string[]) =>
     words.every((word) => other.includes(word));
   return (

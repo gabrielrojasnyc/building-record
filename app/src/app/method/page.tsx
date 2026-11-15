@@ -544,7 +544,9 @@ export default async function MethodPage() {
                 ` Names as of ${formatPullDate(meta.namesAsOf)}.`}{" "}
               A name is shown only when one clear name lies inside the parcel.
               If the property is registered on the city&apos;s Repeat Offender
-              list under another name, neither name is shown. When OpenStreetMap
+              list under a different property name, neither name is shown. A
+              registration that reads as a company&apos;s name is not compared.
+              When OpenStreetMap
               has no name inside the parcel, the name the property is registered
               under on the city&apos;s Repeat Offender list is shown only after
               a person has checked and approved it, and never when it reads as a

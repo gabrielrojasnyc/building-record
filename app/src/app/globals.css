@@ -164,6 +164,11 @@
     under or beside it. It follows the scroll (--scrolled runs from 0 at the top to 1 sixty pixels down), so it never
     animates, and at the very top there is no mask at all.
   */
+  /* Anything brought into view, a link reached with the Tab key above all, stops below the 66 px band that fades. */
+  .record-scroller {
+    scroll-padding-top: 66px;
+  }
+
   .record-scroller[data-scrolled] {
     /* Held near clear beside the button, down past its lower edge at 46 px, so no text there is legible, then eased in. */
     mask-image: linear-gradient(

@@ -120,6 +120,12 @@ describe("namesAgree", () => {
     expect(namesAgree("Oaks", "The Oaks Village")).toBe(true);
     expect(namesAgree("Oaks Square", "The Oaks Village")).toBe(false);
   });
+
+  it("never agrees when a name has no word left that says which place it is", () => {
+    expect(namesAgree("Austin Apartments", "Mia Riverside")).toBe(false);
+    expect(namesAgree("Mia Riverside", "The Apartments at Austin")).toBe(false);
+    expect(namesAgree("Austin Apartments", "The Austin Homes")).toBe(false);
+  });
 });
 
 describe("chooseName against the city registration", () => {

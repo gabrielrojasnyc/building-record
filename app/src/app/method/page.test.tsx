@@ -616,7 +616,11 @@ describe("names, building shapes and photos", () => {
       "A name is shown only when one clear name lies inside the parcel.",
     );
     expect(section).toHaveTextContent(
-      "If the property is registered on the city's Repeat Offender list under another name, neither name is shown.",
+      "If the property is registered on the city's Repeat Offender list under a different property name, neither name is shown.",
+    );
+    // A registration in a company's name is not a property name, so it is not held against the name on the sign.
+    expect(section).toHaveTextContent(
+      "A registration that reads as a company's name is not compared.",
     );
     // A few names come from the city, so the page must not say every name is from OpenStreetMap.
     expect(section).toHaveTextContent(

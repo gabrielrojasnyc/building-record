@@ -475,11 +475,11 @@ function LeadFigure({ complex, period }: { complex: Complex; period: Period }) {
   );
 }
 
-/** The two periods the lead figure is not showing, shortest first, then the complaints still open. */
 /** What "open now" counts, which its caption is too short to say: not the active period, and every outcome. */
 const OPEN_NOW_SCOPE =
   "Complaints from the last 3 years that the city has not closed";
 
+/** The two periods the lead figure is not showing, shortest first, then the complaints still open. */
 function Figures({ complex, period }: { complex: Complex; period: Period }) {
   const figures: { value: string; label: string; scope?: string }[] = [
     ...PERIODS.filter((other) => other !== period).map((other) => ({

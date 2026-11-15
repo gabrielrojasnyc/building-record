@@ -1,6 +1,6 @@
 # Build record: decisions, checks and open items
 
-Dates: 2026-11-14 to 2026-11-15. Branch: `apartment-finder`, head `9ffde6e`. Nothing is published.
+Dates: 2026-11-14 to 2026-11-15. The work was built on the branch `apartment-finder` (head `9ffde6e`) and merged into `main` on 2026-11-15. Nothing is published.
 
 This is the hand-over record for three plans built by subagents under one coordinator (Claude): the apartment finder, the building spotlight, and the complaint outcomes. While the plans ran, the coordinator decided every conflict and ambiguity instead of stopping to ask. Each decision was logged as a ruling with what it costs if it was wrong. All 120 are listed at the end. The ones most worth Gabe's eye come first.
 
@@ -49,20 +49,23 @@ Only Gabe can close these:
 - Try the site on a real phone. The phone fixes were checked in an emulated phone only.
 - Publishing itself (a GitHub repository, hosting, the nightly job, a README runbook) has not been started and waits for a go-ahead.
 
-Small things found by the last review and left as they are, each real and none blocking:
+Small things the last review found. Four were fixed on 2026-11-15, after the merge, on the branch `review-leftovers`:
 
-- The method page says a property registered under another name shows neither name. One building (6201 Sneed Cv) is registered under a company's name and shows its OpenStreetMap name, because company registrations are not compared. One sentence to reword.
-- Under the scrolled panel's fade, a keyboard user in some browsers can focus a link they cannot see until they scroll. One line of CSS (`scroll-padding-top`).
-- The name comparison would treat a name made only of ignored words ("Austin Apartments") as agreeing with anything. No such name exists today.
+- The method page now says a property registered under a different property name shows neither name, and that a registration reading as a company's name is not compared. Before, the sentence was untrue for one building (6201 Sneed Cv).
+- A link brought into view at the top of a scrolled record now stops below the band that fades under the close button (`scroll-padding-top`).
+- The name comparison no longer lets a name made only of ignored words ("Austin Apartments") agree with anything. No name changed: 819 complexes still carry one.
+- The search suggestions list is labelled "Address and building suggestions" for screen readers.
+
+Left as they are, each real and none blocking:
+
 - A `public/data` folder from before the last fix wave makes a local production build fail at the method page. `REFRESH_DATA=1 npm run data` fixes it. A deploy starts clean and is not affected.
-- The search suggestions list is still labelled "Address suggestions" for screen readers.
 - Recorded-problem rows with no parcel id are dropped before any guard counts them.
 - The screen's selection state in `Finder.tsx` (selection, staged model, tray hold, focus hand-back) is spread over several handlers. Every spotlight fix round landed there. Worth folding into one structure before the next feature touches it.
 - Layout between 761 and about 1,100 px wide, and speed on a slow phone, were not run.
 
 ## What was checked
 
-- **Tests at the head:** 652 unit tests, lint and type checks clean, 72 end-to-end tests passing with 4 skipped by design (each runs on one of the two screen sizes only).
+- **Tests:** at the merge, 652 unit tests, lint and type checks clean, and 72 end-to-end tests passing with 4 skipped by design (each runs on one of the two screen sizes only). With the four later fixes: 653 unit tests and 74 end-to-end tests passing, 4 skipped.
 - **Reviews:** every task had its own review for requirements and quality, with fix rounds and re-reviews. Two whole-branch reviews on the most capable model, each followed by one fix wave and one re-review.
 - **Against the city's portal:** an independent script (`docs/2026-11-14-portal-check.mjs`, sharing no code with the app) re-derived the counts for 11 complexes from the portal, for every period and outcome, duplicates, open complaints and violations still open. 253 cells, 0 mismatches, on the data pulled 2026-11-14. Output: `docs/2026-11-14-portal-check-output.txt`. Cells below are complaints with duplicates in brackets.
 

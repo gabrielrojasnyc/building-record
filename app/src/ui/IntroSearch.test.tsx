@@ -100,6 +100,10 @@ describe("IntroSearch", () => {
       "aria-controls",
       screen.getByRole("listbox").id,
     );
+    // The list offers buildings by name as well as addresses, and says so to a screen reader.
+    expect(
+      screen.getByRole("listbox", { name: "Address and building suggestions" }),
+    ).toBeVisible();
   });
 
   it("shows a named complex by its name, with its address under it and the apartments tag", async () => {
