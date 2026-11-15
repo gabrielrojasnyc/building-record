@@ -13,6 +13,14 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   permit: "Work without a permit",
 };
 
+/** One word each, as the filter bar's type buttons read, where the full label does not fit. */
+export const CATEGORY_BUTTON_LABEL: Record<Category, string> = {
+  structure: "Building",
+  property: "Grounds",
+  landuse: "Zoning",
+  permit: "Permits",
+};
+
 /** What each category covers, in one line, written from the kinds of problem the city recorded at Repeat Offender properties. */
 export const CATEGORY_MEANING: Record<Category, string> = {
   structure:
@@ -30,6 +38,14 @@ export const CITY_CATEGORY_TERM: Record<Category, string> = {
   structure: "Structure Condition",
   property: "Property Abatement",
   landuse: "Land Use",
+  permit: "Work Without Permit",
+};
+
+/** The full text of the city's `description` for each category, exactly as the portal has it. Each includes its term above. */
+export const CITY_CATEGORY_DESCRIPTION: Record<Category, string> = {
+  structure: "Structure Condition Violation(s)",
+  property: "Property Abatement",
+  landuse: "Land Use Violation(s)",
   permit: "Work Without Permit",
 };
 

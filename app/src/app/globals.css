@@ -112,6 +112,20 @@
         color-mix(in srgb, var(--color-ice) 88%, transparent) 0%,
         transparent 30%
       );
+
+    /*
+      On a phone the title block and filters step aside while a building is spotlit, so the top band
+      that kept them readable goes. The clear area moves onto the frame the model is shown in: 30 px in
+      from each side, from 90 px below the top to the top of the 60% sheet. Its radii are that frame's
+      width and height, so the frame stays clear and the screen's edges fall back into fog.
+    */
+    @variant phone {
+      background: radial-gradient(
+        calc(100% - 60px) calc(40% - 90px) at 50% calc(20% + 45px),
+        transparent 45%,
+        color-mix(in srgb, var(--color-ice) 90%, transparent) 100%
+      );
+    }
   }
 
   /* A building card lifts when it or its pin is hovered, and turns dark once selected. */
@@ -233,15 +247,25 @@
   }
 }
 
-/* The spotlit complex's name: a glass pill over its marker, with a hairline stem down toward the model. */
+/*
+  The spotlit complex's name: a glass pill over its marker, with a hairline stem down toward the model.
+  One line, never wider than the screen allows with a margin; a longer name is cut with an ellipsis.
+*/
 .spotlight-label {
   position: relative;
+  max-width: min(320px, 100vw - 48px);
   padding: 9px 16px;
   border-radius: 999px;
   font: 400 19px/1 var(--font-display);
   color: var(--color-deep);
   white-space: nowrap;
   background: rgb(255 255 255 / 0.7);
+
+  > span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
   &::after {
     content: "";

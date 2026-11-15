@@ -82,7 +82,7 @@ interface FlyTarget {
 
 /**
  * The tray's hold: the ground it keeps counting while a building is open and until the camera is back.
- * `area` is null when the building was picked before the map first reported, and that first report fills it.
+ * `area` is null when the building was picked before the map first reported: the tray then keeps all of Austin.
  */
 interface Hold {
   area: ViewArea | null;
@@ -252,14 +252,12 @@ export function Finder({
 
   const reportViewArea = (area: ViewArea) => {
     setViewArea(area);
-    setHold((current) => {
-      if (current === null) return null;
-      // A pick made before the map first reported holds the first ground it reports.
-      if (current.area === null) return selectedId === null ? null : { area };
-      // After a building closes the camera eases back to where it was, and the tray lets go once it is there.
-      if (selectedId === null && sameGround(area, current.area)) return null;
-      return current;
-    });
+    // After a building closes the camera eases back to where it was, and the tray lets go once it is there.
+    setHold((current) =>
+      current !== null && current.area !== null && selectedId === null && sameGround(area, current.area)
+        ? null
+        : current,
+    );
   };
 
   // The camera may never come back to the same ground (a rotation, a resized window), so the hold ends soon after closing regardless.
@@ -276,24 +274,29 @@ export function Finder({
 
   const selected = selectedId === null ? undefined : byId.get(selectedId);
   const controlsRef = useRef<HTMLDivElement>(null);
-  const closedId = useRef<string | null>(null);
+  const openId = useRef<string | null>(null);
+  const handFocusBack = useRef(false);
 
+  /*
+    Reads no render's values, so the panel's Escape listener can never hold a stale copy. The hold is
+    left to end in its own ways (the camera back, the person moving the map, or the time limit), so
+    the list the building was picked from is still there when focus comes back to its card.
+  */
   const clearSelection = useCallback(() => {
-    closedId.current = selectedId;
+    handFocusBack.current = true;
     setSelectedId(null);
     setStage(null);
-    // With no model the camera has nowhere to come back from, so the tray follows the map at once.
-    if (spotlight === null) setHold(null);
-  }, [selectedId, spotlight]);
+  }, []);
 
   // Closing hands focus back to the card for the building that was open, or to the search when the tray has no card for it.
   // After the render, so on a phone the search is back and can take it.
   useEffect(() => {
-    const id = closedId.current;
-    if (id === null || selectedId !== null) return;
-    closedId.current = null;
+    const closed = openId.current;
+    openId.current = selectedId;
+    if (selectedId !== null || closed === null || !handFocusBack.current) return;
+    handFocusBack.current = false;
     const card = document.querySelector<HTMLElement>(
-      `[data-testid="card"][data-complex-id="${CSS.escape(id)}"]`,
+      `[data-testid="card"][data-complex-id="${CSS.escape(closed)}"]`,
     );
     (card ?? controlsRef.current?.querySelector<HTMLElement>('[role="combobox"]'))?.focus();
   }, [selectedId]);

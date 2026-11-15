@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import caseRows from "./fixtures/cases.json";
+import { CITY_CATEGORY_DESCRIPTION, CITY_CATEGORY_TERM } from "@/domain/labels";
 import { PERIODS, periodStarts } from "@/domain/periods";
 import type { Period } from "@/domain/periods";
 import {
@@ -10,6 +11,26 @@ import {
 } from "./cases";
 
 const PULLED_AT = new Date("2026-11-14T15:00:00Z");
+
+describe("the city's category descriptions", () => {
+  it("each map to their category, and each includes the term the method page names", () => {
+    for (const category of [
+      "structure",
+      "property",
+      "landuse",
+      "permit",
+    ] as const) {
+      expect(categoryOf(CITY_CATEGORY_DESCRIPTION[category])).toBe(category);
+      expect(CITY_CATEGORY_DESCRIPTION[category]).toContain(
+        CITY_CATEGORY_TERM[category],
+      );
+    }
+    expect(categoryOf("Structure Condition Violation(s)")).toBe("structure");
+    expect(categoryOf("Property Abatement")).toBe("property");
+    expect(categoryOf("Land Use Violation(s)")).toBe("landuse");
+    expect(categoryOf("Work Without Permit")).toBe("permit");
+  });
+});
 const PARCEL_A = "0100000001";
 const PARCEL_B = "R056943";
 
@@ -614,4 +635,3 @@ describe("complaint outcomes", () => {
     ]);
   });
 });
-
