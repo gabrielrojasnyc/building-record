@@ -14,12 +14,14 @@ import {
 import { aerialPhotoUrl } from "@/city/aerialPhoto";
 import { loadBuildingDetail } from "@/city/buildingDetail";
 import { load311Summary, type RequestTypeCount } from "@/city/requests311";
-import { formatAcres, formatCount } from "@/domain/format";
+import { formatAcres, formatCount, formatDate } from "@/domain/format";
 import { CATEGORY_LABEL, NO_CASES_CAUTION, titleOf } from "@/domain/labels";
 import { PERIODS, PERIOD_LABEL, PERIOD_PHRASE, type Period } from "@/domain/periods";
-import { countFor, DEFAULT_VIEW, type View } from "@/domain/query";
-import type { BuildingDetail, Category, Complex, Meta } from "@/domain/types";
+import { countFor, DEFAULT_VIEW, outcomeSplit, type CategoryFilter, type View } from "@/domain/query";
+import type { BuildingDetail, Category, Complaint, Complex, Meta } from "@/domain/types";
+import { CategoryDetail } from "./CategoryDetail";
 import { Glass } from "./Glass";
+import { OutcomeSummary } from "./OutcomeSummary";
 
 type Placement =
   /** Over the map screen: loads the building's history itself, can close, and links to the building's own page. */
@@ -30,7 +32,7 @@ type Placement =
 export type BuildingPanelProps = Placement & {
   complex: Complex;
   view: View;
-  /** From the data's meta: the 311 summary counts from the first day of the 3 years. */
+  /** From the data's meta: the first day of each period, for the still-open counts, the month chart and the 311 summary. */
   periodStarts: Meta["periodStarts"];
   fetchImpl?: typeof fetch;
 };
@@ -90,18 +92,6 @@ function useLoad<S, T>(
     : LOADING;
 }
 
-/** Calendar dates from the data, formatted in UTC so no time zone can shift the day. */
-function formatDate(
-  isoDate: string,
-  options: Intl.DateTimeFormatOptions,
-): string {
-  const [year, month, day = 1] = isoDate.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-US", {
-    ...options,
-    timeZone: "UTC",
-  });
-}
-
 const formatMonth = (yearMonth: string) =>
   formatDate(yearMonth, { month: "short", year: "numeric" });
 
@@ -134,6 +124,11 @@ export function BuildingPanel(props: BuildingPanelProps) {
     detail.status === "ready" ? detail.value.bbox : null,
     fetch311,
   );
+
+  const complaints = detail.status === "ready" ? detail.value.complaints : detail.status;
+  const periodStart = props.periodStarts[view.period];
+  const stillOpenIn = (category: CategoryFilter) =>
+    Array.isArray(complaints) ? violationsStillOpen(complaints, periodStart, category) : null;
 
   useEffect(() => {
     if (!onClose) return;
@@ -180,7 +175,18 @@ export function BuildingPanel(props: BuildingPanelProps) {
           )}
           <LeadFigure complex={complex} period={view.period} />
           <Figures complex={complex} period={view.period} />
-          <CategoryBars counts={countsByCategory(complex, view.period)} />
+          <CityFound complex={complex} period={view.period} violationsOpen={stillOpenIn("all")} />
+          {totalFor(complex, "y3") > 0 && (
+            // Keyed by building, so a newly chosen one opens with the filtered type's row, not the last one's.
+            <Categories
+              key={complex.id}
+              complex={complex}
+              view={view}
+              complaints={complaints}
+              deficiencies={detail.status === "ready" ? detail.value.deficiencies : []}
+              stillOpenIn={stillOpenIn}
+            />
+          )}
 
           {detail.status === "failed" ? (
             <Section title="Month by month">
@@ -191,7 +197,7 @@ export function BuildingPanel(props: BuildingPanelProps) {
             </Section>
           ) : (
             detail.status === "ready" && (
-              <MonthChart monthly={detail.value.monthly} />
+              <MonthChart monthly={detail.value.monthly} since={props.periodStarts.y3} />
             )
           )}
           {detail.status !== "failed" && <Requests311 outcome={requests} />}
@@ -386,11 +392,26 @@ function totalFor(complex: Complex, period: Period): number {
   return countFor(complex, { ...DEFAULT_VIEW, period });
 }
 
+const CATEGORIES = Object.keys(CATEGORY_LABEL) as Category[];
+
 function countsByCategory(complex: Complex, period: Period): Record<Category, number> {
-  const categories = Object.keys(CATEGORY_LABEL) as Category[];
   return Object.fromEntries(
-    categories.map((category) => [category, countFor(complex, { ...DEFAULT_VIEW, period, category })]),
+    CATEGORIES.map((category) => [category, countFor(complex, { ...DEFAULT_VIEW, period, category })]),
   ) as Record<Category, number>;
+}
+
+/**
+ * Confirmed violations whose case is not closed, opened on or after `since`, of one type or every type.
+ * Counted from the building's complaints, since the complex carries this for the 3 years only.
+ */
+function violationsStillOpen(complaints: Complaint[], since: string, category: CategoryFilter): number {
+  return complaints.filter(
+    (complaint) =>
+      complaint.outcome === "violation" &&
+      complaint.stillOpen &&
+      complaint.opened >= since &&
+      (category === "all" || complaint.category === category),
+  ).length;
 }
 
 function LeadFigure({ complex, period }: { complex: Complex; period: Period }) {
@@ -441,40 +462,158 @@ function Figures({ complex, period }: { complex: Complex; period: Period }) {
   );
 }
 
-function CategoryBars({ counts }: { counts: Record<Category, number> }) {
-  const categories = Object.keys(CATEGORY_LABEL) as Category[];
-  const longest = Math.max(
-    1,
-    ...categories.map((category) => counts[category]),
+/**
+ * The active period's complaints of every type by how the city closed them, and the duplicates left out.
+ * With no complaints in the period there is no list to head, so only the duplicates are said, if any.
+ */
+function CityFound(props: { complex: Complex; period: Period; violationsOpen: number | null }) {
+  const { complex, period } = props;
+  const duplicates = complex.duplicates[period] ?? 0;
+  const summary = (
+    <OutcomeSummary
+      split={outcomeSplit(complex, { ...DEFAULT_VIEW, period })}
+      violationsOpen={props.violationsOpen}
+      duplicates={duplicates}
+    />
   );
+  if (totalFor(complex, period) > 0) return <Section title="What the city found">{summary}</Section>;
+  return duplicates > 0 ? <div className="mt-3">{summary}</div> : null;
+}
+
+/**
+ * One row per category, each opening in place to explain itself; one open at a time. A type the map is
+ * filtered to starts open, so the number on the card is the first thing found; a later filter change
+ * leaves the person's choice alone.
+ */
+function Categories(props: {
+  complex: Complex;
+  view: View;
+  complaints: Complaint[] | "loading" | "failed";
+  deficiencies: BuildingDetail["deficiencies"];
+  stillOpenIn(category: Category): number | null;
+}) {
+  const { complex, view } = props;
+  const inPeriod = countsByCategory(complex, view.period);
+  const inThreeYears = countsByCategory(complex, "y3");
+  const filtered = view.category;
+  const [open, setOpen] = useState<Category | null>(() =>
+    filtered !== "all" && inThreeYears[filtered] > 0 ? filtered : null,
+  );
+  const idPrefix = useId();
+  const subheading = useContext(SectionLevel) === "h2" ? "h3" : "h4";
+
+  // Bars compare the counts on show: the period's, or the 3 years' when the period has none at all.
+  const periodIsEmpty = CATEGORIES.every((category) => inPeriod[category] === 0);
+  const longest = Math.max(1, ...CATEGORIES.map((category) => (periodIsEmpty ? inThreeYears : inPeriod)[category]));
 
   return (
     <Section title="What the complaints were about">
-      {categories.map((category) => (
-        <div
-          key={category}
-          className="grid grid-cols-[128px_1fr_30px] items-center gap-2.5 py-[5px] text-[14px]"
-        >
-          <span>{CATEGORY_LABEL[category]}</span>
-          <span
-            aria-hidden
-            className="h-1.5 overflow-hidden rounded-full bg-deep/12"
-          >
-            <span
-              className="block h-full rounded-full bg-linear-to-r/srgb from-steel to-deep"
-              style={{ width: `${(counts[category] / longest) * 100}%` }}
+      <ul>
+        {CATEGORIES.map((category) => {
+          const fromThreeYears = inPeriod[category] === 0 && inThreeYears[category] > 0;
+          const shown = fromThreeYears ? inThreeYears[category] : inPeriod[category];
+          const share = (periodIsEmpty || !fromThreeYears ? shown : 0) / longest;
+          const isOpen = open === category;
+          const detailId = `${idPrefix}-${category}`;
+          const row = (
+            <CategoryLine
+              label={CATEGORY_LABEL[category]}
+              count={shown}
+              fromThreeYears={fromThreeYears}
+              share={share}
+              chevron={inThreeYears[category] > 0 ? (isOpen ? "open" : "closed") : null}
             />
-          </span>
-          <span className="text-right tabular-nums">
-            {formatCount(counts[category])}
-          </span>
-        </div>
-      ))}
+          );
+
+          return (
+            <li key={category}>
+              {inThreeYears[category] === 0 ? (
+                <div className="py-[7px] text-[14px] text-steel">{row}</div>
+              ) : (
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  aria-controls={detailId}
+                  onClick={() => setOpen(isOpen ? null : category)}
+                  className="-mx-2 block w-[calc(100%+16px)] cursor-pointer rounded-[12px] px-2 py-[7px] text-left text-[14px] hover:bg-white/30"
+                >
+                  {row}
+                </button>
+              )}
+              {isOpen && (
+                <div id={detailId} className="pt-2 pb-3 pl-[18px] motion-safe:animate-unfold">
+                  <CategoryDetail
+                    category={category}
+                    complex={complex}
+                    complaints={props.complaints}
+                    deficiencies={props.deficiencies}
+                    view={view}
+                    isRepeatOffender={complex.repeatOffender !== null}
+                    violationsOpen={props.stillOpenIn(category)}
+                    heading={subheading}
+                  />
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
     </Section>
   );
 }
 
-function MonthChart({ monthly }: { monthly: BuildingDetail["monthly"] }) {
+/** A category's name and count on one line, with a chevron when it opens, and its thin bar beneath. */
+function CategoryLine(props: {
+  label: string;
+  count: number;
+  /** The period has none of these, so the count is the 3 years'. */
+  fromThreeYears: boolean;
+  share: number;
+  chevron: "open" | "closed" | null;
+}) {
+  return (
+    <>
+      <span className="flex items-center gap-2">
+        {props.chevron === null ? (
+          <span aria-hidden className="size-2.5 flex-none" />
+        ) : (
+          <svg
+            aria-hidden
+            viewBox="0 0 10 10"
+            className={`size-2.5 flex-none text-steel motion-safe:transition-transform motion-safe:duration-200 ${props.chevron === "open" ? "rotate-90" : ""}`}
+          >
+            <path
+              d="M3.5 1.5 7 5l-3.5 3.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
+        <span className="flex-1">{props.label}</span>
+        <span className="tabular-nums">
+          {formatCount(props.count)}
+          {props.fromThreeYears && (
+            <>
+              {" "}
+              <span className="text-[12px] text-steel">in 3 years</span>
+            </>
+          )}
+        </span>
+      </span>
+      <span aria-hidden className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-deep/12">
+        <span
+          className="block h-full rounded-full bg-linear-to-r/srgb from-steel to-deep"
+          style={{ width: `${props.share * 100}%` }}
+        />
+      </span>
+    </>
+  );
+}
+
+function MonthChart({ monthly, since }: { monthly: BuildingDetail["monthly"]; since: string }) {
   const peak = Math.max(0, ...monthly.map(({ count }) => count));
   if (peak === 0) {
     return (
@@ -493,6 +632,11 @@ function MonthChart({ monthly }: { monthly: BuildingDetail["monthly"] }) {
 
   return (
     <Section title="Month by month">
+      {/* The window rolls, so its first and last months are partial; the start date says so. */}
+      <p className={`${MESSAGE} mb-2`}>
+        Complaints opened since {formatDate(since, { month: "long", day: "numeric", year: "numeric" })}.
+        Duplicate reports are not counted.
+      </p>
       <div
         role="img"
         aria-label={summary}

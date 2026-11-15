@@ -20,6 +20,15 @@
       transform: translateY(14px);
     }
   }
+
+  /* A complaint category's detail fades in where it opens. */
+  --animate-unfold: unfold 0.2s ease-out;
+
+  @keyframes unfold {
+    from {
+      opacity: 0;
+    }
+  }
 }
 
 @theme inline {

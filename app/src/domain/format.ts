@@ -8,3 +8,12 @@ export function formatAcres(acres: number): string {
 export function formatCount(count: number): string {
   return count.toLocaleString('en-US');
 }
+
+/** A calendar date from the data, YYYY-MM-DD or YYYY-MM, formatted in UTC so no time zone can shift the day. */
+export function formatDate(isoDate: string, options: Intl.DateTimeFormatOptions): string {
+  const [year, month, day = 1] = isoDate.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-US', {
+    ...options,
+    timeZone: 'UTC',
+  });
+}

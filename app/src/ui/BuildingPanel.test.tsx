@@ -10,8 +10,9 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { aerialPhotoUrl } from "@/city/aerialPhoto";
 import { forgetBuildingDetails } from "@/city/buildingDetail";
+import { CATEGORY_MEANING } from "@/domain/labels";
 import { DEFAULT_VIEW, type View } from "@/domain/query";
-import type { BuildingDetail, Complex, Meta } from "@/domain/types";
+import type { BuildingDetail, Complaint, Complex, Meta } from "@/domain/types";
 import { BuildingPanel } from "./BuildingPanel";
 
 // The building file is shared and remembered, so each test starts from an empty cache.
@@ -158,9 +159,9 @@ function renderPage(
   return fetchImpl;
 }
 
-/** The large figure and its caption, read as one sentence. */
+/** The large figure and its caption, read as one sentence. An open category repeats the period phrase further down. */
 function leadFigure() {
-  const period = screen.getByText(
+  const [period] = screen.getAllByText(
     /^in the last (12 months|2 years|3 years)$/,
   );
   const figure = period.closest("p");
@@ -183,6 +184,19 @@ function barRow(label: string) {
   const row = within(bars).getByText(label).parentElement;
   if (!row) throw new Error(`No bar row for ${label}`);
   return row;
+}
+
+/** The building's outcome rows under "What the city found", each read as its label and count. */
+function foundRows() {
+  const found = screen.getByRole("region", { name: "What the city found" });
+  return within(found)
+    .queryAllByRole("listitem")
+    .map((row) => row.textContent);
+}
+
+/** A category row's button, found by the category's name at its start. */
+function categoryButton(label: string) {
+  return screen.getByRole("button", { name: new RegExp(`^${label}`) });
 }
 
 it("leads with the complaints of the active period, the other two periods and open now beside it", () => {
@@ -396,10 +410,11 @@ it("keeps the full record whatever complaint type the map is filtered to", () =>
 
   expect(leadFigure()).toHaveTextContent("12 complaints in the last 12 months");
   expect(smallFigures()[1]).toBe("284last 3 years");
-  expect(barRow("Building condition")).toHaveTextContent("11");
-  expect(barRow("Trash and grounds")).toHaveTextContent("0");
-  expect(barRow("Signs, zoning and use")).toHaveTextContent("1");
-  expect(barRow("Work without a permit")).toHaveTextContent("0");
+  expect(foundRows()).toEqual(["Violation confirmed8", "No violation found4"]);
+  expect(barRow("Building condition")).toHaveTextContent(/^Building condition11$/);
+  expect(barRow("Trash and grounds")).toHaveTextContent(/^Trash and grounds24 in 3 years$/);
+  expect(barRow("Signs, zoning and use")).toHaveTextContent(/^Signs, zoning and use1$/);
+  expect(barRow("Work without a permit")).toHaveTextContent(/^Work without a permit1 in 3 years$/);
 });
 
 it("renders one bar per month", () => {
@@ -730,4 +745,231 @@ describe("over the map", () => {
       screen.getByRole("link", { name: "Open this building's page" }),
     ).toHaveAttribute("href", "/building/0304070701");
   });
+});
+
+function complaint(overrides: Partial<Complaint>): Complaint {
+  return {
+    opened: "2026-03-01",
+    closed: null,
+    category: "structure",
+    outcome: "violation",
+    stillOpen: true,
+    cityOutcome: null,
+    violationCase: null,
+    ...overrides,
+  };
+}
+
+/** Confirmed violations still open: two since the 12 months began (on its first day included), one before. */
+const withOpenViolations: BuildingDetail = {
+  ...busyDetail,
+  complaints: [
+    complaint({ opened: "2026-03-01" }),
+    complaint({ opened: "2025-11-14", category: "landuse" }),
+    complaint({ opened: "2025-11-13" }),
+    complaint({ opened: "2026-02-01", stillOpen: false, closed: "2026-02-20" }),
+    complaint({ opened: "2026-02-01", outcome: "open" }),
+  ],
+};
+
+const FILTERED_TO_BUILDING: View = { ...DEFAULT_VIEW, category: "structure" };
+
+describe("what the city found", () => {
+  it("splits the active period's complaints of every type by outcome, and says how many duplicates were left out", () => {
+    renderPage(busy, busyDetail, { view: THREE_YEARS });
+    expect(foundRows()).toEqual([
+      "Violation confirmed150",
+      "No violation found129",
+      "Referred or closed without a finding4",
+      "Still being looked into1",
+    ]);
+    expect(screen.getByText("43 duplicate reports not counted")).toBeVisible();
+  });
+
+  it("counts the violations still open in the period shown, from the building's complaints", () => {
+    renderPage(busy, withOpenViolations);
+    expect(foundRows()[0]).toBe("Violation confirmed2 still open8");
+
+    cleanup();
+    renderPage(busy, withOpenViolations, { view: TWO_YEARS });
+    expect(foundRows()[0]).toBe("Violation confirmed3 still open50");
+
+    cleanup();
+    renderPage(busy, withOpenViolations, { view: FILTERED_TO_BUILDING });
+    const building = within(screen.getByRole("region", { name: "What the city found in the last 12 months" }));
+    expect(building.getAllByRole("listitem")[0]).toHaveTextContent(/^Violation confirmed1 still open8$/);
+  });
+
+  it("for a building with no complaints in three years, shows no outcome list and no category rows", () => {
+    renderPage(clean, cleanDetail, { view: THREE_YEARS });
+    expect(leadFigure()).toHaveTextContent("None no complaints in the last 3 years");
+    expect(screen.queryByRole("region", { name: "What the city found" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "What the complaints were about" })).toBeNull();
+    expect(screen.queryByText(/duplicate/)).toBeNull();
+  });
+
+  it("for a building whose complaints were all duplicates, shows None and how many were left out", () => {
+    renderPage({ ...clean, duplicates: { m12: 2, y2: 4, y3: 5 } }, cleanDetail);
+    expect(leadFigure()).toHaveTextContent("None no complaints in the last 12 months");
+    expect(screen.getByText("2 duplicate reports not counted")).toBeVisible();
+    expect(screen.queryByRole("region", { name: "What the city found" })).toBeNull();
+    expect(screen.queryByRole("list")).toBeNull();
+    expect(document.body.innerHTML).not.toMatch(/NaN|Infinity|undefined/);
+  });
+
+  it("for a building with nothing but duplicates in the period, shows None, the duplicates, and every type by its three-year count", () => {
+    const quiet: Complex = { ...busy, tally: { ...busy.tally, m12: {} }, duplicates: { m12: 1, y2: 41, y3: 43 } };
+    renderPage(quiet, busyDetail);
+    expect(leadFigure()).toHaveTextContent("None no complaints in the last 12 months");
+    expect(screen.getByText("1 duplicate report not counted")).toBeVisible();
+    expect(screen.queryByRole("region", { name: "What the city found" })).toBeNull();
+    expect(barRow("Building condition")).toHaveTextContent(/^Building condition254 in 3 years$/);
+    expect(barRow("Work without a permit")).toHaveTextContent(/^Work without a permit1 in 3 years$/);
+    expect(document.body.innerHTML).not.toMatch(/NaN|Infinity|undefined/);
+  });
+});
+
+describe("the categories", () => {
+  it("opens no category while every type is shown", () => {
+    renderPage(busy, busyDetail);
+    for (const label of ["Building condition", "Trash and grounds", "Signs, zoning and use", "Work without a permit"]) {
+      expect(categoryButton(label)).toHaveAttribute("aria-expanded", "false");
+    }
+  });
+
+  it("opens the category the map is filtered to, so the card's number is the first thing found", () => {
+    renderPage(busy, busyDetail, { view: FILTERED_TO_BUILDING });
+    expect(categoryButton("Building condition")).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText(CATEGORY_MEANING.structure)).toBeVisible();
+  });
+
+  it("keeps a category the person opened when the filter changes, and opens the filtered one for the next building", async () => {
+    const fetchImpl = fakeFetch({});
+    const panelFor = (complex: Complex, view: View) => (
+      <BuildingPanel
+        place="page"
+        complex={complex}
+        detail={busyDetail}
+        view={view}
+        periodStarts={PERIOD_STARTS}
+        fetchImpl={fetchImpl}
+      />
+    );
+    const { rerender } = render(panelFor(busy, DEFAULT_VIEW));
+    await userEvent.click(categoryButton("Trash and grounds"));
+
+    rerender(panelFor(busy, FILTERED_TO_BUILDING));
+    expect(categoryButton("Trash and grounds")).toHaveAttribute("aria-expanded", "true");
+    expect(categoryButton("Building condition")).toHaveAttribute("aria-expanded", "false");
+
+    rerender(panelFor({ ...busy, id: "0304070702" }, FILTERED_TO_BUILDING));
+    expect(categoryButton("Building condition")).toHaveAttribute("aria-expanded", "true");
+    expect(categoryButton("Trash and grounds")).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("opens one category at a time, with Enter or Space, and keeps focus on its row", async () => {
+    renderPage(busy, busyDetail);
+    const building = categoryButton("Building condition");
+    building.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(building).toHaveAttribute("aria-expanded", "true");
+    expect(building).toHaveFocus();
+    expect(screen.getByText("The city calls this Structure Condition.")).toBeVisible();
+
+    const signs = categoryButton("Signs, zoning and use");
+    signs.focus();
+    await userEvent.keyboard(" ");
+    expect(signs).toHaveAttribute("aria-expanded", "true");
+    expect(building).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("The city calls this Structure Condition.")).toBeNull();
+    expect(screen.getByText("The city calls this Land Use.")).toBeVisible();
+
+    await userEvent.keyboard("{Enter}");
+    expect(signs).toHaveAttribute("aria-expanded", "false");
+    expect(signs).toHaveFocus();
+  });
+
+  it("names its open detail as the region its row controls", async () => {
+    renderPage(busy, busyDetail);
+    const building = categoryButton("Building condition");
+    await userEvent.click(building);
+    const controlled = document.getElementById(building.getAttribute("aria-controls") ?? "");
+    expect(controlled).toHaveTextContent(CATEGORY_MEANING.structure);
+  });
+
+  it("shows a type with no complaints in three years without a way to open it", () => {
+    const noPermits: Complex = {
+      ...busy,
+      tally: {
+        ...busy.tally,
+        y3: { structure: { violation: 150, none: 100, other: 4 }, property: { none: 24 }, landuse: { none: 5 } },
+      },
+    };
+    renderPage(noPermits, busyDetail);
+    expect(screen.queryByRole("button", { name: /^Work without a permit/ })).toBeNull();
+    expect(barRow("Work without a permit")).toHaveTextContent(/^Work without a permit0$/);
+  });
+
+  it("shows a type with no complaints in the period by its three-year count, and opens it", async () => {
+    renderPage(busy, busyDetail);
+    expect(barRow("Trash and grounds")).toHaveTextContent(/^Trash and grounds24 in 3 years$/);
+    await userEvent.click(categoryButton("Trash and grounds"));
+    expect(screen.getByText(CATEGORY_MEANING.property)).toBeVisible();
+    expect(screen.getByText("No complaints of this type in the last 12 months.")).toBeVisible();
+  });
+
+  it("shows the problems the city recorded only in a category where a Repeat Offender property has some", async () => {
+    renderPage(
+      busy,
+      {
+        ...busyDetail,
+        deficiencies: [{ category: "property", kind: "Unsanitary Conditions", cleared: 9, notCleared: 0 }],
+      },
+      { view: FILTERED_TO_BUILDING },
+    );
+    expect(screen.queryByText("Problems the city recorded here")).toBeNull();
+
+    await userEvent.click(categoryButton("Trash and grounds"));
+    expect(screen.getByRole("region", { name: "Problems the city recorded here" })).toHaveTextContent(
+      "Unsanitary Conditionsall cleared9",
+    );
+  });
+
+  it("lists a category's complaints once the building file arrives, and says so when it cannot", async () => {
+    const fetchImpl = fakeFetch({
+      files: { "/data/buildings/0304070701.json": ok(withOpenViolations), "/data/buildings/R039648.json": status(404) },
+    });
+    const panelFor = (complex: Complex) => (
+      <BuildingPanel
+        place="map"
+        complex={complex}
+        view={FILTERED_TO_BUILDING}
+        periodStarts={PERIOD_STARTS}
+        onClose={() => {}}
+        fetchImpl={fetchImpl}
+      />
+    );
+    const { rerender } = render(panelFor(busy));
+    expect(screen.getByText("Loading the complaints")).toBeVisible();
+    expect(foundRows()[0]).toBe("Violation confirmed8");
+
+    const listed = within(await screen.findByRole("region", { name: "Complaints, newest first" }));
+    expect(
+      listed.getAllByRole("listitem").filter((row) => row.textContent?.endsWith("Violation confirmed, still open")),
+    ).toHaveLength(2);
+    expect(foundRows()[0]).toBe("Violation confirmed2 still open8");
+
+    const failing = { ...busy, id: "R039648" };
+    rerender(panelFor(failing));
+    expect(await screen.findByText("These complaints could not be loaded right now.")).toBeVisible();
+    expect(foundRows()[0]).toBe("Violation confirmed8");
+  });
+});
+
+it("says under the month chart's title where its rolling window starts, and that duplicates are not in it", () => {
+  renderPage(busy, busyDetail);
+  const months = within(screen.getByRole("region", { name: "Month by month" }));
+  expect(
+    months.getByText("Complaints opened since November 14, 2023. Duplicate reports are not counted."),
+  ).toBeVisible();
 });

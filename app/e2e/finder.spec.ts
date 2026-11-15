@@ -12,6 +12,14 @@ interface ComplexRecord {
   tally: Record<"m12" | "y2" | "y3", Record<string, Record<string, number>>>;
 }
 
+interface BuildingRecord {
+  complaints: {
+    category: string;
+    violationCase: { url: string | null } | null;
+  }[];
+  deficiencies: { category: string }[];
+}
+
 interface MetaRecord {
   pulledAt: string;
   complexCount: number;
@@ -58,6 +66,12 @@ const complaintsIn = (complex: ComplexRecord, period: keyof ComplexRecord["tally
   Object.values(complex.tally[period])
     .flatMap((outcomes) => Object.values(outcomes))
     .reduce((sum, count) => sum + count, 0);
+/** Complaints of one type in a period's tally. */
+const complaintsOfType = (
+  complex: ComplexRecord,
+  period: keyof ComplexRecord["tally"],
+  category: string,
+) => Object.values(complex.tally[period][category] ?? {}).reduce((sum, count) => sum + count, 0);
 const formatAcres = (acres: number) =>
   acres < 0.1 ? "under 0.1 acres" : `${acres} ${acres === 1 ? "acre" : "acres"}`;
 
@@ -531,7 +545,8 @@ test.describe("when the map cannot start", () => {
 
     await page.getByRole("combobox").fill("");
     await cards(page).first().click();
-    await expect(page.getByText("What the complaints were about")).toBeVisible();
+    // The fewest-first card may have no complaints at all, and then the record lists no types, so its lead is what is sure to be there.
+    await expect(panel(page).getByText("in the last 12 months", { exact: true })).toBeVisible();
     await expect(panel(page)).toBeFocused();
     // No map, so nothing is staged, but the record still has its photo.
     await expect(
@@ -746,7 +761,7 @@ test.describe("a picked building", () => {
     await askedForFootprints;
 
     await expect(spotlit(page, id)).toBeAttached();
-    await expect(panel(page).getByText("What the complaints were about")).toBeVisible();
+    await expect(panel(page).getByText("in the last 12 months", { exact: true })).toBeVisible();
     await expect(panel(page).getByRole("region", { name: "Month by month" })).toBeVisible();
     await expect(panel(page).getByText("Loading from the City of Austin")).toHaveCount(0);
   });
@@ -781,5 +796,81 @@ test.describe("a picked building", () => {
 
     await page.emulateMedia({ reducedMotion: "reduce" });
     expect(await fade()).toBe("0s");
+  });
+});
+
+test.describe("a building's complaint types", () => {
+  const BUILDING_CONDITION =
+    "The buildings themselves: electrical, plumbing, roofs, walls, stairs and balconies, heating and appliances, pests.";
+  const typeRow = (page: Page, label: string) =>
+    panel(page).getByRole("button", { name: new RegExp(`^${label}`) });
+
+  test("open in place, one at a time, from the keyboard, with what each covers and its complaints", async ({ page }) => {
+    const busiest = complexes
+      .filter((complex) => complaintsOfType(complex, "y3", "structure") > 0 && complaintsOfType(complex, "y3", "property") > 0)
+      .sort((a, b) => complaintsIn(b, "y3") - complaintsIn(a, "y3"))[0];
+    expect(busiest, "the data has a complex with both building and grounds complaints").toBeDefined();
+
+    // Without the map the list holds every complex in Austin, so the busiest one is in it.
+    await withoutMap(page);
+    await page.goto("/?period=3y&order=most");
+    await page.locator(`[data-testid="card"][data-complex-id="${busiest.id}"]`).click();
+
+    const building = typeRow(page, "Building condition");
+    await expect(building).toHaveAttribute("aria-expanded", "false");
+    await building.focus();
+    await page.keyboard.press("Enter");
+    await expect(building).toHaveAttribute("aria-expanded", "true");
+    await expect(building).toBeFocused();
+    await expect(panel(page).getByText(BUILDING_CONDITION)).toBeVisible();
+    await expect(
+      panel(page).getByRole("region", { name: "Complaints, newest first" }).getByRole("listitem").first(),
+    ).toBeVisible();
+
+    await typeRow(page, "Trash and grounds").click();
+    await expect(building).toHaveAttribute("aria-expanded", "false");
+    await expect(panel(page).getByText(BUILDING_CONDITION)).toHaveCount(0);
+  });
+
+  test("at a Repeat Offender property, show the problems the city recorded, and link each case to the city's record", async ({
+    page,
+  }) => {
+    const listed = complexes
+      .filter((complex) => complex.repeatOffender !== null)
+      .map((complex) => ({ complex, record: readData<BuildingRecord>(`buildings/${complex.id}.json`) }))
+      .find(
+        ({ record }) =>
+          record.deficiencies.some(({ category }) => category === "structure") &&
+          record.complaints.some(({ category, violationCase }) => category === "structure" && violationCase?.url),
+      );
+    expect(listed, "the data has a Repeat Offender property with building problems and a linked case").toBeDefined();
+    if (!listed) return;
+
+    await page.goto(`/building/${listed.complex.id}`);
+    await page.getByRole("button", { name: /^Building condition/ }).click();
+    await expect(page.getByRole("region", { name: "Problems the city recorded here" })).toBeVisible();
+
+    const complaints = page.getByRole("region", { name: "Complaints, newest first" });
+    const showAll = complaints.getByRole("button", { name: /^Show all/ });
+    if ((await showAll.count()) > 0) await showAll.click();
+    const links = complaints.getByRole("link", { name: /^City record for the complaint opened / });
+    expect(await links.evaluateAll((elements) => elements.map((element) => element.getAttribute("href")))).toEqual(
+      listed.record.complaints
+        .filter(({ category, violationCase }) => category === "structure" && violationCase?.url)
+        .map(({ violationCase }) => violationCase?.url),
+    );
+    await expect(links.first()).toHaveAttribute("target", "_blank");
+  });
+
+  test("with a type filter on, the panel opens at that type", async ({ page }) => {
+    await withoutMap(page);
+    for (const [category, label] of [
+      ["permit", "Work without a permit"],
+      ["structure", "Building condition"],
+    ]) {
+      await page.goto(`/?period=3y&category=${category}&order=most`);
+      await cards(page).first().click();
+      await expect(typeRow(page, label), category).toHaveAttribute("aria-expanded", "true");
+    }
   });
 });
