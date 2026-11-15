@@ -142,8 +142,13 @@ export interface SpotlightDependencies {
 export interface Spotlight {
   /** Brings the target forward, replacing any target already showing. */
   show(target: SpotlightTarget): void;
-  /** Returns the city and the camera to how they were before the first target. Does nothing when none is showing. */
-  clear(): void;
+  /** Frames the target again under the map's current padding, then turns as on entering. Does nothing when none is showing. */
+  reframe(): void;
+  /**
+   * Returns the city to how it was before the first target, and the camera too unless `returnCamera` is false,
+   * for when the screen is moving the camera somewhere else. Does nothing when none is showing.
+   */
+  clear(options?: { returnCamera?: boolean }): void;
   /** Stops every pending step without touching the map, for a map about to be removed. */
   dispose(): void;
 }
@@ -185,7 +190,7 @@ export function createSpotlight(
 
   /** Counts targets; a step that finds a different number belongs to a target that is gone. */
   let run = 0;
-  let showing = false;
+  let current: SpotlightTarget | null = null;
   let cameraBefore: Camera | null = null;
   let label: { remove(): void } | null = null;
   let motion: Motion = "still";
@@ -229,7 +234,7 @@ export function createSpotlight(
 
   const turnOnce = () => {
     turnFrame = null;
-    if (!showing || motion === "still") return;
+    if (!current || motion === "still") return;
     motion = "turning";
     map.rotateTo(
       map.getBearing() + TURN_DEGREES,
@@ -245,13 +250,17 @@ export function createSpotlight(
   const onMoveEnd = (event: object) => {
     if (!isCurrent(event)) return;
     arrived = true;
-    drawTileShapesOnceLoaded();
     if (motion === "still" || turnFrame !== null) return;
     turnFrame = deps.requestFrame(turnOnce);
   };
 
+  /**
+   * Checked on every render. A camera change marks the map's sources unloaded until a render has asked for the
+   * new view's tiles and they are in, so `loaded()` cannot answer for the tiles of the city the camera left,
+   * even right after a jump.
+   */
   const drawTileShapesOnceLoaded = () => {
-    if (!drawTileShapes || !arrived || !map.isSourceLoaded(TILE_SOURCE)) return;
+    if (!drawTileShapes || !arrived || !map.loaded()) return;
     const draw = drawTileShapes;
     drawTileShapes = null;
     draw();
@@ -275,7 +284,7 @@ export function createSpotlight(
 
   map.on("moveend", onMoveEnd);
   map.on("movestart", onMoveStart);
-  map.on("sourcedata", drawTileShapesOnceLoaded);
+  map.on("render", drawTileShapesOnceLoaded);
   for (const input of INPUTS_THAT_TAKE_OVER) map.on(input, onInput);
 
   const frame = (target: SpotlightTarget, reducedMotion: boolean) => {
@@ -349,7 +358,7 @@ export function createSpotlight(
       const mine = run;
       const reducedMotion = deps.prefersReducedMotion();
       takeDown();
-      if (!showing) {
+      if (!current) {
         const { lng, lat } = map.getCenter();
         cameraBefore = {
           center: [lng, lat],
@@ -359,7 +368,7 @@ export function createSpotlight(
         };
         showCity(false);
       }
-      showing = true;
+      current = target;
       motion = reducedMotion ? "still" : "flying";
       arrived = false;
 
@@ -375,16 +384,25 @@ export function createSpotlight(
       void drawShapes(target, mine, reducedMotion);
     },
 
-    clear() {
-      if (!showing) return;
+    reframe() {
+      if (!current) return;
+      const reducedMotion = deps.prefersReducedMotion();
+      holdStill();
+      motion = reducedMotion ? "still" : "flying";
+      arrived = false;
+      frame(current, reducedMotion);
+    },
+
+    clear({ returnCamera = true } = {}) {
+      if (!current) return;
       run += 1;
-      showing = false;
+      current = null;
       motion = "still";
       takeDown();
       setData(PARCEL_SOURCE, NO_SHAPES);
       setData(SHAPES_SOURCE, NO_SHAPES);
       showCity(true);
-      if (cameraBefore) {
+      if (cameraBefore && returnCamera) {
         if (deps.prefersReducedMotion()) map.jumpTo(cameraBefore, ours());
         else map.easeTo({ ...cameraBefore, duration: RESTORE_MS }, ours());
       }
@@ -393,12 +411,12 @@ export function createSpotlight(
 
     dispose() {
       run += 1;
-      showing = false;
+      current = null;
       motion = "still";
       takeDown();
       map.off("moveend", onMoveEnd);
       map.off("movestart", onMoveStart);
-      map.off("sourcedata", drawTileShapesOnceLoaded);
+      map.off("render", drawTileShapesOnceLoaded);
       for (const input of INPUTS_THAT_TAKE_OVER) map.off(input, onInput);
     },
   };

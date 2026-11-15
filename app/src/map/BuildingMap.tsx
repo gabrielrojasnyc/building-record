@@ -129,11 +129,14 @@ export function BuildingMap(props: BuildingMapProps) {
 
   // The map is built once; it reads everything that changes through these refs.
   const latest = useRef(props);
+  /** The `flyTo` of the render before, so an effect can tell a fly asked for in this render. */
+  const flyToBefore = useRef(props.flyTo);
   const reportedUnavailable = useRef(false);
   const markedSelected = useRef<string | null>(null);
   const markedHovered = useRef<string | null>(null);
 
   useEffect(() => {
+    flyToBefore.current = latest.current.flyTo;
     latest.current = props;
   });
 
@@ -339,6 +342,8 @@ export function BuildingMap(props: BuildingMapProps) {
     const padding = { top, right, bottom, left };
     map.setPadding(padding);
     latest.current.onViewAreaChange(viewAreaOf(map, padding));
+    // Setting the padding stops any camera movement, the spotlight's flight or turn among them.
+    spotlightRef.current?.reframe();
   }, [ready, top, right, bottom, left]);
 
   useEffect(() => {
@@ -356,13 +361,16 @@ export function BuildingMap(props: BuildingMapProps) {
     }
   }, [ready, flyTo]);
 
-  // After the padding effect, so a spotlight that arrives with new padding is framed inside it.
+  // After the padding effect, so a spotlight that arrives with new padding is framed inside it, and after the
+  // flyTo effect, so a fly asked for in the same update as leaving (an area, an address) is not undone.
   useEffect(() => {
     const spotlight = spotlightRef.current;
     if (!ready || !spotlight) return;
-    const target = latest.current.spotlight;
-    if (target) spotlight.show(target);
-    else spotlight.clear();
+    const { spotlight: target, flyTo: requestedFly } = latest.current;
+    if (target) return spotlight.show(target);
+    const flewNow =
+      requestedFly !== null && requestedFly !== flyToBefore.current;
+    spotlight.clear({ returnCamera: !flewNow });
   }, [ready, spotlightId]);
 
   if (unavailable) return null;

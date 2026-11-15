@@ -6,7 +6,8 @@ import type { Outline } from "@/domain/types";
 import { BuildingMap, type BuildingMapProps } from "./BuildingMap";
 import { GROW_MS, type SpotlightTarget } from "./spotlight";
 
-type Handler = (event: Record<string, unknown>) => void;
+type EventData = Record<string, unknown>;
+type Handler = (event: EventData) => void;
 
 /** A stand-in for MapLibre's Map: it records what the component asks of it and fires events on demand. */
 const { FakeMap, FakeMarker, maps } = vi.hoisted(() => {
@@ -23,7 +24,6 @@ const { FakeMap, FakeMarker, maps } = vi.hoisted(() => {
       bearing: -12,
     };
     readonly remove = vi.fn();
-    readonly setPadding = vi.fn();
     readonly addControl = vi.fn();
     readonly setSky = vi.fn();
     readonly addLayer = vi.fn();
@@ -37,14 +37,33 @@ const { FakeMap, FakeMarker, maps } = vi.hoisted(() => {
     readonly querySourceFeatures = vi.fn((): unknown[] => []);
     /** Always fits the box at zoom 17. */
     readonly cameraForBounds = vi.fn(() => ({ zoom: 17 }));
-    readonly flyTo = vi.fn();
-    readonly jumpTo = vi.fn();
-    readonly easeTo = vi.fn();
-    readonly rotateTo = vi.fn();
-    readonly stop = vi.fn();
-    /** Whether every tile the base map wants is in; `isSourceLoaded` reads it. */
+    /*
+      Camera calls behave as MapLibre's: an eased movement fires movestart and runs until `arrive`, and
+      the next camera call, `stop` or `setPadding` (a jump) interrupts it first, firing its moveend.
+      Every event carries the event data its call was given.
+    */
+    readonly flyTo = vi.fn((_options: object, eventData?: EventData) =>
+      this.begin(eventData),
+    );
+    readonly easeTo = vi.fn((_options: object, eventData?: EventData) =>
+      this.begin(eventData),
+    );
+    readonly rotateTo = vi.fn(
+      (
+        _bearing: number,
+        _options: { duration: number; easing(t: number): number },
+        eventData?: EventData,
+      ) => this.begin(eventData),
+    );
+    readonly jumpTo = vi.fn((_options: object, eventData?: EventData) =>
+      this.jump(eventData),
+    );
+    readonly setPadding = vi.fn(() => this.jump());
+    readonly stop = vi.fn(() => this.arrive());
+    private moving: EventData | null = null;
+    /** Whether the map has drawn the current view with all its tiles; `loaded` reads it. */
     tilesLoaded = true;
-    readonly isSourceLoaded = vi.fn(() => this.tilesLoaded);
+    readonly loaded = vi.fn(() => this.tilesLoaded);
     constructor() {
       maps.push(this);
     }
@@ -92,11 +111,22 @@ const { FakeMap, FakeMarker, maps } = vi.hoisted(() => {
       for (const handler of this.handlers.get(event) ?? [])
         handler({ type: event, ...data });
     }
-    /** Ends the last movement the camera method started, as the real map does when it arrives. */
-    arrive(method: "flyTo" | "jumpTo" | "easeTo" | "rotateTo") {
-      const call = this[method].mock.calls.at(-1);
-      const eventData = method === "rotateTo" ? call?.[2] : call?.[1];
-      this.fire("moveend", eventData ?? {});
+    /** Ends the movement in progress, if any, firing its moveend. */
+    arrive() {
+      const ended = this.moving;
+      if (!ended) return;
+      this.moving = null;
+      this.fire("moveend", ended);
+    }
+    private begin(eventData: EventData = {}) {
+      this.arrive();
+      this.moving = eventData;
+      this.fire("movestart", eventData);
+    }
+    private jump(eventData: EventData = {}) {
+      this.arrive();
+      this.fire("movestart", eventData);
+      this.fire("moveend", eventData);
     }
   }
 
@@ -174,9 +204,15 @@ function renderMap(spotlight: SpotlightTarget | null = null) {
     onUnavailable: vi.fn(),
   };
   const rendered = render(<BuildingMap {...props} />);
+  let current = props;
+  /** Renders again with these props changed, all in one update, as the screen would. */
+  const update = (changes: Partial<BuildingMapProps>) => {
+    current = { ...current, ...changes };
+    rendered.rerender(<BuildingMap {...current} />);
+  };
   const spotlightOn = (target: SpotlightTarget | null) =>
-    rendered.rerender(<BuildingMap {...props} spotlight={target} />);
-  return { props, spotlightOn, ...rendered };
+    update({ spotlight: target });
+  return { props, update, spotlightOn, ...rendered };
 }
 
 const wait = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
@@ -464,11 +500,11 @@ describe("BuildingMap spotlight", () => {
     expect(map.querySourceFeatures).not.toHaveBeenCalled();
 
     map.tilesLoaded = false;
-    map.arrive("flyTo");
+    map.arrive();
     expect(map.querySourceFeatures).not.toHaveBeenCalled();
 
     map.tilesLoaded = true;
-    map.fire("sourcedata");
+    map.fire("render");
     expect(map.querySourceFeatures).toHaveBeenCalledOnce();
     expect(map.querySourceFeatures).toHaveBeenCalledWith("openmaptiles", {
       sourceLayer: "building",
@@ -493,8 +529,8 @@ describe("BuildingMap spotlight", () => {
 
     spotlightOn(ARRAY);
     await wait(0);
-    map.arrive("flyTo");
-    map.fire("sourcedata");
+    map.arrive();
+    map.fire("render");
     await wait(GROW_MS);
 
     expect(map.querySourceFeatures).toHaveBeenCalledOnce();
@@ -564,6 +600,63 @@ describe("BuildingMap spotlight", () => {
     );
   });
 
+  it("lets a fly the screen asks for in the same update as leaving win over easing back, and forgets the camera from before", async () => {
+    vi.mocked(loadFootprints).mockReturnValue(new Promise(() => {}));
+    const { map, update, spotlightOn } = await loadedMap();
+    spotlightOn(ARRAY);
+    map.arrive();
+    await wait(20);
+
+    // An area shortcut or an address from search: the selection clears and the camera goes there.
+    update({ spotlight: null, flyTo: { lon: -97.75, lat: 30.27, zoom: 13.9 } });
+
+    expect(map.flyTo).toHaveBeenLastCalledWith(
+      expect.objectContaining({ center: [-97.75, 30.27], zoom: 13.9 }),
+    );
+    expect(map.easeTo).not.toHaveBeenCalled();
+    expect(labels()).toEqual([]);
+    for (const layer of PIN_AND_CITY_LAYERS) {
+      expect(map.setLayoutProperty).toHaveBeenCalledWith(
+        layer,
+        "visibility",
+        "visible",
+      );
+    }
+
+    map.arrive();
+    map.camera = {
+      lng: -97.75,
+      lat: 30.27,
+      zoom: 13.9,
+      pitch: 58,
+      bearing: -12,
+    };
+    spotlightOn(ELSEWHERE);
+    spotlightOn(null);
+    expect(map.easeTo).toHaveBeenCalledOnce();
+    expect(map.easeTo).toHaveBeenCalledWith(
+      expect.objectContaining({ center: [-97.75, 30.27], zoom: 13.9 }),
+      expect.anything(),
+    );
+  });
+
+  it("eases back when leaving with no new fly, even after the screen flew earlier", async () => {
+    vi.mocked(loadFootprints).mockReturnValue(new Promise(() => {}));
+    const { map, update, spotlightOn } = await loadedMap();
+    // The screen's immediate fly on picking a building, before the spotlight arrives.
+    update({ flyTo: { lon: ARRAY.lon, lat: ARRAY.lat, zoom: 14.6 } });
+    map.arrive();
+    spotlightOn(ARRAY);
+
+    spotlightOn(null);
+
+    expect(map.easeTo).toHaveBeenCalledOnce();
+    expect(map.easeTo).toHaveBeenCalledWith(
+      expect.objectContaining({ center: [-97.7431, 30.285], zoom: 11.6 }),
+      expect.anything(),
+    );
+  });
+
   it("turns 60 degrees every 21 seconds once it arrives", async () => {
     vi.mocked(loadFootprints).mockReturnValue(new Promise(() => {}));
     const { map, spotlightOn } = await loadedMap();
@@ -571,7 +664,7 @@ describe("BuildingMap spotlight", () => {
     await wait(100);
     expect(map.rotateTo).not.toHaveBeenCalled();
 
-    map.arrive("flyTo");
+    map.arrive();
     await wait(20);
     expect(map.rotateTo).toHaveBeenCalledOnce();
     const [bearing, options] = map.rotateTo.mock.calls[0];
@@ -580,7 +673,7 @@ describe("BuildingMap spotlight", () => {
     expect(options.easing(0.3)).toBe(0.3);
 
     map.camera.bearing = 48;
-    map.arrive("rotateTo");
+    map.arrive();
     await wait(20);
     expect(map.rotateTo).toHaveBeenCalledTimes(2);
     expect(map.rotateTo.mock.calls[1][0]).toBe(108);
@@ -592,22 +685,175 @@ describe("BuildingMap spotlight", () => {
       vi.mocked(loadFootprints).mockReturnValue(new Promise(() => {}));
       const { map, spotlightOn } = await loadedMap();
       spotlightOn(ARRAY);
-      map.arrive("flyTo");
+      map.arrive();
       await wait(20);
       expect(map.rotateTo).toHaveBeenCalledOnce();
 
       map.fire(input);
       expect(map.stop).toHaveBeenCalledOnce();
-      map.arrive("rotateTo");
+      map.arrive();
       await wait(21_000);
       expect(map.rotateTo).toHaveBeenCalledOnce();
     },
   );
 
+  /** Shows the target, lets the flight arrive and the first turn start. */
+  async function turning(target: SpotlightTarget) {
+    vi.mocked(loadFootprints).mockReturnValue(new Promise(() => {}));
+    const loaded = await loadedMap();
+    loaded.spotlightOn(target);
+    loaded.map.arrive();
+    await wait(20);
+    expect(loaded.map.rotateTo).toHaveBeenCalledOnce();
+    return loaded;
+  }
+
+  it("starts no turn after leaving while it turns", async () => {
+    const { map, spotlightOn } = await turning(ARRAY);
+
+    spotlightOn(null);
+    map.arrive();
+    await wait(21_000);
+
+    expect(map.rotateTo).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the camera to a movement it did not start", async () => {
+    const { map } = await turning(ARRAY);
+
+    // The screen or the person moves the camera, which interrupts the turn.
+    map.easeTo({ zoom: 15 });
+    map.arrive();
+    await wait(21_000);
+
+    expect(map.rotateTo).toHaveBeenCalledOnce();
+    expect(map.stop).not.toHaveBeenCalled();
+  });
+
+  it("keeps exactly one turn going when the target changes mid-turn", async () => {
+    const { map, spotlightOn } = await turning(ARRAY);
+
+    spotlightOn(ELSEWHERE);
+    await wait(20);
+    expect(map.rotateTo).toHaveBeenCalledOnce();
+
+    for (const turns of [2, 3, 4]) {
+      map.arrive();
+      await wait(20);
+      expect(map.rotateTo).toHaveBeenCalledTimes(turns);
+    }
+  });
+
+  it("ignores the end of a replaced target's flight", async () => {
+    vi.mocked(loadFootprints).mockReturnValue(new Promise(() => {}));
+    const { map, spotlightOn } = await loadedMap();
+    spotlightOn(ARRAY);
+    const [, firstFlight] = map.flyTo.mock.calls[0];
+    spotlightOn(ELSEWHERE);
+
+    map.fire("moveend", firstFlight);
+    await wait(20);
+    expect(map.rotateTo).not.toHaveBeenCalled();
+
+    map.arrive();
+    await wait(20);
+    expect(map.rotateTo).toHaveBeenCalledOnce();
+  });
+
+  const SELECTION_PADDING = { top: 110, right: 440, bottom: 250, left: 70 };
+
+  it("frames the complex again under new padding that arrives mid-flight, and turns once it arrives", async () => {
+    vi.mocked(loadFootprints).mockResolvedValue(shapesOn(ARRAY, 12));
+    const { map, update, spotlightOn } = await loadedMap();
+    spotlightOn(ARRAY);
+    await wait(GROW_MS * 2);
+    expect(heightsPainted(map).at(-1)).toEqual(["get", "h"]);
+    const heightsSoFar = heightsPainted(map).length;
+
+    update({ padding: SELECTION_PADDING });
+
+    expect(map.setPadding).toHaveBeenLastCalledWith(SELECTION_PADDING);
+    expect(map.flyTo).toHaveBeenCalledTimes(2);
+    expect(map.flyTo.mock.calls[1][0]).toEqual(map.flyTo.mock.calls[0][0]);
+    // Fitted after the new padding is the map's, so it frames inside it.
+    expect(map.cameraForBounds.mock.invocationCallOrder.at(-1)).toBeGreaterThan(
+      map.setPadding.mock.invocationCallOrder.at(-1) ?? Infinity,
+    );
+    await wait(20);
+    expect(map.rotateTo).not.toHaveBeenCalled();
+
+    for (const turns of [1, 2]) {
+      map.arrive();
+      await wait(20);
+      expect(map.rotateTo).toHaveBeenCalledTimes(turns);
+    }
+    expect(labels()).toEqual(["Array Apartments"]);
+    expect(loadFootprints).toHaveBeenCalledOnce();
+    expect(heightsPainted(map)).toHaveLength(heightsSoFar);
+
+    spotlightOn(null);
+    expect(map.easeTo).toHaveBeenCalledWith(
+      expect.objectContaining({ center: [-97.7431, 30.285], zoom: 11.6 }),
+      expect.anything(),
+    );
+  });
+
+  it("frames the complex again under new padding that arrives mid-turn, keeping one turn", async () => {
+    const { map, update, spotlightOn } = await turning(ARRAY);
+
+    update({ padding: SELECTION_PADDING });
+
+    expect(map.flyTo).toHaveBeenCalledTimes(2);
+    await wait(20);
+    expect(map.rotateTo).toHaveBeenCalledOnce();
+    for (const turns of [2, 3]) {
+      map.arrive();
+      await wait(20);
+      expect(map.rotateTo).toHaveBeenCalledTimes(turns);
+    }
+    expect(map.stop).not.toHaveBeenCalled();
+
+    spotlightOn(null);
+    expect(map.easeTo).toHaveBeenCalledWith(
+      expect.objectContaining({ center: [-97.7431, 30.285], zoom: 11.6 }),
+      expect.anything(),
+    );
+  });
+
+  it("under reduced motion, reads the tile buildings only once the map has drawn the view it jumped to", async () => {
+    reducedMotion = true;
+    vi.mocked(loadFootprints).mockRejectedValue(
+      new Error("The footprints dataset responded 503"),
+    );
+    const { map, spotlightOn } = await loadedMap();
+    map.querySourceFeatures.mockReturnValue([
+      {
+        geometry: square(ARRAY.lon, ARRAY.lat),
+        properties: { render_height: 15 },
+      },
+    ]);
+    // The jump arrives at once, but leaves the map unloaded until it has drawn the new view with its tiles.
+    map.tilesLoaded = false;
+
+    spotlightOn(ARRAY);
+    await wait(0);
+    map.fire("render");
+    expect(map.querySourceFeatures).not.toHaveBeenCalled();
+
+    map.tilesLoaded = true;
+    map.fire("render");
+    map.fire("render");
+    expect(map.querySourceFeatures).toHaveBeenCalledOnce();
+    expect(shapesDrawn(map)).toEqual([
+      [expect.objectContaining({ properties: { h: 15 } })],
+    ]);
+    expect(heightsPainted(map).at(-1)).toEqual(["get", "h"]);
+  });
+
   it("under reduced motion jumps, shows full height at once, never turns and jumps back", async () => {
     reducedMotion = true;
     vi.mocked(loadFootprints).mockResolvedValue(shapesOn(ARRAY, 12));
-    const { map, spotlightOn } = await loadedMap();
+    const { map, update, spotlightOn } = await loadedMap();
 
     spotlightOn(ARRAY);
     await wait(0);
@@ -620,7 +866,17 @@ describe("BuildingMap spotlight", () => {
     expect(heightsPainted(map).at(-1)).toEqual(["get", "h"]);
     expect(heightsPainted(map).filter(partway)).toEqual([]);
 
-    map.arrive("jumpTo");
+    map.arrive();
+    await wait(GROW_MS);
+    expect(map.rotateTo).not.toHaveBeenCalled();
+
+    update({ padding: { top: 110, right: 440, bottom: 250, left: 70 } });
+    expect(map.flyTo).not.toHaveBeenCalled();
+    expect(map.jumpTo).toHaveBeenCalledTimes(2);
+    expect(map.jumpTo).toHaveBeenLastCalledWith(
+      expect.objectContaining({ zoom: 16.75, pitch: 60 }),
+      expect.anything(),
+    );
     await wait(GROW_MS);
     expect(map.rotateTo).not.toHaveBeenCalled();
 
@@ -637,7 +893,7 @@ describe("BuildingMap spotlight", () => {
     const { map, spotlightOn, unmount } = await loadedMap();
     spotlightOn(ARRAY);
     await wait(GROW_MS / 2);
-    map.arrive("flyTo");
+    map.arrive();
 
     unmount();
     map.setPaintProperty.mockClear();
