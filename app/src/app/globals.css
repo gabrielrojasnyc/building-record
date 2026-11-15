@@ -90,6 +90,21 @@
       );
   }
 
+  /* While a complex is in the spotlight, the rest of the city falls back into fog. Applied beside `.fog`, after which it sits so it wins. */
+  .fog-spotlight {
+    background:
+      radial-gradient(
+        58% 52% at 46% 46%,
+        transparent 38%,
+        color-mix(in srgb, var(--color-ice) 90%, transparent) 100%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--color-ice) 88%, transparent) 0%,
+        transparent 30%
+      );
+  }
+
   /* A building card lifts when it or its pin is hovered, and turns dark once selected. */
   .tray-card {
     transition:
@@ -206,5 +221,26 @@
 
   &.maplibregl-popup-anchor-right .maplibregl-popup-tip {
     border-left-color: var(--pin-tooltip-fill);
+  }
+}
+
+/* The spotlit complex's name: a glass pill over its marker, with a hairline stem down toward the model. */
+.spotlight-label {
+  position: relative;
+  padding: 9px 16px;
+  border-radius: 999px;
+  font: 400 19px/1 var(--font-display);
+  color: var(--color-deep);
+  white-space: nowrap;
+  background: rgb(255 255 255 / 0.7);
+
+  &::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 100%;
+    width: 1px;
+    height: 52px;
+    background: linear-gradient(var(--color-deep), transparent);
   }
 }

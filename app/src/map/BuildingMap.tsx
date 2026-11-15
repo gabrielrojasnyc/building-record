@@ -8,6 +8,7 @@ import {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
+import { loadFootprints } from "@/city/footprints";
 import type { Corner, View, ViewArea } from "@/domain/query";
 import type { Complex } from "@/domain/types";
 import {
@@ -19,6 +20,11 @@ import {
   repaint,
   toFeatures,
 } from "./arcticStyle";
+import {
+  createSpotlight,
+  type Spotlight,
+  type SpotlightTarget,
+} from "./spotlight";
 
 // MapLibre v6 is ESM only and runs its tile work in a separate worker file. Turbopack
 // only emits that file as an asset when it sees this exact `new URL(..., import.meta.url)` form.
@@ -54,6 +60,8 @@ export interface BuildingMapProps {
   flyTo: { lon: number; lat: number; zoom: number } | null;
   /** Applied when the map starts and whenever a number changes; a new object with the same numbers does nothing. */
   padding?: CameraPadding;
+  /** The complex brought forward over a fogged city, framed inside `padding`. A new object with the same id does nothing. */
+  spotlight?: SpotlightTarget | null;
   /** The ground visible inside the padding, reported when the map starts, after every move and when the padding changes. */
   onViewAreaChange(area: ViewArea): void;
   onSelect(id: string): void;
@@ -87,12 +95,35 @@ function describeCases(address: string, count: number): string {
   return `${address}: ${count} ${count === 1 ? "case" : "cases"}`;
 }
 
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** The complex's name on a glass pill with a stem down to it, styled by `.spotlight-label` in globals.css. */
+function placeLabel(
+  map: maplibregl.Map,
+  title: string,
+  at: [lon: number, lat: number],
+): maplibregl.Marker {
+  // MapLibre positions the marker's own element, so the styled pill is a child of it.
+  const element = document.createElement("div");
+  const pill = document.createElement("div");
+  pill.className = "glass spotlight-label";
+  pill.textContent = title;
+  element.append(pill);
+  return new maplibregl.Marker({ element, anchor: "bottom", offset: [0, -64] })
+    .setLngLat(at)
+    .addTo(map);
+}
+
 export function BuildingMap(props: BuildingMapProps) {
   const { complexes, view, selectedId, hoveredId, flyTo } = props;
   const { top, right, bottom, left } = props.padding ?? NO_PADDING;
+  const spotlightId = props.spotlight?.id ?? null;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const spotlightRef = useRef<Spotlight | null>(null);
   const [ready, setReady] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
 
@@ -199,6 +230,15 @@ export function BuildingMap(props: BuildingMapProps) {
           promoteId: "id",
         });
         for (const layer of pinLayers()) map.addLayer(layer);
+        const loadedMap = map;
+        spotlightRef.current = createSpotlight(loadedMap, {
+          loadFootprints,
+          placeLabel: (title, at) => placeLabel(loadedMap, title, at),
+          prefersReducedMotion,
+          now: () => performance.now(),
+          requestFrame: (callback) => requestAnimationFrame(callback),
+          cancelFrame: (id) => cancelAnimationFrame(id),
+        });
 
         map.on("mousemove", "core", (event: MapLayerMouseEvent) => {
           const feature = event.features?.[0];
@@ -241,6 +281,8 @@ export function BuildingMap(props: BuildingMapProps) {
       cancelled = true;
       styleRequest.abort();
       clearTimeout(loadTimer);
+      spotlightRef.current?.dispose();
+      spotlightRef.current = null;
       map?.remove();
       mapRef.current = null;
       markedSelected.current = null;
@@ -307,19 +349,31 @@ export function BuildingMap(props: BuildingMapProps) {
       zoom: flyTo.zoom,
       pitch: FLY_PITCH,
     };
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (prefersReducedMotion()) {
       map.jumpTo(target);
     } else {
       map.flyTo({ ...target, speed: 0.8 });
     }
   }, [ready, flyTo]);
 
+  // After the padding effect, so a spotlight that arrives with new padding is framed inside it.
+  useEffect(() => {
+    const spotlight = spotlightRef.current;
+    if (!ready || !spotlight) return;
+    const target = latest.current.spotlight;
+    if (target) spotlight.show(target);
+    else spotlight.clear();
+  }, [ready, spotlightId]);
+
   if (unavailable) return null;
 
   // MapLibre's stylesheet sets position: relative on its container, so the map fills a wrapper instead of being the absolute box itself.
   // The pin tooltip is styled by the `.pin-tooltip` rule in globals.css.
   return (
-    <div className="absolute inset-0">
+    <div
+      className="absolute inset-0"
+      data-spotlight={ready ? (spotlightId ?? undefined) : undefined}
+    >
       <div ref={containerRef} className="h-full w-full" />
     </div>
   );
