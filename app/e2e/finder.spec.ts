@@ -54,14 +54,20 @@ const PHOTO = Buffer.from(
   "base64",
 );
 
-const titleOf = (complex: ComplexRecord) => complex.name?.text ?? complex.address;
+const titleOf = (complex: ComplexRecord) =>
+  complex.name?.text ?? complex.address;
 /** Every complaint in a period's tally, as the site counts them: duplicates are never in a tally. */
-const complaintsIn = (complex: ComplexRecord, period: keyof ComplexRecord["tally"]) =>
+const complaintsIn = (
+  complex: ComplexRecord,
+  period: keyof ComplexRecord["tally"],
+) =>
   Object.values(complex.tally[period])
     .flatMap((outcomes) => Object.values(outcomes))
     .reduce((sum, count) => sum + count, 0);
 const formatAcres = (acres: number) =>
-  acres < 0.1 ? "under 0.1 acres" : `${acres} ${acres === 1 ? "acre" : "acres"}`;
+  acres < 0.1
+    ? "under 0.1 acres"
+    : `${acres} ${acres === 1 ? "acre" : "acres"}`;
 
 /** The complex with the longest title in the data. */
 const LONGEST_TITLE = complexes.reduce((longest, complex) =>
@@ -73,7 +79,9 @@ const NAMED = complexes.find((complex) => {
   const name = complex.name?.text.toLowerCase();
   if (!name || complex.parcelIds.length > 1) return false;
   const containing = complexes.filter((other) =>
-    [other.name?.text, other.address].some((text) => text?.toLowerCase().includes(name)),
+    [other.name?.text, other.address].some((text) =>
+      text?.toLowerCase().includes(name),
+    ),
   );
   return containing.length === 1;
 });
@@ -127,7 +135,8 @@ async function pressTab(page: Page): Promise<Stop | null> {
     if (!element || element === document.body) return null;
     const shows = (target: Element) => {
       const style = getComputedStyle(target);
-      const outlined = style.outlineStyle !== "none" && parseFloat(style.outlineWidth) > 0;
+      const outlined =
+        style.outlineStyle !== "none" && parseFloat(style.outlineWidth) > 0;
       return outlined || style.boxShadow !== "none";
     };
     const wrapper = element.closest("[class*='focus-within']");
@@ -143,7 +152,10 @@ async function pressTab(page: Page): Promise<Stop | null> {
               : "other";
     return {
       kind,
-      label: element.getAttribute("aria-label") ?? element.textContent?.trim().slice(0, 30) ?? "",
+      label:
+        element.getAttribute("aria-label") ??
+        element.textContent?.trim().slice(0, 30) ??
+        "",
       ringed: shows(element) || (wrapper !== null && shows(wrapper)),
     };
   });
@@ -168,7 +180,8 @@ async function waitForMap(page: Page) {
 const onPhone = () => test.info().project.name === "phone";
 const search = (page: Page) => page.getByRole("combobox");
 
-const spotlit = (page: Page, id: string) => page.locator(`[data-spotlight="${id}"]`);
+const spotlit = (page: Page, id: string) =>
+  page.locator(`[data-spotlight="${id}"]`);
 const labels = (page: Page) => page.locator(".spotlight-label");
 const cardIds = (page: Page) =>
   cards(page).evaluateAll((elements) =>
@@ -182,7 +195,11 @@ function recordOf(id: string): ComplexRecord {
 }
 
 /** Picks a complex from the search box by its name or address; its suggestion carries its address either way. */
-async function pickFromSearch(page: Page, text: string, complex: ComplexRecord) {
+async function pickFromSearch(
+  page: Page,
+  text: string,
+  complex: ComplexRecord,
+) {
   await page.getByRole("combobox").fill(text);
   await page
     .getByRole("option")
@@ -222,12 +239,16 @@ test("pick an area, open a building, see its record", async ({ page }) => {
   const cardText = await first.innerText();
   await first.click();
   await expect(page.getByText("What the complaints were about")).toBeVisible();
-  const heading = await panel(page).getByRole("heading", { level: 2 }).innerText();
+  const heading = await panel(page)
+    .getByRole("heading", { level: 2 })
+    .innerText();
   expect(cardText).toContain(heading);
   await expect(page.locator("body")).not.toContainText(/code case/i);
 });
 
-test("a card's figure is its record's lead figure, in each of the three periods", async ({ page }) => {
+test("a card's figure is its record's lead figure, in each of the three periods", async ({
+  page,
+}) => {
   for (const [query, phrase] of [
     ["", "in the last 12 months"],
     ["period=2y&", "in the last 2 years"],
@@ -240,23 +261,25 @@ test("a card's figure is its record's lead figure, in each of the three periods"
     expect(figure, query).toMatch(/^\d[\d,]*$/);
     await first.click();
     await expect(panel(page).getByText(phrase, { exact: true })).toBeVisible();
-    await expect(panel(page).getByText(phrase, { exact: true }).locator("xpath=../..")).toContainText(
-      new RegExp(`^${figure} complaints? `),
-    );
+    await expect(
+      panel(page).getByText(phrase, { exact: true }).locator("xpath=../.."),
+    ).toContainText(new RegExp(`^${figure} complaints? `));
   }
 });
 
 test("a filtered view survives a reload", async ({ page }) => {
   await page.goto("/?period=3y&order=most");
-  await expect(
-    page.getByRole("button", { name: "3 years" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "3 years" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(page.getByRole("button", { name: "Most first" })).toBeVisible();
 
   await page.reload();
-  await expect(
-    page.getByRole("button", { name: "3 years" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "3 years" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(page.getByRole("button", { name: "Most first" })).toBeVisible();
 });
 
@@ -264,7 +287,10 @@ test("the address bar names 2 and 3 years, and a retired period falls back to 12
   page,
 }) => {
   await page.goto("/?period=cases&order=most");
-  await expect(page.getByRole("button", { name: "12 months" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "12 months" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(page.getByRole("button", { name: "Most first" })).toBeVisible();
 
   await page.getByRole("button", { name: "2 years" }).click();
@@ -318,7 +344,10 @@ test("hands focus back to its card even when Escape lands in the commit that sta
 test("with suggestions open, the first Escape closes only the suggestions", async ({
   page,
 }) => {
-  test.skip(onPhone(), "On a phone the search steps aside while a building is open.");
+  test.skip(
+    onPhone(),
+    "On a phone the search steps aside while a building is open.",
+  );
   await page.goto("/");
   await waitForMap(page);
   await openFirstCard(page);
@@ -343,7 +372,9 @@ test("a building page is reachable directly", async ({ page }) => {
 
   await page.goto(`/building/${COMPLEX_WITH_RECORD}`);
   if (!complex) return;
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(titleOf(complex));
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    titleOf(complex),
+  );
   await expect(page).toHaveTitle(
     complex.name
       ? `${complex.name.text}, ${complex.address}: code complaint record`
@@ -364,15 +395,23 @@ test("a building page is reachable directly", async ({ page }) => {
   expect(credit && header && credit.y - header.y).toBe(14);
 });
 
-test("an unknown building id is a 404 that leads back to the map", async ({ page }) => {
+test("an unknown building id is a 404 that leads back to the map", async ({
+  page,
+}) => {
   const response = await page.goto("/building/0000000000");
   expect(response?.status()).toBe(404);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("That page does not exist.");
-  await expect(page.getByRole("link", { name: "Back to the map" })).toHaveAttribute("href", "/");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "That page does not exist.",
+  );
+  await expect(
+    page.getByRole("link", { name: "Back to the map" }),
+  ).toHaveAttribute("href", "/");
   await expect(page.getByText(NOT_OFFICIAL)).toBeVisible();
 });
 
-test("a property listed under several parcels has one suggestion and one record", async ({ page }) => {
+test("a property listed under several parcels has one suggestion and one record", async ({
+  page,
+}) => {
   const merged = complexes.find(({ parcelIds }) => parcelIds.length > 1);
   expect(merged, "the data has a complex of several parcels").toBeDefined();
   if (!merged) return;
@@ -381,12 +420,16 @@ test("a property listed under several parcels has one suggestion and one record"
   await page.goto("/");
   await waitForMap(page);
   await page.getByRole("combobox").fill(merged.address);
-  const suggestions = page.getByRole("option").filter({ hasText: "apartments" });
+  const suggestions = page
+    .getByRole("option")
+    .filter({ hasText: "apartments" });
   await expect(suggestions.first()).toBeVisible();
   await expect(suggestions.filter({ hasText: merged.address })).toHaveCount(1);
 
   const response = await page.goto(`/building/${others[0]}`);
-  expect(response?.status(), "a member parcel has no page of its own").toBe(404);
+  expect(response?.status(), "a member parcel has no page of its own").toBe(
+    404,
+  );
 });
 
 test("the method page states the caution and links back to the map", async ({
@@ -407,6 +450,45 @@ test("the method page states the caution and links back to the map", async ({
     page.getByRole("heading", { level: 1, name: "Building Record" }),
   ).toBeVisible();
 });
+
+for (const size of [
+  { name: "desktop", width: 1440, height: 900 },
+  { name: "phone", width: 375, height: 812 },
+]) {
+  test(`the method page shows the outcome table and does not scroll sideways on a ${size.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await page.goto("/method");
+
+    const table = page.getByRole("table", { name: /City outcome phrases/ });
+    await expect(table).toBeVisible();
+    await expect(
+      table.getByRole("rowheader", { name: "Violation confirmed" }),
+    ).toBeVisible();
+    await expect(
+      table.getByRole("rowheader", { name: "Not counted: duplicate report" }),
+    ).toBeVisible();
+    await expect(
+      table
+        .getByRole("listitem")
+        .filter({ hasText: /^Closed\/Duplicate Case$/ }),
+    ).toHaveCount(1);
+    await expect(
+      page.getByRole("heading", { name: "How far back it goes" }),
+    ).toBeVisible();
+
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+    expect(
+      overflow,
+      `the method page overflows by ${overflow}px`,
+    ).toBeLessThanOrEqual(0);
+  });
+}
 
 test("every page carries the not-official notice, the pull date and the way to the method page", async ({
   page,
@@ -432,12 +514,17 @@ test.describe("on a phone", () => {
     const busiest = complexes
       .filter((complex) => complex.repeatOffender !== null)
       .sort((a, b) => complaintsIn(b, "y3") - complaintsIn(a, "y3"))[0];
-    expect(complaintsIn(busiest, "y3"), "the busiest Repeat Offender has a three-digit figure").toBeGreaterThanOrEqual(100);
+    expect(
+      complaintsIn(busiest, "y3"),
+      "the busiest Repeat Offender has a three-digit figure",
+    ).toBeGreaterThanOrEqual(100);
 
     // Without the map the list holds every complex in Austin, so the busiest one is first.
     await withoutMap(page);
     await page.goto("/?period=3y&order=most&ro=1");
-    const card = page.locator(`[data-testid="card"][data-complex-id="${busiest.id}"]`);
+    const card = page.locator(
+      `[data-testid="card"][data-complex-id="${busiest.id}"]`,
+    );
     await expect(card).toContainText(String(complaintsIn(busiest, "y3")));
 
     const chip = card.getByTitle("Repeat Offender");
@@ -445,16 +532,23 @@ test.describe("on a phone", () => {
     const [cardBox, chipBox, figureBox] = await Promise.all([
       card.boundingBox(),
       chip.boundingBox(),
-      card.getByText(String(complaintsIn(busiest, "y3")), { exact: true }).boundingBox(),
+      card
+        .getByText(String(complaintsIn(busiest, "y3")), { exact: true })
+        .boundingBox(),
     ]);
-    if (!cardBox || !chipBox || !figureBox) throw new Error("The card is not on screen");
-    expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+    if (!cardBox || !chipBox || !figureBox)
+      throw new Error("The card is not on screen");
+    expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(
+      cardBox.x + cardBox.width,
+    );
     expect(chipBox.y).toBeGreaterThanOrEqual(cardBox.y);
     expect(figureBox.x + figureBox.width).toBeLessThan(chipBox.x);
 
     // Every card keeps one height, whatever its lines.
     const heights = await cards(page).evaluateAll((elements) =>
-      elements.slice(0, 12).map((element) => element.getBoundingClientRect().height),
+      elements
+        .slice(0, 12)
+        .map((element) => element.getBoundingClientRect().height),
     );
     expect(new Set(heights).size).toBe(1);
   });
@@ -491,7 +585,9 @@ test.describe("when the map cannot start", () => {
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 
-  test("the list starts under the title block and filters and ends above the notice", async ({ page }) => {
+  test("the list starts under the title block and filters and ends above the notice", async ({
+    page,
+  }) => {
     await page.goto("/");
     await expect(page.getByText(NO_MAP_SENTENCE)).toBeVisible();
     await expect(cards(page).first()).toBeVisible();
@@ -501,7 +597,8 @@ test.describe("when the map cannot start", () => {
     const sentence = await page.getByText(NO_MAP_SENTENCE).boundingBox();
     const card = await cards(page).first().boundingBox();
     const notice = await page.getByText(NOT_OFFICIAL).boundingBox();
-    if (!viewport || !intro || !sentence || !card || !notice) throw new Error("Something is not on screen");
+    if (!viewport || !intro || !sentence || !card || !notice)
+      throw new Error("Something is not on screen");
 
     expect(sentence.y).toBeGreaterThanOrEqual(intro.y + intro.height);
     expect(card.y).toBeLessThan(sentence.y + sentence.height + 120);
@@ -562,7 +659,9 @@ test.describe("when the map cannot start", () => {
 
     await page.getByRole("combobox").fill("");
     await cards(page).first().click();
-    await expect(page.getByText("What the complaints were about")).toBeVisible();
+    await expect(
+      page.getByText("What the complaints were about"),
+    ).toBeVisible();
     await expect(panel(page)).toBeFocused();
     // No map, so nothing is staged, but the record still has its photo.
     await expect(
@@ -611,7 +710,8 @@ test("with the map running, Tab goes search, filters, map, then the first card, 
     if (stop.kind === "card") break;
   }
 
-  const first = (kind: Stop["kind"]) => stops.findIndex((stop) => stop.kind === kind);
+  const first = (kind: Stop["kind"]) =>
+    stops.findIndex((stop) => stop.kind === kind);
   const search = first("search");
   const filter = first("filter");
   const map = first("map");
@@ -622,13 +722,19 @@ test("with the map running, Tab goes search, filters, map, then the first card, 
   expect(card).toBeGreaterThan(map);
 
   for (const index of [search, filter, map, card]) {
-    expect(stops[index].ringed, `"${stops[index].label}" shows a focus indicator`).toBe(true);
+    expect(
+      stops[index].ringed,
+      `"${stops[index].label}" shows a focus indicator`,
+    ).toBe(true);
   }
 });
 
 test.describe("a picked building", () => {
   test.beforeAll(() => {
-    expect(NAMED, "the data has a complex with a name only it carries").toBeDefined();
+    expect(
+      NAMED,
+      "the data has a complex with a name only it carries",
+    ).toBeDefined();
   });
 
   test("stands forward on the map, and its record is headed by its name, address and aerial photo", async ({
@@ -641,12 +747,18 @@ test.describe("a picked building", () => {
 
     await expect(spotlit(page, NAMED.id)).toBeAttached();
     await expect(labels(page)).toHaveText(NAMED.name.text);
-    await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText(NAMED.name.text);
+    await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText(
+      NAMED.name.text,
+    );
     await expect(
-      panel(page).getByText(`${NAMED.address}, ${formatAcres(NAMED.acres)}`, { exact: true }),
+      panel(page).getByText(`${NAMED.address}, ${formatAcres(NAMED.acres)}`, {
+        exact: true,
+      }),
     ).toBeVisible();
     await expect(
-      panel(page).getByRole("img", { name: `Aerial photo of ${NAMED.name.text}` }),
+      panel(page).getByRole("img", {
+        name: `Aerial photo of ${NAMED.name.text}`,
+      }),
     ).toHaveAttribute("data-loaded", "true");
     await expect(panel(page).getByText("Aerial photo: USGS")).toBeVisible();
   });
@@ -657,11 +769,15 @@ test.describe("a picked building", () => {
     await waitForMap(page);
     await page.getByRole("combobox").fill(NAMED.name.text);
 
-    const suggestion = page.getByRole("option").filter({ hasText: NAMED.address });
+    const suggestion = page
+      .getByRole("option")
+      .filter({ hasText: NAMED.address });
     await expect(suggestion).toContainText(NAMED.name.text);
     await expect(suggestion).toContainText("apartments");
     await suggestion.click();
-    await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText(NAMED.name.text);
+    await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText(
+      NAMED.name.text,
+    );
     await expect(spotlit(page, NAMED.id)).toBeAttached();
   });
 
@@ -683,7 +799,10 @@ test.describe("a picked building", () => {
     // A tray still holding would not follow a camera move the screen did not ask for, such as a smaller window.
     const viewport = page.viewportSize();
     if (!viewport) throw new Error("No viewport");
-    await page.setViewportSize({ width: viewport.width, height: viewport.height - 220 });
+    await page.setViewportSize({
+      width: viewport.width,
+      height: viewport.height - 220,
+    });
     await expect(trayCount(page)).not.toHaveText(before);
     await page.setViewportSize(viewport);
 
@@ -724,7 +843,9 @@ test.describe("a picked building", () => {
       // Not reachable by Tab either: from the panel, Shift+Tab never lands in them. Found by CSS, since a hidden box has no role.
       await page.keyboard.press("Shift+Tab");
       const searchBox = page.locator('input[type="search"]');
-      expect(await searchBox.evaluate((input) => input === document.activeElement)).toBe(false);
+      expect(
+        await searchBox.evaluate((input) => input === document.activeElement),
+      ).toBe(false);
     } else {
       await expect(search(page)).toBeVisible();
       await expect(period).toBeVisible();
@@ -735,10 +856,15 @@ test.describe("a picked building", () => {
     await expect(period).toBeVisible();
   });
 
-  test("keeps the tray's cards while it is open, though the camera moves", async ({ page }) => {
+  test("keeps the tray's cards while it is open, though the camera moves", async ({
+    page,
+  }) => {
     await page.goto("/");
     await waitForMap(page);
-    const before = { ids: await cardIds(page), count: await trayCount(page).innerText() };
+    const before = {
+      ids: await cardIds(page),
+      count: await trayCount(page).innerText(),
+    };
 
     const id = await openFirstCard(page);
     await expect(spotlit(page, id)).toBeAttached();
@@ -749,8 +875,13 @@ test.describe("a picked building", () => {
     await expect(trayCount(page)).toHaveText(before.count);
   });
 
-  test("picked and then replaced straight away leaves one label, for the second", async ({ page }) => {
-    test.skip(onPhone(), "On a phone the record sheet covers the tray and the search steps aside, so no second pick is in reach.");
+  test("picked and then replaced straight away leaves one label, for the second", async ({
+    page,
+  }) => {
+    test.skip(
+      onPhone(),
+      "On a phone the record sheet covers the tray and the search steps aside, so no second pick is in reach.",
+    );
     await page.goto("/");
     await waitForMap(page);
     const [, secondId] = await cardIds(page);
@@ -813,9 +944,15 @@ test.describe("a picked building", () => {
     await askedForFootprints;
 
     await expect(spotlit(page, id)).toBeAttached();
-    await expect(panel(page).getByText("What the complaints were about")).toBeVisible();
-    await expect(panel(page).getByRole("region", { name: "Month by month" })).toBeVisible();
-    await expect(panel(page).getByText("Loading from the City of Austin")).toHaveCount(0);
+    await expect(
+      panel(page).getByText("What the complaints were about"),
+    ).toBeVisible();
+    await expect(
+      panel(page).getByRole("region", { name: "Month by month" }),
+    ).toBeVisible();
+    await expect(
+      panel(page).getByText("Loading from the City of Austin"),
+    ).toHaveCount(0);
   });
 
   test("keeps its name over the header's gradient, with no image, when the aerial photo fails", async ({
@@ -830,12 +967,16 @@ test.describe("a picked building", () => {
     await pickFromSearch(page, NAMED.address, NAMED);
     await photoAnswered;
 
-    await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText(NAMED.name.text);
+    await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText(
+      NAMED.name.text,
+    );
     await expect(panel(page).locator("img")).toHaveCount(0);
     await expect(panel(page).getByText("Aerial photo: USGS")).toHaveCount(0);
   });
 
-  test("fades its photo in, and not for someone who asked for less motion", async ({ page }) => {
+  test("fades its photo in, and not for someone who asked for less motion", async ({
+    page,
+  }) => {
     if (!NAMED) return;
     await page.goto("/");
     await waitForMap(page);
@@ -843,7 +984,8 @@ test.describe("a picked building", () => {
 
     const photo = panel(page).getByRole("img", { name: /^Aerial photo of / });
     await expect(photo).toHaveAttribute("data-loaded", "true");
-    const fade = () => photo.evaluate((element) => getComputedStyle(element).transitionDuration);
+    const fade = () =>
+      photo.evaluate((element) => getComputedStyle(element).transitionDuration);
     expect(await fade()).toBe("0.7s");
 
     await page.emulateMedia({ reducedMotion: "reduce" });
