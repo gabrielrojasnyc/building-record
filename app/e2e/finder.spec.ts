@@ -726,8 +726,12 @@ test.describe("when the map cannot start", () => {
     }
 
     const at = (label: string) => labels.indexOf(label);
-    expect(at("Search an Austin address"), "search comes first").toBe(0);
-    expect(at("12 months")).toBeGreaterThan(at("Search an Austin address"));
+    expect(at("Search an address or building name"), "search comes first").toBe(
+      0,
+    );
+    expect(at("12 months")).toBeGreaterThan(
+      at("Search an address or building name"),
+    );
     expect(at("Fewest first")).toBeGreaterThan(at("12 months"));
     expect(at("card")).toBeGreaterThan(at("Fewest first"));
     expect(at("Show 40 more")).toBeGreaterThan(at("card"));
@@ -1093,7 +1097,9 @@ test.describe("a building's complaint types", () => {
     await expect(panel(page).getByText(BUILDING_CONDITION)).toBeVisible();
     await expect(
       panel(page)
-        .getByRole("region", { name: "Complaints in the last 3 years, newest first" })
+        .getByRole("region", {
+          name: "Complaints in the last 3 years, newest first",
+        })
         .getByRole("listitem")
         .first(),
     ).toBeVisible();

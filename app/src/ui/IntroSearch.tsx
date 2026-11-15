@@ -1,15 +1,21 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { searchAddresses, searchComplexes, type AddressMatch } from "@/city/addressSearch";
+import {
+  searchAddresses,
+  searchComplexes,
+  type AddressMatch,
+} from "@/city/addressSearch";
 import { ADDRESS_SEARCH_MIN_CHARACTERS } from "@/domain/address";
 import type { Complex } from "@/domain/types";
 import { Glass } from "./Glass";
 
-const PLACEHOLDER = "Search an Austin address";
-const NO_MATCH = "No Austin address starts with that.";
-const NO_COMPLEX_MATCH = "No apartment complex name or address starts with or contains that.";
-const CITY_UNAVAILABLE = "Other Austin addresses could not be loaded right now.";
+const PLACEHOLDER = "Search an address or building name";
+const NO_MATCH = "No Austin address or building name matches that.";
+const NO_COMPLEX_MATCH =
+  "No building name or address starts with or contains that.";
+const CITY_UNAVAILABLE =
+  "Other Austin addresses could not be loaded right now.";
 const TYPING_PAUSE_MS = 250;
 
 interface Suggestions {
@@ -56,23 +62,32 @@ export function IntroSearch({
     };
   }, [query, complexes, complexesOnly]);
 
-  const shown = suggestions?.query === query && dismissedQuery !== query ? suggestions : null;
+  const shown =
+    suggestions?.query === query && dismissedQuery !== query
+      ? suggestions
+      : null;
   const matches = shown?.matches ?? [];
   const isOpen = matches.length > 0;
   const showsCityUnavailable = shown?.cityUnavailable === true;
   // The no-match sentence is only true when the city answered and nothing matched.
-  const showsNoMatch = shown !== null && matches.length === 0 && !showsCityUnavailable;
+  const showsNoMatch =
+    shown !== null && matches.length === 0 && !showsCityUnavailable;
   const showsSurface = isOpen || showsNoMatch || showsCityUnavailable;
   const optionId = (index: number) => `${listId}-${index}`;
 
   useEffect(() => {
     if (!shown) return;
     const closeOnOutsidePress = (event: PointerEvent) => {
-      if (event.target instanceof Node && rootRef.current?.contains(event.target)) return;
+      if (
+        event.target instanceof Node &&
+        rootRef.current?.contains(event.target)
+      )
+        return;
       setDismissedQuery(query);
     };
     document.addEventListener("pointerdown", closeOnOutsidePress);
-    return () => document.removeEventListener("pointerdown", closeOnOutsidePress);
+    return () =>
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
   }, [shown, query]);
 
   const choose = (match: AddressMatch) => {
@@ -93,12 +108,23 @@ export function IntroSearch({
       return;
     }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      if (!suggestions || suggestions.query !== query || suggestions.matches.length === 0) return;
+      if (
+        !suggestions ||
+        suggestions.query !== query ||
+        suggestions.matches.length === 0
+      )
+        return;
       event.preventDefault();
       setDismissedQuery(null);
       const last = suggestions.matches.length - 1;
       const step = event.key === "ArrowDown" ? 1 : -1;
-      setActiveIndex((current) => (current === -1 ? (step === 1 ? 0 : last) : (current + step + last + 1) % (last + 1)));
+      setActiveIndex((current) =>
+        current === -1
+          ? step === 1
+            ? 0
+            : last
+          : (current + step + last + 1) % (last + 1),
+      );
       return;
     }
     if (event.key === "Enter" && isOpen) {
@@ -139,7 +165,9 @@ export function IntroSearch({
             role="combobox"
             aria-expanded={isOpen}
             aria-controls={isOpen ? listId : undefined}
-            aria-activedescendant={isOpen && activeIndex >= 0 ? optionId(activeIndex) : undefined}
+            aria-activedescendant={
+              isOpen && activeIndex >= 0 ? optionId(activeIndex) : undefined
+            }
             aria-autocomplete="list"
             placeholder={PLACEHOLDER}
             aria-label={PLACEHOLDER}
@@ -158,37 +186,42 @@ export function IntroSearch({
         {showsSurface && (
           <div className={SURFACE}>
             {isOpen && (
-          <ul
-            id={listId}
-            role="listbox"
-            aria-label="Address suggestions"
-          >
-            {matches.map((match, index) => (
-              <li
-                key={`${match.label}-${match.complexId ?? "city"}`}
-                id={optionId(index)}
-                role="option"
-                aria-selected={index === activeIndex}
-                // Keeps focus in the input so the list survives the press.
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => choose(match)}
-                className="flex cursor-pointer items-baseline justify-between gap-3 rounded-xl px-3 py-[9px] text-deep hover:bg-white/70 aria-selected:bg-white/70"
-              >
-                {match.name ? (
-                  <span className="min-w-0">
-                    {match.name}
-                    <span className="block text-[13px] text-slate">{match.label}</span>
-                  </span>
-                ) : (
-                  <span>{match.label}</span>
-                )}
-                {match.complexId && <span className="flex-none text-[13px] text-slate">apartments</span>}
-              </li>
-            ))}
-          </ul>
+              <ul id={listId} role="listbox" aria-label="Address suggestions">
+                {matches.map((match, index) => (
+                  <li
+                    key={`${match.label}-${match.complexId ?? "city"}`}
+                    id={optionId(index)}
+                    role="option"
+                    aria-selected={index === activeIndex}
+                    // Keeps focus in the input so the list survives the press.
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => choose(match)}
+                    className="flex cursor-pointer items-baseline justify-between gap-3 rounded-xl px-3 py-[9px] text-deep hover:bg-white/70 aria-selected:bg-white/70"
+                  >
+                    {match.name ? (
+                      <span className="min-w-0">
+                        {match.name}
+                        <span className="block text-[13px] text-slate">
+                          {match.label}
+                        </span>
+                      </span>
+                    ) : (
+                      <span>{match.label}</span>
+                    )}
+                    {match.complexId && (
+                      <span className="flex-none text-[13px] text-slate">
+                        apartments
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
             )}
             {showsCityUnavailable && (
-              <p role="status" className={`px-3 text-[13px] text-steel ${isOpen ? "pt-1.5 pb-1" : "py-2"}`}>
+              <p
+                role="status"
+                className={`px-3 text-[13px] text-steel ${isOpen ? "pt-1.5 pb-1" : "py-2"}`}
+              >
                 {CITY_UNAVAILABLE}
               </p>
             )}

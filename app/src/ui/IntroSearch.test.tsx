@@ -1,17 +1,42 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { searchAddresses, searchComplexes, type AddressMatch } from "@/city/addressSearch";
+import {
+  searchAddresses,
+  searchComplexes,
+  type AddressMatch,
+} from "@/city/addressSearch";
 import type { Complex } from "@/domain/types";
 import { IntroSearch } from "./IntroSearch";
 
-vi.mock("@/city/addressSearch", () => ({ searchAddresses: vi.fn(), searchComplexes: vi.fn() }));
+vi.mock("@/city/addressSearch", () => ({
+  searchAddresses: vi.fn(),
+  searchComplexes: vi.fn(),
+}));
 const search = vi.mocked(searchAddresses);
 const searchLocal = vi.mocked(searchComplexes);
 
-const apartments: AddressMatch = { label: "1601 Royal Crest Dr", name: null, lon: -97.7, lat: 30.2, complexId: "a" };
-const street: AddressMatch = { label: "1601 Royal Oak Ln", name: null, lon: -97.8, lat: 30.3, complexId: null };
-const named: AddressMatch = { label: "2000 Burton Dr", name: "Array Apartments", lon: -97.73, lat: 30.23, complexId: "b" };
+const apartments: AddressMatch = {
+  label: "1601 Royal Crest Dr",
+  name: null,
+  lon: -97.7,
+  lat: 30.2,
+  complexId: "a",
+};
+const street: AddressMatch = {
+  label: "1601 Royal Oak Ln",
+  name: null,
+  lon: -97.8,
+  lat: 30.3,
+  complexId: null,
+};
+const named: AddressMatch = {
+  label: "2000 Burton Dr",
+  name: "Array Apartments",
+  lon: -97.73,
+  lat: 30.23,
+  complexId: "b",
+};
 const complexes: Complex[] = [];
 
 function setup() {
@@ -28,7 +53,10 @@ beforeEach(() => {
   // Testing Library only waits through fake timers when it sees Jest's; this hands it Vitest's.
   vi.stubGlobal("jest", { advanceTimersByTime: vi.advanceTimersByTime });
   search.mockReset();
-  search.mockResolvedValue({ matches: [apartments, street], cityUnavailable: false });
+  search.mockResolvedValue({
+    matches: [apartments, street],
+    cityUnavailable: false,
+  });
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -36,6 +64,17 @@ afterEach(() => {
 });
 
 describe("IntroSearch", () => {
+  it("asks for an address or a building name, and is named for both", () => {
+    setup();
+    const input = screen.getByRole("combobox", {
+      name: "Search an address or building name",
+    });
+    expect(input).toHaveAttribute(
+      "placeholder",
+      "Search an address or building name",
+    );
+  });
+
   it("searches 250 ms after typing stops, not on every key", async () => {
     const { user, input } = setup();
     await user.type(input, "1601");
@@ -55,19 +94,30 @@ describe("IntroSearch", () => {
     await settle();
 
     const options = screen.getAllByRole("option");
-    expect(options.map((option) => option.textContent)).toEqual(["1601 Royal Crest Dr" + "apartments", "1601 Royal Oak Ln"]);
+    expect(options.map((option) => option.textContent)).toEqual([
+      "1601 Royal Crest Dr" + "apartments",
+      "1601 Royal Oak Ln",
+    ]);
     expect(input).toHaveAttribute("aria-expanded", "true");
-    expect(input).toHaveAttribute("aria-controls", screen.getByRole("listbox").id);
+    expect(input).toHaveAttribute(
+      "aria-controls",
+      screen.getByRole("listbox").id,
+    );
   });
 
   it("shows a named complex by its name, with its address under it and the apartments tag", async () => {
-    search.mockResolvedValue({ matches: [named, street], cityUnavailable: false });
+    search.mockResolvedValue({
+      matches: [named, street],
+      cityUnavailable: false,
+    });
     const { user, onChoose, input } = setup();
     await user.type(input, "Array");
     await settle();
 
     const [option] = screen.getAllByRole("option");
-    expect(option).toHaveTextContent("Array Apartments2000 Burton Drapartments");
+    expect(option).toHaveTextContent(
+      "Array Apartments2000 Burton Drapartments",
+    );
     expect(within(option).getByText("Array Apartments")).toBeVisible();
     expect(within(option).getByText("2000 Burton Dr")).toBeVisible();
     expect(within(option).getByText("apartments")).toBeVisible();
@@ -79,7 +129,12 @@ describe("IntroSearch", () => {
   it("ignores a response that arrives after the text has changed", async () => {
     let answerFirst: (matches: AddressMatch[]) => void = () => {};
     search.mockImplementationOnce(
-      () => new Promise((resolve) => (answerFirst = (matches) => resolve({ matches, cityUnavailable: false }))),
+      () =>
+        new Promise(
+          (resolve) =>
+            (answerFirst = (matches) =>
+              resolve({ matches, cityUnavailable: false })),
+        ),
     );
     search.mockResolvedValueOnce({ matches: [street], cityUnavailable: false });
     const { user, input } = setup();
@@ -90,7 +145,9 @@ describe("IntroSearch", () => {
     await settle();
     await act(async () => answerFirst([apartments]));
 
-    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["1601 Royal Oak Ln"]);
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent),
+    ).toEqual(["1601 Royal Oak Ln"]);
   });
 
   it("moves with the arrow keys and chooses the active option on Enter", async () => {
@@ -99,7 +156,10 @@ describe("IntroSearch", () => {
     await settle();
 
     await user.keyboard("{ArrowDown}{ArrowDown}");
-    expect(input).toHaveAttribute("aria-activedescendant", screen.getAllByRole("option")[1].id);
+    expect(input).toHaveAttribute(
+      "aria-activedescendant",
+      screen.getAllByRole("option")[1].id,
+    );
     await user.keyboard("{ArrowUp}{ArrowDown}");
     await user.keyboard("{Enter}");
 
@@ -133,7 +193,9 @@ describe("IntroSearch", () => {
     await user.type(input, "zzzz");
     await settle();
 
-    expect(screen.getByText("No Austin address starts with that.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No Austin address or building name matches that."),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
@@ -143,9 +205,15 @@ describe("IntroSearch", () => {
     await user.type(input, "1601 Roy");
     await settle();
 
-    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["1601 Royal Crest Dr" + "apartments"]);
-    expect(screen.getByText("Other Austin addresses could not be loaded right now.")).toBeVisible();
-    expect(screen.queryByText("No Austin address starts with that.")).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent),
+    ).toEqual(["1601 Royal Crest Dr" + "apartments"]);
+    expect(
+      screen.getByText("Other Austin addresses could not be loaded right now."),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("No Austin address or building name matches that."),
+    ).not.toBeInTheDocument();
   });
 
   it("says only that other addresses could not be loaded when the city is unreachable and no complex matches", async () => {
@@ -154,8 +222,12 @@ describe("IntroSearch", () => {
     await user.type(input, "zzzz");
     await settle();
 
-    expect(screen.getByText("Other Austin addresses could not be loaded right now.")).toBeVisible();
-    expect(screen.queryByText("No Austin address starts with that.")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Other Austin addresses could not be loaded right now."),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("No Austin address or building name matches that."),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
@@ -194,7 +266,9 @@ describe("IntroSearch", () => {
     onDocumentKey.mockClear();
 
     await user.keyboard("{Escape}");
-    expect(screen.queryByText("No Austin address starts with that.")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("No Austin address or building name matches that."),
+    ).not.toBeInTheDocument();
     expect(onDocumentKey).not.toHaveBeenCalled();
     document.removeEventListener("keydown", onDocumentKey);
   });
@@ -227,22 +301,32 @@ describe("IntroSearch without a map", () => {
   it("offers matching complexes only and never asks the city for other addresses", async () => {
     searchLocal.mockReturnValue([apartments]);
     const user = userEvent.setup({ delay: null });
-    render(<IntroSearch complexes={complexes} onChoose={vi.fn()} complexesOnly />);
+    render(
+      <IntroSearch complexes={complexes} onChoose={vi.fn()} complexesOnly />,
+    );
     await user.type(screen.getByRole("combobox"), "1601 Roy");
     await settle();
 
     expect(searchLocal).toHaveBeenCalledWith("1601 Roy", complexes);
     expect(search).not.toHaveBeenCalled();
-    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["1601 Royal Crest Dr" + "apartments"]);
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent),
+    ).toEqual(["1601 Royal Crest Dr" + "apartments"]);
   });
 
   it("says no complex matches when none does", async () => {
     searchLocal.mockReturnValue([]);
     const user = userEvent.setup({ delay: null });
-    render(<IntroSearch complexes={complexes} onChoose={vi.fn()} complexesOnly />);
+    render(
+      <IntroSearch complexes={complexes} onChoose={vi.fn()} complexesOnly />,
+    );
     await user.type(screen.getByRole("combobox"), "zzzz");
     await settle();
 
-    expect(screen.getByText("No apartment complex name or address starts with or contains that.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "No building name or address starts with or contains that.",
+      ),
+    ).toBeInTheDocument();
   });
 });
