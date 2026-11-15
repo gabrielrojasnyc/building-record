@@ -9,6 +9,7 @@ import {
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
 import { loadFootprints } from "@/city/footprints";
+import { formatCount } from "@/domain/format";
 import type { Corner, View, ViewArea } from "@/domain/query";
 import type { Complex } from "@/domain/types";
 import {
@@ -90,9 +91,10 @@ function viewAreaOf(map: maplibregl.Map, padding: CameraPadding): ViewArea {
   ];
 }
 
-function describeCases(address: string, count: number): string {
-  if (count === 0) return `${address}: no cases`;
-  return `${address}: ${count} ${count === 1 ? "case" : "cases"}`;
+/** What a pin's tooltip says: the complex's address and its complaints for the view. */
+export function describeComplaints(address: string, count: number): string {
+  if (count === 0) return `${address}: no complaints`;
+  return `${address}: ${formatCount(count)} ${count === 1 ? "complaint" : "complaints"}`;
 }
 
 function prefersReducedMotion(): boolean {
@@ -256,7 +258,7 @@ export function BuildingMap(props: BuildingMapProps) {
           map.getCanvas().style.cursor = "pointer";
           tooltip
             .setLngLat(event.lngLat)
-            .setText(describeCases(address, Number(feature.properties.v)))
+            .setText(describeComplaints(address, Number(feature.properties.v)))
             .addTo(map);
           if (hoverReported !== id) {
             hoverReported = id;

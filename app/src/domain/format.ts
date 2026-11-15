@@ -3,3 +3,8 @@ export function formatAcres(acres: number): string {
   if (acres < 0.1) return 'under 0.1 acres';
   return `${acres} ${acres === 1 ? 'acre' : 'acres'}`;
 }
+
+/** A count as shown anywhere on the site, with a thousands separator: 1,234. */
+export function formatCount(count: number): string {
+  return count.toLocaleString('en-US');
+}

@@ -5,7 +5,6 @@ import { Notice } from "./Notice";
 
 const meta: Meta = {
   pulledAt: "2026-11-14",
-  since: "2023-11-01",
   complexCount: 2498,
   caseCount: 17602,
   unmatchedCaseShare: 0.131,

@@ -2,9 +2,9 @@ import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { Complex, Meta } from '@/domain/types';
 import { formatRegisteredAddress } from '@/domain/address';
-import { HISTORY_START, austinCalendarDate } from '@/domain/history';
+import { austinCalendarDate } from '@/domain/history';
 import { periodStarts } from '@/domain/periods';
-import { caseTotal } from '@/domain/query';
+import { complaintTotal } from '@/domain/query';
 import { buildAddressResolver, loadAddressPoints } from './addresses';
 import { emptyCaseSummary, loadCases } from './cases';
 import { loadDeficiencies, loadRepeatOffenders } from './context';
@@ -130,9 +130,8 @@ async function assemble(
 
   const meta: Meta = {
     pulledAt: austinCalendarDate(pulledAt),
-    since: HISTORY_START,
     complexCount: complexes.length,
-    caseCount: complexes.reduce((sum, c) => sum + caseTotal(c.cases), 0),
+    caseCount: complexes.reduce((sum, c) => sum + complaintTotal(c.tally.y3), 0),
     unmatchedCaseShare: caseIndex.totalCases === 0 ? 0 : roundTo3(caseIndex.unmatchedCases / caseIndex.totalCases),
     uncategorizedCases: caseIndex.uncategorizedCases,
     futureDatedCases: caseIndex.futureDatedCases,

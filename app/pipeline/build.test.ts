@@ -248,27 +248,46 @@ const complexById = (id: string) =>
   readJson<Complex[]>(`${out}/complexes.json`).find((c) => c.id === id)!;
 
 describe("buildData", () => {
-  it("writes one Complex per property, including parcels with no cases", async () => {
+  it("writes one Complex per property, including parcels with no complaints", async () => {
     const meta = await buildData(out, NOW, fixtureFetch, options());
     const complexes = readJson<Complex[]>(`${out}/complexes.json`);
     expect(complexes).toHaveLength(6);
     expect(complexes.map((c) => c.id)).toEqual(
       [...complexes.map((c) => c.id)].sort(),
     );
-    expect(complexById(BIG_PARCEL).cases).toEqual({
-      structure: 254,
-      property: 24,
-      landuse: 5,
-      permit: 1,
-    });
     expect(complexById(BIG_PARCEL).parcelIds).toEqual([BIG_PARCEL]);
-    expect(complexById(NO_CASES).cases).toEqual({
-      structure: 0,
-      property: 0,
-      landuse: 0,
-      permit: 0,
-    });
+    expect(complexById(NO_CASES).tally).toEqual({ m12: {}, y2: {}, y3: {} });
+    expect(complexById(NO_CASES).open).toBe(0);
     expect(meta.complexCount).toBe(6);
+  });
+
+  it("publishes complaints only: no counts by category, last case date or latest list", async () => {
+    await buildData(out, NOW, fixtureFetch, options());
+    expect(Object.keys(complexById(BIG_PARCEL)).sort()).toEqual([
+      "acres",
+      "address",
+      "duplicates",
+      "id",
+      "lat",
+      "lon",
+      "name",
+      "open",
+      "parcelIds",
+      "repeatOffender",
+      "tally",
+      "violationsOpen",
+    ]);
+    const detail = readJson<BuildingDetail>(
+      `${out}/buildings/${BIG_PARCEL}.json`,
+    );
+    expect(Object.keys(detail).sort()).toEqual([
+      "bbox",
+      "complaints",
+      "deficiencies",
+      "id",
+      "monthly",
+      "outline",
+    ]);
   });
 
   it("shows the same land under two parcel IDs as one complex, under the busier ID, with one page", async () => {
@@ -276,7 +295,9 @@ describe("buildData", () => {
     const twin = complexById(TWIN);
     expect(twin.parcelIds).toEqual(["0204080102", TWIN]);
     expect(twin.address).toBe("1638 E 2nd St");
-    expect(twin.cases.property).toBe(2);
+    // The twin ID has a complaint and a duplicate, the other parcel one complaint: every report counts towards which is busier.
+    expect(twin.tally.y3.property).toEqual({ other: 1 });
+    expect(twin.duplicates.y3).toBe(1);
     expect(twin.acres).toBe(4.7);
     expect(complexById("0204080102")).toBeUndefined();
     expect(existsSync(`${out}/buildings/${TWIN}.json`)).toBe(true);
@@ -318,9 +339,9 @@ describe("buildData", () => {
     expect(readJson<Meta>(`${out}/meta.json`)).toEqual(meta);
     expect(meta).toEqual({
       pulledAt: "2026-11-14",
-      since: "2023-11-01",
       complexCount: 6,
-      caseCount: 284 + 2 + 2 + 1,
+      // Complaints in the 3 years at published complexes, duplicates left out.
+      caseCount: 283 + 2 + 1 + 1,
       unmatchedCaseShare: 0.033,
       uncategorizedCases: 1,
       futureDatedCases: 1,
@@ -384,8 +405,8 @@ describe("buildData", () => {
       expect(detail.monthly.at(-1)?.month).toBe("2026-11");
     }
     const big = readJson<BuildingDetail>(`${out}/buildings/${BIG_PARCEL}.json`);
-    expect(big.monthly.reduce((sum, m) => sum + m.count, 0)).toBe(284);
-    expect(big.latest).toHaveLength(8);
+    // 284 complaints, one a duplicate, which the monthly series leaves out.
+    expect(big.monthly.reduce((sum, m) => sum + m.count, 0)).toBe(283);
   });
 
   it("writes each complex its outline, rounded to 6 decimals, with every member parcel's polygons", async () => {
@@ -577,13 +598,6 @@ describe("buildData", () => {
       permit: { violation: 1 },
     });
     expect(big.duplicates).toEqual({ m12: 1, y2: 1, y3: 1 });
-    // Counted with the existing fields too: they still count every categorized case.
-    expect(big.cases).toEqual({
-      structure: 254,
-      property: 24,
-      landuse: 5,
-      permit: 1,
-    });
   });
 
   it("counts an open violation case under violation and in violationsOpen, not under open", async () => {

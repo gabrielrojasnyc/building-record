@@ -14,11 +14,11 @@ import {
 import { aerialPhotoUrl } from "@/city/aerialPhoto";
 import { loadBuildingDetail } from "@/city/buildingDetail";
 import { load311Summary, type RequestTypeCount } from "@/city/requests311";
-import { formatAcres } from "@/domain/format";
-import { HISTORY_START_LONG, HISTORY_START_SHORT } from "@/domain/history";
+import { formatAcres, formatCount } from "@/domain/format";
 import { CATEGORY_LABEL, NO_CASES_CAUTION, titleOf } from "@/domain/labels";
-import { countFor, DEFAULT_VIEW, type Period, type View } from "@/domain/query";
-import type { BuildingDetail, Category, Complex } from "@/domain/types";
+import { PERIODS, PERIOD_LABEL, PERIOD_PHRASE, type Period } from "@/domain/periods";
+import { countFor, DEFAULT_VIEW, type View } from "@/domain/query";
+import type { BuildingDetail, Category, Complex, Meta } from "@/domain/types";
 import { Glass } from "./Glass";
 
 type Placement =
@@ -30,30 +30,22 @@ type Placement =
 export type BuildingPanelProps = Placement & {
   complex: Complex;
   view: View;
+  /** From the data's meta: the 311 summary counts from the first day of the 3 years. */
+  periodStarts: Meta["periodStarts"];
   fetchImpl?: typeof fetch;
 };
 
-type Outcome<T> =
+type LoadState<T> =
   { status: "loading" } | { status: "failed" } | { status: "ready"; value: T };
 
 const LOADING = { status: "loading" } as const;
 
-const PERIOD_CAPTION: Record<Period, string> = {
-  cases12: "in the last 12 months",
-  cases: `since ${HISTORY_START_LONG}`,
-};
-
-const OTHER_PERIOD: Record<Period, { period: Period; label: string }> = {
-  cases12: { period: "cases", label: `since ${HISTORY_START_SHORT}` },
-  cases: { period: "cases12", label: "last 12 months" },
-};
-
 /*
-  On desktop the panel hangs between the filter bar and the tray head, which stands 255 px above
+  On desktop the panel hangs between the filter bar and the tray head, which stands 273 px above
   the bottom (the tray plus the data notice under it). On a phone it is a bottom sheet over the tray.
 */
 const MAP_PLACEMENT =
-  "building-sheet fixed top-[76px] right-(--gutter) bottom-[259px] z-3 w-[372px] overflow-hidden rounded-[28px] motion-safe:animate-rise phone:top-auto phone:right-0 phone:bottom-0 phone:left-0 phone:z-4 phone:h-[60dvh] phone:w-auto phone:rounded-b-none";
+  "building-sheet fixed top-[76px] right-(--gutter) bottom-[277px] z-3 w-[372px] overflow-hidden rounded-[28px] motion-safe:animate-rise phone:top-auto phone:right-0 phone:bottom-0 phone:left-0 phone:z-4 phone:h-[60dvh] phone:w-auto phone:rounded-b-none";
 const MAP_SCROLLER =
   "h-full overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
 
@@ -70,10 +62,10 @@ const LIST_ROW = "items-center border-t border-deep/10 py-[9px]";
 function useLoad<S, T>(
   source: S | null,
   load: (source: S) => Promise<T>,
-): Outcome<T> {
+): LoadState<T> {
   const [settled, setSettled] = useState<{
     source: S;
-    outcome: Outcome<T>;
+    outcome: LoadState<T>;
   } | null>(null);
 
   useEffect(() => {
@@ -110,13 +102,10 @@ function formatDate(
   });
 }
 
-const formatDay = (isoDate: string) =>
-  formatDate(isoDate, { month: "short", day: "numeric", year: "numeric" });
 const formatMonth = (yearMonth: string) =>
   formatDate(yearMonth, { month: "short", year: "numeric" });
 
-const formatCount = (count: number) => count.toLocaleString("en-US");
-const casesWord = (count: number) => (count === 1 ? "case" : "cases");
+const complaintsWord = (count: number) => (count === 1 ? "complaint" : "complaints");
 
 export function BuildingPanel(props: BuildingPanelProps) {
   const { complex, view, fetchImpl = fetch } = props;
@@ -129,16 +118,17 @@ export function BuildingPanel(props: BuildingPanelProps) {
     (id: string) => loadBuildingDetail(id, fetchImpl),
     [fetchImpl],
   );
+  const requestsSince = props.periodStarts.y3;
   const fetch311 = useCallback(
-    (bbox: BuildingDetail["bbox"]) => load311Summary(bbox, fetchImpl),
-    [fetchImpl],
+    (bbox: BuildingDetail["bbox"]) => load311Summary(bbox, requestsSince, fetchImpl),
+    [requestsSince, fetchImpl],
   );
 
   const history = useLoad(
     props.place === "map" ? complex.id : null,
     fetchHistory,
   );
-  const detail: Outcome<BuildingDetail> =
+  const detail: LoadState<BuildingDetail> =
     props.place === "page" ? { status: "ready", value: props.detail } : history;
   const requests = useLoad(
     detail.status === "ready" ? detail.value.bbox : null,
@@ -190,7 +180,7 @@ export function BuildingPanel(props: BuildingPanelProps) {
           )}
           <LeadFigure complex={complex} period={view.period} />
           <Figures complex={complex} period={view.period} />
-          <CategoryBars counts={complex[view.period]} />
+          <CategoryBars counts={countsByCategory(complex, view.period)} />
 
           {detail.status === "failed" ? (
             <Section title="Month by month">
@@ -201,10 +191,7 @@ export function BuildingPanel(props: BuildingPanelProps) {
             </Section>
           ) : (
             detail.status === "ready" && (
-              <>
-                <MonthChart monthly={detail.value.monthly} />
-                <LatestCases latest={detail.value.latest} />
-              </>
+              <MonthChart monthly={detail.value.monthly} />
             )
           )}
           {detail.status !== "failed" && <Requests311 outcome={requests} />}
@@ -399,6 +386,13 @@ function totalFor(complex: Complex, period: Period): number {
   return countFor(complex, { ...DEFAULT_VIEW, period });
 }
 
+function countsByCategory(complex: Complex, period: Period): Record<Category, number> {
+  const categories = Object.keys(CATEGORY_LABEL) as Category[];
+  return Object.fromEntries(
+    categories.map((category) => [category, countFor(complex, { ...DEFAULT_VIEW, period, category })]),
+  ) as Record<Category, number>;
+}
+
 function LeadFigure({ complex, period }: { complex: Complex; period: Period }) {
   const total = totalFor(complex, period);
   return (
@@ -414,28 +408,22 @@ function LeadFigure({ complex, period }: { complex: Complex; period: Period }) {
       )}{" "}
       <span className="pb-1.5 leading-[1.3] text-slate">
         <span className="block">
-          {total === 0 ? "no code cases" : `code ${casesWord(total)}`}
+          {total === 0 ? "no complaints" : complaintsWord(total)}
         </span>{" "}
-        <span className="block">{PERIOD_CAPTION[period]}</span>
+        <span className="block">{PERIOD_PHRASE[period]}</span>
       </span>
     </p>
   );
 }
 
+/** The two periods the lead figure is not showing, shortest first, then the complaints still open. */
 function Figures({ complex, period }: { complex: Complex; period: Period }) {
-  const other = OTHER_PERIOD[period];
   const figures = [
-    { value: formatCount(totalFor(complex, other.period)), label: other.label },
+    ...PERIODS.filter((other) => other !== period).map((other) => ({
+      value: formatCount(totalFor(complex, other)),
+      label: `last ${PERIOD_LABEL[other]}`,
+    })),
     { value: formatCount(complex.open), label: "open now" },
-    complex.lastCase
-      ? {
-          value: formatDate(complex.lastCase, {
-            month: "short",
-            day: "numeric",
-          }),
-          label: `latest, ${complex.lastCase.slice(0, 4)}`,
-        }
-      : { value: "None", label: "latest case" },
   ];
 
   return (
@@ -461,7 +449,7 @@ function CategoryBars({ counts }: { counts: Record<Category, number> }) {
   );
 
   return (
-    <Section title="What the cases were about">
+    <Section title="What the complaints were about">
       {categories.map((category) => (
         <div
           key={category}
@@ -491,7 +479,7 @@ function MonthChart({ monthly }: { monthly: BuildingDetail["monthly"] }) {
   if (peak === 0) {
     return (
       <Section title="Month by month">
-        <p className={MESSAGE}>No code cases since {HISTORY_START_SHORT}.</p>
+        <p className={MESSAGE}>No complaints {PERIOD_PHRASE.y3}.</p>
       </Section>
     );
   }
@@ -500,8 +488,8 @@ function MonthChart({ monthly }: { monthly: BuildingDetail["monthly"] }) {
   const last = formatMonth(monthly[monthly.length - 1].month);
   // On a tie, the most recent of the busiest months.
   const busiest = formatMonth(monthly.findLast(({ count }) => count === peak)?.month ?? monthly[0].month);
-  const peakCases = `${peak} ${casesWord(peak)}`;
-  const summary = `Code cases opened each month, ${first} to ${last}. Busiest month: ${busiest}, with ${peakCases}.`;
+  const peakComplaints = `${peak} ${complaintsWord(peak)}`;
+  const summary = `Complaints opened each month, ${first} to ${last}. Busiest month: ${busiest}, with ${peakComplaints}.`;
 
   return (
     <Section title="Month by month">
@@ -514,7 +502,7 @@ function MonthChart({ monthly }: { monthly: BuildingDetail["monthly"] }) {
           <span
             key={month}
             data-testid="month-bar"
-            title={`${formatMonth(month)}: ${count} ${casesWord(count)}`}
+            title={`${formatMonth(month)}: ${count} ${complaintsWord(count)}`}
             className={`min-h-[3px] flex-1 rounded-[3px] ${count > 0 ? "bg-linear-to-b/srgb from-deep to-steel" : "bg-deep/14"}`}
             style={{ height: `${Math.max(4, (count / peak) * 100)}%` }}
           />
@@ -523,7 +511,7 @@ function MonthChart({ monthly }: { monthly: BuildingDetail["monthly"] }) {
       <p className="mt-1.5 flex justify-between text-[12px] text-steel">
         <span>{first}</span>
         <span>
-          Busiest month: {busiest}, {peakCases}
+          Busiest month: {busiest}, {peakComplaints}
         </span>
         <span>{last}</span>
       </p>
@@ -531,37 +519,12 @@ function MonthChart({ monthly }: { monthly: BuildingDetail["monthly"] }) {
   );
 }
 
-function LatestCases({ latest }: { latest: BuildingDetail["latest"] }) {
-  if (latest.length === 0) return null;
-
-  return (
-    <Section title="Latest cases">
-      <ul className="text-[14px]">
-        {latest.map(({ opened, category, status }, index) => (
-          <li
-            key={`${opened}-${index}`}
-            className={`grid grid-cols-[92px_1fr_auto] gap-2 ${LIST_ROW}`}
-          >
-            <span className="text-steel tabular-nums">{formatDay(opened)}</span>
-            <span>{CATEGORY_LABEL[category]}</span>
-            <span
-              className={`rounded-full px-[9px] py-0.5 text-[12px] ${status === "Closed" ? "bg-white/50 text-slate" : "bg-deep text-ice"}`}
-            >
-              {status}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </Section>
-  );
-}
-
-function Requests311({ outcome }: { outcome: Outcome<RequestTypeCount[]> }) {
+function Requests311({ outcome }: { outcome: LoadState<RequestTypeCount[]> }) {
   return (
     <Section title="311 requests around this parcel">
       <p className={`${MESSAGE} mb-2`}>
-        Counted inside the rectangle around the parcel since{" "}
-        {HISTORY_START_SHORT}, so some may belong to neighbors.
+        Counted inside the rectangle around the parcel {PERIOD_PHRASE.y3}, so
+        some may belong to neighbors.
       </p>
       {outcome.status === "loading" && (
         <p className={MESSAGE}>Loading from the City of Austin</p>
@@ -574,7 +537,7 @@ function Requests311({ outcome }: { outcome: Outcome<RequestTypeCount[]> }) {
       {outcome.status === "ready" &&
         (outcome.value.length === 0 ? (
           <p className={MESSAGE}>
-            No 311 requests in this area since {HISTORY_START_SHORT}.
+            No 311 requests in this area {PERIOD_PHRASE.y3}.
           </p>
         ) : (
           <ul className="text-[14px]">

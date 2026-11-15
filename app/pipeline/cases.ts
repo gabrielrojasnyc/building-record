@@ -1,21 +1,15 @@
-import {
-  HISTORY_START,
-  HISTORY_START_MONTH,
-  austinCalendarDate,
-} from "@/domain/history";
+import { austinCalendarDate } from "@/domain/history";
 import { classify, isKnownCityOutcome, type Outcome } from "@/domain/outcomes";
 import { PERIODS, periodStarts, type Period } from "@/domain/periods";
 import type {
   BuildingDetail,
   Category,
   Complaint,
-  Counts,
   Tally,
 } from "@/domain/types";
 import { readAll } from "./socrata";
 
 const CODE_CASES_DATASET = "6wtj-zbtb";
-const LATEST_LIMIT = 8;
 /** A violation case link is published only when it points at the city's own permit site. */
 const CITY_RECORD_PREFIX = "https://abc.austintexas.gov/";
 
@@ -28,11 +22,8 @@ const PHRASES: [string, Category][] = [
 ];
 
 export interface CaseSummary {
-  cases12: Counts;
-  cases: Counts;
+  /** Complaints in the 3 year period whose case is not closed, duplicates left out. */
   open: number;
-  /** ISO date of the most recent categorized case. */
-  lastCase: string | null;
   /** Non-duplicate complaints by period, category and outcome. */
   tally: Record<Period, Tally>;
   /** Complaints the city closed as duplicates, by period. */
@@ -74,21 +65,15 @@ export function categoryOf(description: string): Category | null {
   return PHRASES.find(([phrase]) => text.includes(phrase))?.[1] ?? null;
 }
 
-const emptyCounts = (): Counts => ({
-  structure: 0,
-  property: 0,
-  landuse: 0,
-  permit: 0,
-});
-
 const pad = (n: number) => String(n).padStart(2, "0");
 
-/** Every month from 2023-11 through the pull month, as YYYY-MM. */
+/** Every month from the 3 year period's first through the pull month, as YYYY-MM. */
 function monthRange(pulled: string): string[] {
+  const first = periodStarts(pulled).y3;
   const last = pulled.slice(0, 7);
   const months: string[] = [];
-  let year = Number(HISTORY_START_MONTH.slice(0, 4));
-  let month = Number(HISTORY_START_MONTH.slice(5, 7));
+  let year = Number(first.slice(0, 4));
+  let month = Number(first.slice(5, 7));
   for (
     let key = `${year}-${pad(month)}`;
     key <= last;
@@ -120,12 +105,8 @@ export function compareComplaints(a: Complaint, b: Complaint): number {
 }
 
 interface Accumulator {
-  cases12: Counts;
-  cases: Counts;
   open: number;
-  lastCase: string | null;
   monthly: Map<string, number>;
-  recent: { opened: string; category: Category; status: string }[];
   tally: Record<Period, Tally>;
   duplicates: Record<Period, number>;
   violationsOpen: number;
@@ -139,12 +120,8 @@ const byPeriod = <T>(make: () => T): Record<Period, T> => ({
 });
 
 const emptyAccumulator = (months: string[]): Accumulator => ({
-  cases12: emptyCounts(),
-  cases: emptyCounts(),
   open: 0,
-  lastCase: null,
   monthly: new Map(months.map((month) => [month, 0])),
-  recent: [],
   tally: byPeriod(() => ({})),
   duplicates: byPeriod(() => 0),
   violationsOpen: 0,
@@ -156,14 +133,8 @@ function summarise(
   acc: Accumulator,
   months: string[],
 ): CaseSummary {
-  const latest = [...acc.recent]
-    .sort((a, b) => (a.opened < b.opened ? 1 : a.opened > b.opened ? -1 : 0))
-    .slice(0, LATEST_LIMIT);
   return {
-    cases12: acc.cases12,
-    cases: acc.cases,
     open: acc.open,
-    lastCase: acc.lastCase,
     tally: acc.tally,
     duplicates: acc.duplicates,
     violationsOpen: acc.violationsOpen,
@@ -173,13 +144,12 @@ function summarise(
         month,
         count: acc.monthly.get(month) ?? 0,
       })),
-      latest,
       complaints: [...acc.complaints].sort(compareComplaints),
     },
   };
 }
 
-/** A parcel with no cases: zero counts and a zero-filled monthly series for the pull date. */
+/** A parcel with no complaints: empty tallies and a zero-filled monthly series for the pull date. */
 export function emptyCaseSummary(id: string, pulledAt: Date): CaseSummary {
   const months = monthRange(austinCalendarDate(pulledAt));
   return summarise(id, emptyAccumulator(months), months);
@@ -202,7 +172,7 @@ function addToTally(tally: Tally, category: Category, outcome: Outcome): void {
   outcomes[outcome] = (outcomes[outcome] ?? 0) + 1;
 }
 
-/** Reads code complaint cases for the 3 year period (and since 2023-11-01 for the older counts) and summarises them per parcel. */
+/** Reads code complaint cases for the 3 year period and summarises them per parcel. */
 export async function loadCases(
   pulledAt: Date,
   fetchImpl: typeof fetch = fetch,
@@ -210,14 +180,13 @@ export async function loadCases(
   const pulled = austinCalendarDate(pulledAt);
   const starts = periodStarts(pulled);
   const months = monthRange(pulled);
-  const readFrom = starts.y3 < HISTORY_START ? starts.y3 : HISTORY_START;
 
   const rows = await readAll<CaseRow>(
     CODE_CASES_DATASET,
     {
       select:
         "parcelid,description,status,opened_date,closed_date,last_update,violationcasenumber,violationcaselink",
-      where: `opened_date >= '${readFrom}'`,
+      where: `opened_date >= '${starts.y3}'`,
       order: "case_id",
     },
     fetchImpl,
@@ -249,22 +218,12 @@ export async function loadCases(
       futureDatedCases += 1;
       continue;
     }
+    // The city filters by the 3 year start already; this keeps a stray older row out of every count.
+    if (opened < starts.y3) continue;
     const status = row.status ?? "";
     const acc = accumulators.get(parcelId) ?? emptyAccumulator(months);
     accumulators.set(parcelId, acc);
 
-    // The older counts keep their fixed start, whatever the 3 year period reaches back to.
-    if (opened >= HISTORY_START) {
-      acc.cases[category] += 1;
-      if (opened >= starts.m12) acc.cases12[category] += 1;
-      if (status !== "Closed") acc.open += 1;
-      if (acc.lastCase === null || opened > acc.lastCase) acc.lastCase = opened;
-      const month = opened.slice(0, 7);
-      acc.monthly.set(month, (acc.monthly.get(month) ?? 0) + 1);
-      acc.recent.push({ opened, category, status });
-    }
-
-    if (opened < starts.y3) continue;
     const violationCase = violationCaseOf(row);
     const outcome = classify({
       cityOutcome: phrase || null,
@@ -279,8 +238,11 @@ export async function loadCases(
     }
     for (const period of periods)
       addToTally(acc.tally[period], category, outcome);
+    const month = opened.slice(0, 7);
+    acc.monthly.set(month, (acc.monthly.get(month) ?? 0) + 1);
 
     const stillOpen = status !== "Closed";
+    if (stillOpen) acc.open += 1;
     if (outcome === "violation" && stillOpen) acc.violationsOpen += 1;
     acc.complaints.push({
       opened,

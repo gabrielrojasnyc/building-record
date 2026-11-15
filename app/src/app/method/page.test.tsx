@@ -6,7 +6,6 @@ import MethodPage from "./page";
 
 const meta: Meta = {
   pulledAt: "2026-11-14",
-  since: "2023-11-01",
   complexCount: 2498,
   caseCount: 17602,
   unmatchedCaseShare: 0.131,
@@ -73,7 +72,7 @@ it("carries the caution and says what the site is not", async () => {
   await renderPage();
 
   expect(
-    screen.getByText("No cases means none reached Code Enforcement. It does not mean the building has no problems."),
+    screen.getByText("No complaints means none reached Code Enforcement. It does not mean the building has no problems."),
   ).toBeVisible();
   expect(screen.getByText(/not a City of Austin site/i)).toBeVisible();
   expect(screen.getByText(/do not say whether a case was about pests, mold/)).toBeVisible();
@@ -102,10 +101,10 @@ it("gives the city's own term for all four categories", async () => {
   await renderPage();
 
   for (const line of [
-    "Structure condition (the city's term is Structure Condition Violation)",
-    "Property upkeep (the city's term is Property Abatement)",
-    "Land use (the city's term is Land Use Violation)",
-    "Work without permit (the city's term is Work Without Permit)",
+    "Building condition (the city's term is Structure Condition Violation)",
+    "Trash and grounds (the city's term is Property Abatement)",
+    "Signs, zoning and use (the city's term is Land Use Violation)",
+    "Work without a permit (the city's term is Work Without Permit)",
   ]) {
     expect(screen.getByText(line)).toBeVisible();
   }

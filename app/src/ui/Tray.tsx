@@ -1,8 +1,9 @@
 import { useId, useRef, useState } from "react";
-import { formatAcres } from "@/domain/format";
-import { CATEGORY_LABEL, titleOf } from "@/domain/labels";
-import { caseTotal, countFor, viewToSearchParams, type View } from "@/domain/query";
-import type { Category, Complex, Counts } from "@/domain/types";
+import { formatAcres, formatCount } from "@/domain/format";
+import { CATEGORY_LABEL, OUTCOME_CARD_PHRASE, titleOf } from "@/domain/labels";
+import { OUTCOMES, OUTCOME_LABEL, type Outcome } from "@/domain/outcomes";
+import { countFor, outcomeSplit, viewToSearchParams, type View } from "@/domain/query";
+import type { Complex } from "@/domain/types";
 import { Glass } from "./Glass";
 
 export interface Area {
@@ -22,7 +23,8 @@ export const AREAS: Area[] = [
 
 const CARD_LIMIT = 40;
 
-const CARD_SIZE = "h-[148px] rounded-[22px] px-[18px] py-4 phone:h-[136px]";
+/** 18 px taller than before outcomes, the height of the line that names them. Finder's camera padding and the panel's bottom grow with it. */
+const CARD_SIZE = "h-[166px] rounded-[22px] px-[18px] py-4 phone:h-[154px]";
 
 interface TrayProps {
   complexes: Complex[];
@@ -39,38 +41,47 @@ interface TrayProps {
   onJump(area: Area): void;
 }
 
-/**
- * What most of a building's cases were about: one type when it has more than half of them,
- * otherwise the two largest, largest first, ties in the display order.
- */
-function mainCategories(counts: Counts, total: number): string {
-  const [first, second] = (Object.keys(CATEGORY_LABEL) as Category[])
-    .map((category, order) => ({ category, order }))
-    .sort((a, b) => counts[b.category] - counts[a.category] || a.order - b.order)
-    .map(({ category }) => category);
-  if (counts[first] * 2 > total) return `Mostly ${CATEGORY_LABEL[first].toLowerCase()}`;
-  return `${CATEGORY_LABEL[first]} and ${CATEGORY_LABEL[second].toLowerCase()}`;
+const complaintsWord = (count: number) => (count === 1 ? "complaint" : "complaints");
+
+/** An outcome's full label after a count, in lower case. Only a confirmed violation changes with number. */
+function outcomeInFull(outcome: Outcome, count: number): string {
+  return outcome === "violation" && count !== 1 ? "violations confirmed" : OUTCOME_LABEL[outcome].toLowerCase();
 }
 
-/** The caption under a card's figure and the line under its address, both speaking to the same filter as the figure. */
-function cardCopy(complex: Complex, view: View, count: number): { caption: string; detail: string } {
-  const counts = complex[view.period];
+/**
+ * The two largest outcomes of a card's complaints, largest first, ties in display order, zeros never shown:
+ * in the card's short words for the line itself, and in full for its title.
+ */
+function outcomeLine(split: Record<Outcome, number>): { text: string; title: string } {
+  const largest = OUTCOMES.filter((outcome) => split[outcome] > 0)
+    .sort((a, b) => split[b] - split[a] || OUTCOMES.indexOf(a) - OUTCOMES.indexOf(b))
+    .slice(0, 2);
+  return {
+    text: largest.map((outcome) => `${formatCount(split[outcome])} ${OUTCOME_CARD_PHRASE[outcome]}`).join(", "),
+    title: largest.map((outcome) => `${formatCount(split[outcome])} ${outcomeInFull(outcome, split[outcome])}`).join(", "),
+  };
+}
+
+/**
+ * The caption under a card's figure and the line under its address, both speaking to the same filter as the figure.
+ * A card with complaints under All has no line under its address: its outcome line says what they came to.
+ */
+function cardCopy(complex: Complex, view: View, count: number): { caption: string; detail: string | null } {
   const acres = formatAcres(complex.acres);
-  const caseWord = count === 1 ? "code case" : "code cases";
 
   if (view.category === "all") {
-    if (count === 0) return { caption: "no cases on file", detail: acres };
-    return { caption: caseWord, detail: mainCategories(counts, count) };
+    if (count === 0) return { caption: "no complaints on file", detail: acres };
+    return { caption: complaintsWord(count), detail: null };
   }
 
   const label = CATEGORY_LABEL[view.category];
-  if (count > 0) return { caption: caseWord, detail: `${label} only` };
+  if (count > 0) return { caption: complaintsWord(count), detail: `${label} only` };
 
-  // The selected type has none here, so every case in the period belongs to another type.
-  const others = caseTotal(counts);
+  // The selected type has none here, so every complaint in the period belongs to another type.
+  const others = countFor(complex, { ...view, category: "all" });
   return {
-    caption: `no ${label.toLowerCase()} cases`,
-    detail: others === 0 ? acres : `${others} other ${others === 1 ? "case" : "cases"}`,
+    caption: `no ${label.toLowerCase()} complaints`,
+    detail: others === 0 ? acres : `${formatCount(others)} other ${complaintsWord(others)}`,
   };
 }
 
@@ -85,7 +96,10 @@ function TrayCard(props: {
   const { complex, view, selected, hovered } = props;
   const count = countFor(complex, view);
   const { caption, detail } = cardCopy(complex, view, count);
+  const outcomes = count > 0 ? outcomeLine(outcomeSplit(complex, view)) : null;
   const title = titleOf(complex);
+  const underTitle = complex.name ? complex.address : detail;
+  const smallText = `block text-[12.5px] ${selected ? "text-mist" : "text-steel"}`;
 
   return (
     <button
@@ -110,35 +124,41 @@ function TrayCard(props: {
             <span
               className={`block text-[46px] leading-[0.9] font-extralight tracking-[-0.03em] tabular-nums ${selected ? "text-ice" : "text-deep"}`}
             >
-              {count}
+              {formatCount(count)}
             </span>
           )}
-          <span
-            className={`mt-1 block text-[12.5px] ${selected ? "text-mist" : "text-steel"}`}
-          >
-            {caption}
-          </span>
         </span>
+        {/* On a phone the chip is its coral dot alone, the site's mark for the list, so a three-digit figure keeps clear of it. */}
         {complex.repeatOffender && (
           <span
-            className={`inline-flex h-6 flex-none items-center gap-1.5 rounded-full pr-[9px] pl-2 text-[11.5px] font-normal ${selected ? "bg-coral/20 text-ice" : "bg-coral/32 text-navy"}`}
+            title="Repeat Offender"
+            className={`inline-flex h-6 flex-none items-center gap-1.5 rounded-full pr-[9px] pl-2 text-[11.5px] font-normal phone:w-6 phone:justify-center phone:pr-0 phone:pl-0 ${selected ? "bg-coral/20 text-ice" : "bg-coral/32 text-navy"}`}
           >
             <span aria-hidden className="size-[7px] rounded-full bg-coral" />
-            Repeat Offender
+            <span className="phone:sr-only">Repeat Offender</span>
           </span>
         )}
       </span>
-      {/* The card's height is fixed, so the title keeps to one line, and so does an address under a name. */}
+      {/* Under the figure's row, not beside the chip, so a caption has the card's whole width. */}
+      <span className={`mt-1 ${smallText}`}>{caption}</span>
+      {outcomes && (
+        <span title={outcomes.title} className={`truncate ${smallText}`}>
+          {outcomes.text}
+        </span>
+      )}
+      {/* The card's height is fixed, so the title keeps to one line, and so do the outcomes and an address under a name. */}
       <span className="mt-auto min-w-0 leading-[1.25] font-normal">
         <span title={title} className="block truncate">
           {title}
         </span>
-        <small
-          title={complex.name ? complex.address : undefined}
-          className={`mt-0.5 block text-[12.5px] font-light ${complex.name ? "truncate" : ""} ${selected ? "text-mist" : "text-slate"}`}
-        >
-          {complex.name ? complex.address : detail}
-        </small>
+        {underTitle && (
+          <small
+            title={complex.name ? complex.address : undefined}
+            className={`mt-0.5 block text-[12.5px] font-light ${complex.name ? "truncate" : ""} ${selected ? "text-mist" : "text-slate"}`}
+          >
+            {underTitle}
+          </small>
+        )}
       </span>
     </button>
   );

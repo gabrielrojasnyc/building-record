@@ -5,7 +5,6 @@ import NotFound from "./not-found";
 
 const meta: Meta = {
   pulledAt: "2026-11-14",
-  since: "2023-11-01",
   complexCount: 2420,
   caseCount: 17602,
   unmatchedCaseShare: 0.131,

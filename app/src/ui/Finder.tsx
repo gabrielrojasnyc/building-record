@@ -51,18 +51,18 @@ const ADDRESS_ZOOM = 15;
 /*
   The camera centers on the strip of map the panels leave open. Top clears the intro block
   (and the filter bar on phones); bottom clears the tray and the data notice below it, which
-  together stand 23 px taller than the mockup's tray on desktop and 61 px taller on a phone.
+  together stand 41 px taller than the mockup's tray on desktop and 79 px taller on a phone.
 */
 const PHONE_QUERY = "(max-width: 760px)";
-const DESKTOP_PADDING: CameraPadding = { top: 80, right: 0, bottom: 243, left: 0 };
-const PHONE_PADDING: CameraPadding = { top: 170, right: 0, bottom: 261, left: 0 };
+const DESKTOP_PADDING: CameraPadding = { top: 80, right: 0, bottom: 261, left: 0 };
+const PHONE_PADDING: CameraPadding = { top: 170, right: 0, bottom: 279, left: 0 };
 
 /*
   While a building stands forward, the camera frames it clear of the record panel on the right, or
   above the phone's record sheet. On a phone the title block and filters step aside meanwhile, so the
   frame reaches near the top of the screen.
 */
-const DESKTOP_SPOTLIGHT_PADDING: CameraPadding = { top: 110, right: 440, bottom: 250, left: 70 };
+const DESKTOP_SPOTLIGHT_PADDING: CameraPadding = { top: 110, right: 440, bottom: 268, left: 70 };
 const PHONE_SHEET_SHARE = 0.6;
 
 function phoneSpotlightPadding(viewportHeight: number): CameraPadding {
@@ -366,6 +366,7 @@ export function Finder({
           place="map"
           complex={selected}
           view={view}
+          periodStarts={meta.periodStarts}
           onClose={clearSelection}
         />
       )}

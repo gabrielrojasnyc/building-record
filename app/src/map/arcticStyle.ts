@@ -109,7 +109,7 @@ export function repaint(baseStyle: StyleSpecification): StyleSpecification {
   return style;
 }
 
-const caseCount: ExpressionSpecification = ["get", "v"];
+const complaintCount: ExpressionSpecification = ["get", "v"];
 const isSelected: ExpressionSpecification = [
   "boolean",
   ["feature-state", "selected"],
@@ -126,7 +126,7 @@ function radiusByZoom(scale: number): ExpressionSpecification {
   const byCount = (atZero: number, atMost: number): ExpressionSpecification => [
     "interpolate",
     ["linear"],
-    caseCount,
+    complaintCount,
     0,
     atZero * scale,
     80,
@@ -152,7 +152,7 @@ export function pinLayers(): LayerSpecification[] {
       id: "halo",
       type: "circle",
       source: "complexes",
-      layout: { "circle-sort-key": caseCount },
+      layout: { "circle-sort-key": complaintCount },
       paint: {
         "circle-radius": radiusByZoom(2.4),
         "circle-blur": 1,
@@ -163,7 +163,7 @@ export function pinLayers(): LayerSpecification[] {
           [
             "interpolate",
             ["linear"],
-            caseCount,
+            complaintCount,
             0,
             PALETTE.white,
             20,
@@ -178,7 +178,17 @@ export function pinLayers(): LayerSpecification[] {
           0.95,
           isHovered,
           0.9,
-          ["interpolate", ["linear"], caseCount, 0, 0.35, 20, 0.5, 80, 0.7],
+          [
+            "interpolate",
+            ["linear"],
+            complaintCount,
+            0,
+            0.35,
+            20,
+            0.5,
+            80,
+            0.7,
+          ],
         ],
         "circle-pitch-alignment": "map",
       },
@@ -187,13 +197,13 @@ export function pinLayers(): LayerSpecification[] {
       id: "core",
       type: "circle",
       source: "complexes",
-      layout: { "circle-sort-key": caseCount },
+      layout: { "circle-sort-key": complaintCount },
       paint: {
         "circle-radius": radiusByZoom(1),
         "circle-color": [
           "interpolate",
           ["linear"],
-          caseCount,
+          complaintCount,
           0,
           PALETTE.white,
           1,
@@ -230,18 +240,18 @@ export function pinLayers(): LayerSpecification[] {
       type: "symbol",
       source: "complexes",
       minzoom: 13,
-      filter: [">", caseCount, 0],
+      filter: [">", complaintCount, 0],
       layout: {
-        "text-field": ["to-string", caseCount],
+        "text-field": ["to-string", complaintCount],
         "text-font": ["Noto Sans Regular"],
         "text-size": ["interpolate", ["linear"], ["zoom"], 13, 10, 16, 13],
         "text-allow-overlap": true,
-        "symbol-sort-key": caseCount,
+        "symbol-sort-key": complaintCount,
       },
       paint: {
         "text-color": [
           "case",
-          [">=", caseCount, 14],
+          [">=", complaintCount, 14],
           PALETTE.ice,
           PALETTE.navy,
         ],

@@ -2,16 +2,8 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_VIEW, type View } from "@/domain/query";
-import type { Complex, Counts } from "@/domain/types";
+import type { Complex, Tally } from "@/domain/types";
 import { Tray } from "./Tray";
-
-const counts = (overrides: Partial<Counts> = {}): Counts => ({
-  structure: 0,
-  property: 0,
-  landuse: 0,
-  permit: 0,
-  ...overrides,
-});
 
 function complex(id: string, overrides: Partial<Complex> = {}): Complex {
   return {
@@ -22,17 +14,21 @@ function complex(id: string, overrides: Partial<Complex> = {}): Complex {
     lon: -97.74,
     lat: 30.27,
     acres: 2.4,
-    cases12: counts(),
-    cases: counts(),
     open: 0,
     tally: { m12: {}, y2: {}, y3: {} },
     duplicates: { m12: 0, y2: 0, y3: 0 },
     violationsOpen: 0,
-    lastCase: null,
     repeatOffender: null,
     ...overrides,
   };
 }
+
+/** The same tally in all three periods, so a test reads the same whichever period it shows. */
+const everyPeriod = (tally: Tally): Complex["tally"] => ({
+  m12: tally,
+  y2: tally,
+  y3: tally,
+});
 
 const handlers = {
   onSelect: vi.fn(),
@@ -44,7 +40,8 @@ const handlers = {
 const clean = complex("100", { address: "1107 W Gibson St" });
 const busy = complex("200", {
   address: "909 S Lamar Blvd",
-  cases12: counts({ structure: 1, property: 3 }),
+  tally: everyPeriod({ structure: { none: 1 }, property: { violation: 3 } }),
+  duplicates: { m12: 40, y2: 40, y3: 40 },
   repeatOffender: {
     name: "Lamar Flats",
     units: 120,
@@ -52,7 +49,9 @@ const busy = complex("200", {
     totalViolations: 40,
   },
 });
-const single = complex("300", { cases12: counts({ landuse: 1 }) });
+const single = complex("300", {
+  tally: everyPeriod({ landuse: { fixed: 1 } }),
+});
 const sample = [clean, busy, single];
 
 function renderTray(complexes: Complex[], view: View = DEFAULT_VIEW) {
@@ -67,84 +66,159 @@ function renderTray(complexes: Complex[], view: View = DEFAULT_VIEW) {
   );
 }
 
-function card(address: string) {
+function cardElement(text: string) {
   const match = screen
     .getAllByTestId("card")
-    .find((element) => element.textContent?.includes(address));
-  if (!match) throw new Error(`No card for ${address}`);
-  return within(match);
+    .find((element) => element.textContent?.includes(text));
+  if (!match) throw new Error(`No card for ${text}`);
+  return match;
 }
 
-it("shows None for a complex with no cases and the count otherwise", () => {
+const card = (text: string) => within(cardElement(text));
+
+/** Every piece of text on a card, top to bottom, as a reader meets it. */
+const linesOf = (text: string) =>
+  [...cardElement(text).querySelectorAll("*")]
+    .filter((element) => element.children.length === 0)
+    .map((element) => element.textContent ?? "")
+    .filter((line) => line !== "");
+
+it("shows None for a complex with no complaints and the count otherwise, duplicates never counted", () => {
   renderTray(sample);
 
   expect(card("1107 W Gibson St").getByText("None")).toBeVisible();
-  expect(card("1107 W Gibson St").getByText("no cases on file")).toBeVisible();
+  expect(
+    card("1107 W Gibson St").getByText("no complaints on file"),
+  ).toBeVisible();
   expect(card("1107 W Gibson St").getByText("2.4 acres")).toBeVisible();
 
   expect(card("909 S Lamar Blvd").getByText("4")).toBeVisible();
-  expect(card("909 S Lamar Blvd").getByText("code cases")).toBeVisible();
-  expect(
-    card("909 S Lamar Blvd").getByText("Mostly property upkeep"),
-  ).toBeVisible();
+  expect(card("909 S Lamar Blvd").getByText("complaints")).toBeVisible();
 
-  expect(card("300 Main St").getByText("code case")).toBeVisible();
-  expect(card("300 Main St").getByText("Mostly land use")).toBeVisible();
+  expect(card("300 Main St").getByText("1")).toBeVisible();
+  expect(card("300 Main St").getByText("complaint")).toBeVisible();
 });
 
-describe("the line under the address, with every complaint type counted", () => {
-  const line = (cases12: Partial<Counts>) => {
-    renderTray([complex("1", { address: "1 Mix Ln", cases12: counts(cases12) })]);
+describe("the outcome line under the figure", () => {
+  const lineFor = (tally: Tally, view: View = DEFAULT_VIEW) => {
+    renderTray(
+      [complex("1", { address: "1 Mix Ln", tally: everyPeriod(tally) })],
+      view,
+    );
     return card("1 Mix Ln");
   };
 
-  it("says Mostly only when one type has more than half the cases", () => {
-    expect(line({ property: 5, structure: 1 }).getByText("Mostly property upkeep")).toBeVisible();
+  it("names the two largest outcomes, largest first, in the card's short words", () => {
+    const outcomes = lineFor({
+      structure: { violation: 119, none: 78, fixed: 1, other: 3 },
+    });
+    expect(outcomes.getByText("119 confirmed, 78 none found")).toBeVisible();
   });
 
-  it("names both types, in the fixed order, on a one and one split", () => {
-    expect(line({ property: 1, structure: 1 }).getByText("Structure condition and property upkeep")).toBeVisible();
+  it("carries both outcomes in full, in the right number, in its title", () => {
+    const outcomes = lineFor({ structure: { violation: 119, none: 78 } });
+    expect(outcomes.getByText("119 confirmed, 78 none found")).toHaveAttribute(
+      "title",
+      "119 violations confirmed, 78 no violation found",
+    );
   });
 
-  it("names the two largest types, largest first, when the largest has half or less", () => {
-    expect(line({ landuse: 3, permit: 2, property: 2 }).getByText("Land use and property upkeep")).toBeVisible();
-    expect(line({ structure: 2, property: 1, landuse: 1 }).queryByText(/^Mostly/)).toBeNull();
+  it("speaks of one violation in the singular", () => {
+    const outcomes = lineFor({ structure: { violation: 1, other: 1 } });
+    // A tie goes to the display order: violation before other.
+    expect(outcomes.getByText("1 confirmed, 1 no finding")).toHaveAttribute(
+      "title",
+      "1 violation confirmed, 1 referred or closed without a finding",
+    );
+  });
+
+  it("shows one outcome alone when only one is present, and never a zero", () => {
+    const outcomes = lineFor({ property: { none: 3 } });
+    expect(outcomes.getByText("3 none found")).toHaveAttribute(
+      "title",
+      "3 no violation found",
+    );
+    expect(cardElement("1 Mix Ln").textContent).not.toMatch(/\b0 /);
+  });
+
+  it("breaks a tie by the display order of outcomes", () => {
+    const outcomes = lineFor({ structure: { open: 5, fixed: 5, none: 2 } });
+    expect(
+      outcomes.getByText("5 fixed at inspection, 5 being looked into"),
+    ).toHaveAttribute(
+      "title",
+      "5 fixed at inspection, 5 still being looked into",
+    );
+  });
+
+  it("adds the categories together under All", () => {
+    const outcomes = lineFor({
+      structure: { violation: 2 },
+      property: { violation: 1, none: 4 },
+    });
+    expect(outcomes.getByText("4 none found, 3 confirmed")).toBeVisible();
+  });
+
+  it("is not shown on a card with no complaints", () => {
+    lineFor({});
+    expect(cardElement("1 Mix Ln").textContent).not.toMatch(
+      /confirmed|found|finding|fixed|looked into/,
+    );
   });
 });
 
-describe("a card's title", () => {
+describe("a card's lines", () => {
   const array = complex("1", {
     address: "2000 Burton Dr",
     name: { text: "Array Apartments", source: "openstreetmap" },
-    cases12: counts({ property: 3 }),
+    tally: everyPeriod({ structure: { violation: 119, none: 78 } }),
   });
 
-  it("is the complex's name when it has one, with its address as the second line in place of the cases line", () => {
+  it("for a named complex: the figure, the noun, the outcomes, the name and its address", () => {
     renderTray([array]);
-    const named = card("Array Apartments");
-    expect(named.getByText("Array Apartments")).toBeVisible();
-    expect(named.getByText("2000 Burton Dr")).toBeVisible();
-    expect(named.queryByText("Mostly property upkeep")).toBeNull();
-    expect(named.getByText("3")).toBeVisible();
+    expect(linesOf("Array Apartments")).toEqual([
+      "197",
+      "complaints",
+      "119 confirmed, 78 none found",
+      "Array Apartments",
+      "2000 Burton Dr",
+    ]);
   });
 
-  it("is the address otherwise, with the cases line under it", () => {
-    renderTray([busy]);
-    expect(card("909 S Lamar Blvd").getByText("909 S Lamar Blvd")).toBeVisible();
-    expect(card("909 S Lamar Blvd").getByText("Mostly property upkeep")).toBeVisible();
+  it("for a complex with no name: the same with the address as the title and nothing under it", () => {
+    renderTray([
+      complex("2", {
+        address: "909 S Lamar Blvd",
+        tally: everyPeriod({ property: { none: 2 } }),
+      }),
+    ]);
+    expect(linesOf("909 S Lamar Blvd")).toEqual([
+      "2",
+      "complaints",
+      "2 none found",
+      "909 S Lamar Blvd",
+    ]);
   });
 
   it("keeps the full text of a long title, and of the address under a name, in their title attributes, since the card cuts them short", () => {
     const label = "Parcel 0229230206, near 2104 E Anderson Ln SVRD WB";
     renderTray([
       complex("1", { address: label }),
-      complex("2", { address: label.replace("0229230206", "0229230207"), name: { text: "Foundation Communities: Lakeline Station Apts", source: "openstreetmap" } }),
+      complex("2", {
+        address: label.replace("0229230206", "0229230207"),
+        name: {
+          text: "Foundation Communities: Lakeline Station Apts",
+          source: "openstreetmap",
+        },
+      }),
     ]);
     expect(screen.getByTitle(label)).toHaveTextContent(label);
-    expect(screen.getByTitle("Foundation Communities: Lakeline Station Apts")).toHaveTextContent(
-      "Foundation Communities: Lakeline Station Apts",
-    );
-    expect(screen.getByTitle("Parcel 0229230207, near 2104 E Anderson Ln SVRD WB")).toBeVisible();
+    expect(
+      screen.getByTitle("Foundation Communities: Lakeline Station Apts"),
+    ).toHaveTextContent("Foundation Communities: Lakeline Station Apts");
+    expect(
+      screen.getByTitle("Parcel 0229230207, near 2104 E Anderson Ln SVRD WB"),
+    ).toBeVisible();
   });
 });
 
@@ -179,11 +253,16 @@ it("shows the empty message when nothing is in view", () => {
   ).toBeVisible();
 });
 
-it("tags Repeat Offender properties", () => {
+it("tags Repeat Offender properties, keeping the words in the chip and in its title for when a phone shows only the dot", () => {
   renderTray(sample);
 
-  expect(card("909 S Lamar Blvd").getByText("Repeat Offender")).toBeVisible();
+  const chip = card("909 S Lamar Blvd").getByTitle("Repeat Offender");
+  expect(chip).toHaveTextContent("Repeat Offender");
+  expect(
+    card("909 S Lamar Blvd").getByText("Repeat Offender"),
+  ).toBeInTheDocument();
   expect(card("1107 W Gibson St").queryByText("Repeat Offender")).toBeNull();
+  expect(card("1107 W Gibson St").queryByTitle("Repeat Offender")).toBeNull();
 });
 
 it("counts every complex in Austin until the map says what it shows", () => {
@@ -197,8 +276,12 @@ it("counts every complex in Austin until the map says what it shows", () => {
       hoveredId={null}
     />,
   );
-  expect(screen.getByRole("region", { name: "3 complexes in Austin" })).toBeVisible();
-  expect(screen.getByRole("navigation", { name: "Jump to an area" })).toBeVisible();
+  expect(
+    screen.getByRole("region", { name: "3 complexes in Austin" }),
+  ).toBeVisible();
+  expect(
+    screen.getByRole("navigation", { name: "Jump to an area" }),
+  ).toBeVisible();
 });
 
 it("names a single complex in the singular", () => {
@@ -226,51 +309,128 @@ it("reports a chosen card, the order toggle and an area jump", async () => {
   });
 });
 
+describe("in each period", () => {
+  const spread = complex("1", {
+    address: "1 Spread Ln",
+    tally: {
+      m12: { structure: { violation: 2 } },
+      y2: { structure: { violation: 5, none: 1 } },
+      y3: { structure: { violation: 9, none: 12 } },
+    },
+  });
+
+  it("counts the complaints and their outcomes of the period the view asks for", () => {
+    renderTray([spread], { ...DEFAULT_VIEW, period: "y3" });
+    expect(card("1 Spread Ln").getByText("21")).toBeVisible();
+    expect(
+      card("1 Spread Ln").getByText("12 none found, 9 confirmed"),
+    ).toBeVisible();
+  });
+
+  it("reads the 2 year tally for 2 years", () => {
+    renderTray([spread], { ...DEFAULT_VIEW, period: "y2" });
+    expect(card("1 Spread Ln").getByText("6")).toBeVisible();
+    expect(
+      card("1 Spread Ln").getByText("5 confirmed, 1 none found"),
+    ).toBeVisible();
+  });
+});
+
 describe("with one complaint type selected", () => {
   const permitsOnly: View = { ...DEFAULT_VIEW, category: "permit" };
 
-  it("counts that type and names it as the only one counted", () => {
+  it("narrows the figure and the outcome line together, and names the type as the only one counted", () => {
     renderTray(
       [
-        complex("1", { address: "1 Permit Ln", cases12: counts({ permit: 3, property: 10 }) }),
-        complex("2", { address: "2 Permit Ln", cases12: counts({ permit: 1 }) }),
+        complex("1", {
+          address: "1 Permit Ln",
+          tally: everyPeriod({
+            permit: { none: 3 },
+            structure: { violation: 10, none: 2 },
+          }),
+        }),
+        complex("2", {
+          address: "2 Permit Ln",
+          tally: everyPeriod({ permit: { violation: 1 } }),
+        }),
       ],
       permitsOnly,
     );
 
-    expect(card("1 Permit Ln").getByText("3")).toBeVisible();
-    expect(card("1 Permit Ln").getByText("code cases")).toBeVisible();
-    expect(card("1 Permit Ln").getByText("Work without permit only")).toBeVisible();
-    expect(card("2 Permit Ln").getByText("code case")).toBeVisible();
-    expect(card("2 Permit Ln").getByText("Work without permit only")).toBeVisible();
+    expect(linesOf("1 Permit Ln")).toEqual([
+      "3",
+      "complaints",
+      "3 none found",
+      "1 Permit Ln",
+      "Work without a permit only",
+    ]);
+    expect(card("2 Permit Ln").getByText("complaint")).toBeVisible();
+    expect(card("2 Permit Ln").getByText("1 confirmed")).toHaveAttribute(
+      "title",
+      "1 violation confirmed",
+    );
+    expect(
+      card("2 Permit Ln").getByText("Work without a permit only"),
+    ).toBeVisible();
   });
 
-  it("shows None for that type and how many cases of other types remain", () => {
+  it("counts every type again under All", () => {
+    renderTray([
+      complex("1", {
+        address: "1 Permit Ln",
+        tally: everyPeriod({
+          permit: { none: 3 },
+          structure: { violation: 10, none: 2 },
+        }),
+      }),
+    ]);
+    expect(card("1 Permit Ln").getByText("15")).toBeVisible();
+    expect(
+      card("1 Permit Ln").getByText("10 confirmed, 5 none found"),
+    ).toBeVisible();
+  });
+
+  it("shows None for that type and how many complaints of other types remain", () => {
     renderTray(
       [
-        complex("1", { address: "1 Upkeep Ln", cases12: counts({ property: 2, landuse: 1 }) }),
-        complex("2", { address: "2 Upkeep Ln", cases12: counts({ structure: 1 }) }),
+        complex("1", {
+          address: "1 Upkeep Ln",
+          tally: everyPeriod({ property: { none: 2 }, landuse: { other: 1 } }),
+        }),
+        complex("2", {
+          address: "2 Upkeep Ln",
+          tally: everyPeriod({ structure: { violation: 1 } }),
+        }),
       ],
       permitsOnly,
     );
 
     expect(card("1 Upkeep Ln").getByText("None")).toBeVisible();
-    expect(card("1 Upkeep Ln").getByText("no work without permit cases")).toBeVisible();
-    expect(card("1 Upkeep Ln").getByText("3 other cases")).toBeVisible();
-    expect(card("2 Upkeep Ln").getByText("1 other case")).toBeVisible();
+    expect(
+      card("1 Upkeep Ln").getByText("no work without a permit complaints"),
+    ).toBeVisible();
+    expect(card("1 Upkeep Ln").getByText("3 other complaints")).toBeVisible();
+    expect(card("2 Upkeep Ln").getByText("1 other complaint")).toBeVisible();
   });
 
-  it("falls back to acres when the building has no cases at all", () => {
+  it("falls back to acres when the building has no complaints at all", () => {
     renderTray([clean], permitsOnly);
 
     expect(card("1107 W Gibson St").getByText("None")).toBeVisible();
-    expect(card("1107 W Gibson St").getByText("no work without permit cases")).toBeVisible();
+    expect(
+      card("1107 W Gibson St").getByText("no work without a permit complaints"),
+    ).toBeVisible();
     expect(card("1107 W Gibson St").getByText("2.4 acres")).toBeVisible();
   });
 
   it("counts other types in the selected period only", () => {
     renderTray(
-      [complex("1", { address: "1 Old Case Ln", cases: counts({ property: 4 }) })],
+      [
+        complex("1", {
+          address: "1 Old Case Ln",
+          tally: { m12: {}, y2: {}, y3: { property: { none: 4 } } },
+        }),
+      ],
       permitsOnly,
     );
 
@@ -278,7 +438,19 @@ describe("with one complaint type selected", () => {
   });
 });
 
-it("never renders the words score, grade, rating or rank", () => {
+it("shows None, never NaN or undefined, for a complex whose tally has nothing for the period", () => {
+  renderTray([
+    complex("1", { address: "1 Empty Ln" }),
+    complex("2", { address: "2 Missing Ln", tally: {} as Complex["tally"] }),
+  ]);
+  for (const address of ["1 Empty Ln", "2 Missing Ln"]) {
+    expect(card(address).getByText("None")).toBeVisible();
+    expect(card(address).getByText("no complaints on file")).toBeVisible();
+  }
+  expect(document.body.textContent).not.toMatch(/NaN|undefined/);
+});
+
+it("never renders the words score, grade, rating, rank or code case", () => {
   render(
     <Tray
       complexes={sample}
@@ -288,7 +460,9 @@ it("never renders the words score, grade, rating or rank", () => {
       hoveredId={null}
     />,
   );
-  expect(document.body.textContent).not.toMatch(/score|grade|rating|rank/i);
+  expect(document.body.textContent).not.toMatch(
+    /score|grade|rating|rank|code case/i,
+  );
 });
 
 describe("as a citywide list, for a device with no map", () => {
@@ -352,8 +526,26 @@ describe("as a citywide list, for a device with no map", () => {
 
   it("drops the area shortcuts and names the whole city", () => {
     renderList(sample);
-    expect(screen.queryByRole("navigation", { name: "Jump to an area" })).toBeNull();
+    expect(
+      screen.queryByRole("navigation", { name: "Jump to an area" }),
+    ).toBeNull();
     expect(screen.queryByRole("button", { name: "Downtown" })).toBeNull();
-    expect(screen.getByRole("region", { name: "3 complexes in Austin" })).toBeVisible();
+    expect(
+      screen.getByRole("region", { name: "3 complexes in Austin" }),
+    ).toBeVisible();
   });
+});
+
+it("separates thousands in a card's figure and outcome line, as the record panel does", () => {
+  renderTray([
+    complex("1", {
+      address: "1 Busy Ln",
+      tally: everyPeriod({ structure: { violation: 1200, none: 34 } }),
+    }),
+  ]);
+  expect(card("1 Busy Ln").getByText("1,234")).toBeVisible();
+  expect(card("1 Busy Ln").getByText("1,200 confirmed, 34 none found")).toHaveAttribute(
+    "title",
+    "1,200 violations confirmed, 34 no violation found",
+  );
 });

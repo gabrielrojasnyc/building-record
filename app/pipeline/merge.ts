@@ -4,12 +4,11 @@ import type {
   BuildingDetail,
   Category,
   Complex,
-  Counts,
   Deficiency,
   Outline,
   Tally,
 } from "@/domain/types";
-import { caseTotal } from "@/domain/query";
+import { complaintTotal } from "@/domain/query";
 import { metresBetween, type LabelSource } from "./addresses";
 import { compareComplaints, type CaseSummary } from "./cases";
 import { groupDeficiencies, type RepeatOffenderRecord } from "./context";
@@ -17,7 +16,6 @@ import { toAcres } from "./parcels";
 
 /** Parcels with the same address whose centroids are this close to another member are one property. */
 const SAME_PROPERTY_METRES = 250;
-const LATEST_LIMIT = 8;
 
 /** Six decimals is about 10 cm on the ground, finer than any pin, and keeps the page light. */
 const roundTo6 = (degrees: number) => Math.round(degrees * 1e6) / 1e6;
@@ -47,13 +45,6 @@ export interface Property {
 }
 
 const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-
-const addCounts = (a: Counts, b: Counts): Counts => ({
-  structure: a.structure + b.structure,
-  property: a.property + b.property,
-  landuse: a.landuse + b.landuse,
-  permit: a.permit + b.permit,
-});
 
 const CATEGORIES: Category[] = ["structure", "property", "landuse", "permit"];
 
@@ -125,18 +116,16 @@ function unionBox(boxes: BuildingDetail["bbox"][]): BuildingDetail["bbox"] {
   ];
 }
 
-function newestFirst(a: { opened: string }, b: { opened: string }): number {
-  return compareText(b.opened, a.opened);
-}
-
 /** One complex from the members of a group: its ID and URL come from the busiest member, its figures from all of them. */
 function combine(group: LabelledParcel[]): Property {
   const members = [...group].sort((a, b) => compareText(a.id, b.id));
-  const casesOf = (member: LabelledParcel) => caseTotal(member.summary.cases);
+  // Every report the city recorded counts here, duplicates too: this picks which ID a page lives under, so it stays as it was when the counts were cases.
+  const reportsOf = ({ summary }: LabelledParcel) =>
+    complaintTotal(summary.tally.y3) + summary.duplicates.y3;
 
   // Members are in ID order and only a strictly larger value replaces the best so far, so ties go to the lowest ID.
   const busiest = members.reduce((best, member) =>
-    casesOf(member) > casesOf(best) ? member : best,
+    reportsOf(member) > reportsOf(best) ? member : best,
   );
   const largest = members.reduce((best, member) =>
     member.squareFeet > best.squareFeet ? member : best,
@@ -153,9 +142,6 @@ function combine(group: LabelledParcel[]): Property {
     );
 
   const summaries = members.map((member) => member.summary);
-  const lastCases = summaries.flatMap(({ lastCase }) =>
-    lastCase ? [lastCase] : [],
-  );
   const monthly = busiest.summary.detail.monthly.map(({ month }) => ({
     month,
     count: summaries.reduce(
@@ -175,13 +161,7 @@ function combine(group: LabelledParcel[]): Property {
     lon: roundTo6(largest.lon),
     lat: roundTo6(largest.lat),
     acres: toAcres(members.reduce((sum, member) => sum + member.squareFeet, 0)),
-    cases12: summaries.map(({ cases12 }) => cases12).reduce(addCounts),
-    cases: summaries.map(({ cases }) => cases).reduce(addCounts),
     open: summaries.reduce((sum, { open }) => sum + open, 0),
-    lastCase:
-      lastCases.length === 0
-        ? null
-        : lastCases.reduce((newest, date) => (date > newest ? date : newest)),
     tally: forEachPeriod((period) =>
       addTallies(summaries.map(({ tally }) => tally[period])),
     ),
@@ -207,10 +187,6 @@ function combine(group: LabelledParcel[]): Property {
     detail: {
       id: busiest.id,
       monthly,
-      latest: summaries
-        .flatMap(({ detail }) => detail.latest)
-        .sort(newestFirst)
-        .slice(0, LATEST_LIMIT),
       complaints: summaries
         .flatMap(({ detail }) => detail.complaints)
         .sort(compareComplaints),

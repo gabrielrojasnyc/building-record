@@ -1,6 +1,7 @@
-import type { Category, Complex, Counts } from './types';
+import { OUTCOMES, type Outcome } from './outcomes';
+import type { Period } from './periods';
+import type { Category, Complex, Tally } from './types';
 
-export type Period = 'cases12' | 'cases';
 export type CategoryFilter = Category | 'all';
 
 export interface View {
@@ -15,24 +16,46 @@ export type Corner = [lon: number, lat: number];
 export type ViewArea = [Corner, Corner, Corner, Corner];
 
 export const DEFAULT_VIEW: View = {
-  period: 'cases12',
+  period: 'm12',
   category: 'all',
   repeatOffendersOnly: false,
   order: 'fewest',
 };
 
-const PERIODS: readonly Period[] = ['cases12', 'cases'];
-const CATEGORIES: readonly CategoryFilter[] = ['all', 'structure', 'property', 'landuse', 'permit'];
+/** How the longer periods read in the address bar. 12 months is the default, so it never appears there. */
+const PERIOD_PARAMS: readonly [Period, string][] = [
+  ['y2', '2y'],
+  ['y3', '3y'],
+];
+const CATEGORIES: readonly Category[] = ['structure', 'property', 'landuse', 'permit'];
+const CATEGORY_FILTERS: readonly CategoryFilter[] = ['all', ...CATEGORIES];
 const ORDERS: readonly View['order'][] = ['fewest', 'most'];
 
-/** Cases of all four categories together. */
-export function caseTotal(counts: Counts): number {
-  return counts.structure + counts.property + counts.landuse + counts.permit;
+const sumOf = (split: Record<Outcome, number>) => OUTCOMES.reduce((sum, outcome) => sum + split[outcome], 0);
+
+/** Complaints in one period's tally by outcome, for one category or all of them. A category with no entry counts as none. */
+function splitOf(tally: Tally | undefined, category: CategoryFilter): Record<Outcome, number> {
+  const split = Object.fromEntries(OUTCOMES.map((outcome) => [outcome, 0])) as Record<Outcome, number>;
+  for (const counted of category === 'all' ? CATEGORIES : [category]) {
+    for (const outcome of OUTCOMES) split[outcome] += tally?.[counted]?.[outcome] ?? 0;
+  }
+  return split;
 }
 
+/** Complaints in a tally, every category and outcome together. */
+export function complaintTotal(tally: Tally): number {
+  return sumOf(splitOf(tally, 'all'));
+}
+
+/** The view's complaints by outcome, every outcome present. A period with no entry in the tally counts as none. */
+export function outcomeSplit(complex: Complex, view: View): Record<Outcome, number> {
+  const tally: Tally | undefined = complex.tally[view.period];
+  return splitOf(tally, view.category);
+}
+
+/** The view's complaints. Duplicates are never in a tally, so never in this count. */
 export function countFor(complex: Complex, view: View): number {
-  const counts = complex[view.period];
-  return view.category === 'all' ? caseTotal(counts) : counts[view.category];
+  return sumOf(outcomeSplit(complex, view));
 }
 
 /** How far from an edge, as a cross product in square degrees, a point still counts as on it. */
@@ -82,9 +105,10 @@ function pick<T extends string>(value: string | null, allowed: readonly T[], fal
 }
 
 export function viewFromSearchParams(params: URLSearchParams): View {
+  const period = PERIOD_PARAMS.find(([, value]) => value === params.get('period'))?.[0];
   return {
-    period: pick(params.get('period'), PERIODS, DEFAULT_VIEW.period),
-    category: pick(params.get('category'), CATEGORIES, DEFAULT_VIEW.category),
+    period: period ?? DEFAULT_VIEW.period,
+    category: pick(params.get('category'), CATEGORY_FILTERS, DEFAULT_VIEW.category),
     repeatOffendersOnly: params.get('ro') === '1',
     order: pick(params.get('order'), ORDERS, DEFAULT_VIEW.order),
   };
@@ -92,7 +116,8 @@ export function viewFromSearchParams(params: URLSearchParams): View {
 
 export function viewToSearchParams(view: View): URLSearchParams {
   const params = new URLSearchParams();
-  if (view.period !== DEFAULT_VIEW.period) params.set('period', view.period);
+  const period = PERIOD_PARAMS.find(([key]) => key === view.period)?.[1];
+  if (period) params.set('period', period);
   if (view.category !== DEFAULT_VIEW.category) params.set('category', view.category);
   if (view.repeatOffendersOnly) params.set('ro', '1');
   if (view.order !== DEFAULT_VIEW.order) params.set('order', view.order);
