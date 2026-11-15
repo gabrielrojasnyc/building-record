@@ -1,5 +1,5 @@
 import { useId, useRef, useState, type Ref } from "react";
-import { formatAcres, formatCount } from "@/domain/format";
+import { formatCount } from "@/domain/format";
 import { CATEGORY_LABEL, OUTCOME_CARD_PHRASE, titleOf } from "@/domain/labels";
 import { OUTCOMES, OUTCOME_LABEL, type Outcome } from "@/domain/outcomes";
 import { PERIOD_PHRASE } from "@/domain/periods";
@@ -89,47 +89,6 @@ function outcomeLine(split: Record<Outcome, number>): {
   };
 }
 
-/**
- * The caption under a card's figure and the line under its address, both speaking to the same filter as the figure.
- * A card with complaints under All has no line under its address: its outcome line says what they came to.
- */
-function cardCopy(
-  complex: Complex,
-  view: View,
-  count: number,
-): { caption: string; captionTitle?: string; detail: string | null } {
-  const acres = formatAcres(complex.acres);
-
-  if (view.category === "all") {
-    const duplicates = complex.duplicates[view.period] ?? 0;
-    // Complaints did reach the city here, so "no complaints on file" would not be true.
-    if (count === 0 && duplicates > 0) {
-      const many = duplicates !== 1;
-      return {
-        caption: "duplicate reports only",
-        captionTitle: `${formatCount(duplicates)} ${many ? "duplicate reports" : "duplicate report"} ${PERIOD_PHRASE[view.period]}, closed by the city as ${many ? "duplicates of other complaints" : "a duplicate of another complaint"}`,
-        detail: acres,
-      };
-    }
-    if (count === 0) return { caption: "no complaints on file", detail: acres };
-    return { caption: complaintsWord(count), detail: null };
-  }
-
-  const label = CATEGORY_LABEL[view.category];
-  if (count > 0)
-    return { caption: complaintsWord(count), detail: `${label} only` };
-
-  // The selected type has none here, so every complaint in the period belongs to another type.
-  const others = countFor(complex, { ...view, category: "all" });
-  return {
-    caption: `no ${label.toLowerCase()} complaints`,
-    detail:
-      others === 0
-        ? acres
-        : `${formatCount(others)} other ${complaintsWord(others)}`,
-  };
-}
-
 function TrayCard(props: {
   complex: Complex;
   view: View;
@@ -140,10 +99,12 @@ function TrayCard(props: {
 }) {
   const { complex, view, selected, hovered } = props;
   const count = countFor(complex, view);
-  const { caption, captionTitle, detail } = cardCopy(complex, view, count);
-  const outcomes = count > 0 ? outcomeLine(outcomeSplit(complex, view)) : null;
+  const outcomes = outcomeLine(outcomeSplit(complex, view));
+  // Under a type filter the figure counts that type alone, and a card with no name has room to say so.
+  const onlyType =
+    view.category === "all" ? null : `${CATEGORY_LABEL[view.category]} only`;
   const title = titleOf(complex);
-  const underTitle = complex.name ? complex.address : detail;
+  const underTitle = complex.name ? complex.address : onlyType;
   const smallText = `block text-[12.5px] ${selected ? "text-mist" : "text-steel"}`;
 
   return (
@@ -159,19 +120,11 @@ function TrayCard(props: {
     >
       <span className="flex items-start justify-between gap-2">
         <span>
-          {count === 0 ? (
-            <span
-              className={`block font-display text-[34px] leading-[1.1] italic ${selected ? "text-ice" : "text-deep"}`}
-            >
-              None
-            </span>
-          ) : (
-            <span
-              className={`block text-[46px] leading-[0.9] font-extralight tracking-[-0.03em] tabular-nums ${selected ? "text-ice" : "text-deep"}`}
-            >
-              {formatCount(count)}
-            </span>
-          )}
+          <span
+            className={`block text-[46px] leading-[0.9] font-extralight tracking-[-0.03em] tabular-nums ${selected ? "text-ice" : "text-deep"}`}
+          >
+            {formatCount(count)}
+          </span>
         </span>
         {/* On a phone the chip is its coral dot alone, the site's mark for the list, so a three-digit figure keeps clear of it. */}
         {complex.repeatOffender && (
@@ -185,14 +138,10 @@ function TrayCard(props: {
         )}
       </span>
       {/* Under the figure's row, not beside the chip, so a caption has the card's whole width. */}
-      <span title={captionTitle} className={`mt-1 ${smallText}`}>
-        {caption}
+      <span className={`mt-1 ${smallText}`}>{complaintsWord(count)}</span>
+      <span title={outcomes.title} className={`truncate ${smallText}`}>
+        {outcomes.text}
       </span>
-      {outcomes && (
-        <span title={outcomes.title} className={`truncate ${smallText}`}>
-          {outcomes.text}
-        </span>
-      )}
       {/* The card's height is fixed, so the title keeps to one line, and so do the outcomes and an address under a name. */}
       <span className="mt-auto min-w-0 leading-[1.25] font-normal">
         <span title={title} className="block truncate">
@@ -228,15 +177,19 @@ export function Tray(props: TrayProps) {
   const citywide = props.citywide === true;
   const countsAustin = citywide || props.awaitingView === true;
   const total = complexes.length;
+  // A card is for a complex with complaints in the view. The rest stay on the map and in search, and are counted beside the total.
+  const listed = complexes.filter((complex) => countFor(complex, view) > 0);
+  const leftOut = total - listed.length;
+  const where = countsAustin ? "in Austin" : "in view";
 
   // Pages of 40 apply to the view they were asked for; any other view starts again at one page.
   const viewKey = viewToSearchParams(view).toString();
   const [revealed, setRevealed] = useState({ viewKey, pages: 1 });
   const pages = revealed.viewKey === viewKey ? revealed.pages : 1;
   const shown = citywide
-    ? Math.min(total, CARD_LIMIT * pages)
-    : Math.min(total, CARD_LIMIT);
-  const hidden = total - shown;
+    ? Math.min(listed.length, CARD_LIMIT * pages)
+    : Math.min(listed.length, CARD_LIMIT);
+  const hidden = listed.length - shown;
 
   const toggleOrder = () => {
     props.onToggleOrder();
@@ -250,20 +203,36 @@ export function Tray(props: TrayProps) {
     >
       <div className="flex items-center gap-2.5 px-(--gutter) pb-2.5">
         <Glass className="flex h-[42px] flex-none items-center gap-2 rounded-full pr-1.5 pl-[18px]">
-          <p
-            id={countId}
-            ref={countRef}
-            tabIndex={-1}
-            className="flex items-center gap-2"
-          >
-            <strong className="font-display text-2xl leading-none font-normal text-deep tabular-nums">
-              {total.toLocaleString("en-US")}
-            </strong>{" "}
-            <span className="text-sm text-slate">
-              {total === 1 ? "complex" : "complexes"}{" "}
-              {countsAustin ? "in Austin" : "in view"}
-            </span>
-          </p>
+          {/* Side by side with a rule between them; on a phone the second sits small under the first, so the pill keeps its width. */}
+          <div className="flex items-center gap-2 phone:flex-col phone:items-start phone:gap-0">
+            <p
+              id={countId}
+              ref={countRef}
+              tabIndex={-1}
+              className="flex items-center gap-2"
+            >
+              <strong className="font-display text-2xl leading-none font-normal text-deep tabular-nums">
+                {total.toLocaleString("en-US")}
+              </strong>{" "}
+              <span className="text-sm text-slate">
+                {total === 1 ? "complex" : "complexes"} {where}
+              </span>
+            </p>
+            {leftOut > 0 && (
+              <>
+                <span
+                  aria-hidden
+                  className="h-5 w-px flex-none bg-deep/16 phone:hidden"
+                />
+                <p className="text-[13px] whitespace-nowrap text-steel phone:text-[11px] phone:leading-none">
+                  {formatCount(leftOut)}{" "}
+                  {view.category === "all"
+                    ? "with no complaints"
+                    : "with none of this type"}
+                </p>
+              </>
+            )}
+          </div>
           <button
             type="button"
             onClick={toggleOrder}
@@ -299,7 +268,7 @@ export function Tray(props: TrayProps) {
             : "flex snap-x snap-proximity scroll-px-(--gutter) gap-3 overflow-x-auto px-(--gutter) pt-2 pb-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         }
       >
-        {complexes.slice(0, shown).map((complex) => (
+        {listed.slice(0, shown).map((complex) => (
           <TrayCard
             key={complex.id}
             complex={complex}
@@ -317,6 +286,11 @@ export function Tray(props: TrayProps) {
               : "No apartment complexes in this part of the map. Zoom out or jump to an area."}
           </TrayNote>
         )}
+        {total > 0 && listed.length === 0 && (
+          <TrayNote>
+            {`No ${view.category === "all" ? "" : `${CATEGORY_LABEL[view.category].toLowerCase()} `}complaints ${PERIOD_PHRASE[view.period]} at the ${total === 1 ? "one complex" : `${formatCount(total)} complexes`} ${where}.`}
+          </TrayNote>
+        )}
         {!citywide && hidden > 0 && (
           <TrayNote>
             {countsAustin
@@ -324,7 +298,7 @@ export function Tray(props: TrayProps) {
               : `${hidden.toLocaleString("en-US")} more in view. Zoom in to narrow them down.`}
           </TrayNote>
         )}
-        {citywide && total > CARD_LIMIT && (
+        {citywide && listed.length > CARD_LIMIT && (
           <div className="flex w-full items-center gap-3 pt-1 pb-1 text-[13px] text-slate">
             {hidden > 0 && (
               <button
@@ -337,8 +311,8 @@ export function Tray(props: TrayProps) {
             )}
             <span>
               {hidden > 0
-                ? `Showing ${shown.toLocaleString("en-US")} of ${total.toLocaleString("en-US")}`
-                : `Showing all ${total.toLocaleString("en-US")}`}
+                ? `Showing ${formatCount(shown)} of ${formatCount(listed.length)}`
+                : `Showing all ${formatCount(listed.length)}`}
             </span>
           </div>
         )}

@@ -90,15 +90,18 @@ const array = complex("0307050309", {
   lat: 30.23,
   tally: { m12: { property: { none: 3 } }, y2: {}, y3: {} },
 });
+// Each has a complaint in the default period, since the tray gives a card only to a complex that has one.
 const crest = complex("0304070701", {
   address: "1601 Royal Crest Dr",
   lon: -97.729,
   lat: 30.238,
+  tally: { m12: { structure: { none: 1 } }, y2: {}, y3: {} },
 });
 const domain = complex("0250010101", {
   address: "11800 Domain Blvd",
   lon: -97.72,
   lat: 30.4,
+  tally: { m12: { structure: { violation: 2 } }, y2: {}, y3: {} },
 });
 const everything = [array, crest, domain];
 

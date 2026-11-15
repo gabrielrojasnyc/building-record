@@ -83,20 +83,48 @@ const linesOf = (text: string) =>
     .map((element) => element.textContent ?? "")
     .filter((line) => line !== "");
 
-it("shows None for a complex with no complaints and the count otherwise, duplicates never counted", () => {
+it("leaves a complex with no complaints out of the cards, and says how many were left out", () => {
   renderTray(sample);
 
-  expect(card("1107 W Gibson St").getByText("None")).toBeVisible();
+  expect(screen.getAllByTestId("card")).toHaveLength(2);
+  expect(screen.queryByText("1107 W Gibson St")).toBeNull();
+  expect(screen.queryByText("None")).toBeNull();
+  // The count line still counts every complex in view. Beside it, how many of them have no card.
   expect(
-    card("1107 W Gibson St").getByText("no complaints on file"),
+    screen.getByRole("region", { name: "3 complexes in view" }),
   ).toBeVisible();
-  expect(card("1107 W Gibson St").getByText("2.4 acres")).toBeVisible();
+  expect(screen.getByText("1 with no complaints")).toBeVisible();
 
   expect(card("909 S Lamar Blvd").getByText("4")).toBeVisible();
   expect(card("909 S Lamar Blvd").getByText("complaints")).toBeVisible();
-
   expect(card("300 Main St").getByText("1")).toBeVisible();
   expect(card("300 Main St").getByText("complaint")).toBeVisible();
+});
+
+it("says nothing about complexes left out when every one in view has a complaint", () => {
+  renderTray([busy, single]);
+  expect(screen.queryByText(/with no complaints/)).toBeNull();
+});
+
+it("says so in a note, in place of cards, when no complex in view has a complaint in the period", () => {
+  renderTray([clean, complex("101", { address: "2 Quiet Ln" })]);
+
+  expect(screen.queryAllByTestId("card")).toHaveLength(0);
+  expect(
+    screen.getByText(
+      "No complaints in the last 12 months at the 2 complexes in view.",
+    ),
+  ).toBeVisible();
+  expect(screen.getByText("2 with no complaints")).toBeVisible();
+});
+
+it("speaks of one complex in the singular in that note", () => {
+  renderTray([clean]);
+  expect(
+    screen.getByText(
+      "No complaints in the last 12 months at the one complex in view.",
+    ),
+  ).toBeVisible();
 });
 
 describe("the outcome line under the figure", () => {
@@ -159,12 +187,6 @@ describe("the outcome line under the figure", () => {
     expect(outcomes.getByText("4 none found, 3 confirmed")).toBeVisible();
   });
 
-  it("is not shown on a card with no complaints", () => {
-    lineFor({});
-    expect(cardElement("1 Mix Ln").textContent).not.toMatch(
-      /confirmed|found|finding|fixed|looked into/,
-    );
-  });
 });
 
 describe("a card's lines", () => {
@@ -202,10 +224,12 @@ describe("a card's lines", () => {
 
   it("keeps the full text of a long title, and of the address under a name, in their title attributes, since the card cuts them short", () => {
     const label = "Parcel 0229230206, near 2104 E Anderson Ln SVRD WB";
+    const tally = everyPeriod({ structure: { none: 1 } });
     renderTray([
-      complex("1", { address: label }),
+      complex("1", { address: label, tally }),
       complex("2", {
         address: label.replace("0229230206", "0229230207"),
+        tally,
         name: {
           text: "Foundation Communities: Lakeline Station Apts",
           source: "openstreetmap",
@@ -222,21 +246,25 @@ describe("a card's lines", () => {
   });
 });
 
-it("says a sliver parcel is under a tenth of an acre", () => {
-  renderTray([complex("1", { address: "1 Sliver Ln", acres: 0 })]);
-  expect(card("1 Sliver Ln").getByText("under 0.1 acres")).toBeVisible();
-});
-
-it("caps the tray at 40 cards and says how many more are in view", () => {
-  renderTray(Array.from({ length: 45 }, (_, index) => complex(String(index))));
+it("caps the tray at 40 cards and says how many more are in view, counting only complexes with complaints", () => {
+  const withComplaints = Array.from({ length: 45 }, (_, index) =>
+    complex(String(index), {
+      tally: everyPeriod({ structure: { none: 1 } }),
+    }),
+  );
+  const without = Array.from({ length: 3 }, (_, index) =>
+    complex(`clean-${index}`),
+  );
+  renderTray([...without, ...withComplaints]);
 
   expect(
-    screen.getByRole("region", { name: "45 complexes in view" }),
+    screen.getByRole("region", { name: "48 complexes in view" }),
   ).toBeVisible();
   expect(screen.getAllByTestId("card")).toHaveLength(40);
   expect(
     screen.getByText("5 more in view. Zoom in to narrow them down."),
   ).toBeVisible();
+  expect(screen.getByText("3 with no complaints")).toBeVisible();
 });
 
 it("shows the empty message when nothing is in view", () => {
@@ -261,8 +289,8 @@ it("tags Repeat Offender properties, keeping the words in the chip and in its ti
   expect(
     card("909 S Lamar Blvd").getByText("Repeat Offender"),
   ).toBeInTheDocument();
-  expect(card("1107 W Gibson St").queryByText("Repeat Offender")).toBeNull();
-  expect(card("1107 W Gibson St").queryByTitle("Repeat Offender")).toBeNull();
+  expect(card("300 Main St").queryByText("Repeat Offender")).toBeNull();
+  expect(card("300 Main St").queryByTitle("Repeat Offender")).toBeNull();
 });
 
 it("counts every complex in Austin until the map says what it shows", () => {
@@ -295,7 +323,7 @@ it("names a single complex in the singular", () => {
 it("reports a chosen card, the order toggle and an area jump", async () => {
   renderTray(sample);
 
-  await userEvent.click(screen.getAllByTestId("card")[1]);
+  await userEvent.click(screen.getAllByTestId("card")[0]);
   expect(handlers.onSelect).toHaveBeenCalledWith("200");
 
   await userEvent.click(screen.getByRole("button", { name: "Fewest first" }));
@@ -390,7 +418,7 @@ describe("with one complaint type selected", () => {
     ).toBeVisible();
   });
 
-  it("shows None for that type and how many complaints of other types remain", () => {
+  it("leaves out a complex with none of that type, whatever else it has, and says how many", () => {
     renderTray(
       [
         complex("1", {
@@ -398,88 +426,61 @@ describe("with one complaint type selected", () => {
           tally: everyPeriod({ property: { none: 2 }, landuse: { other: 1 } }),
         }),
         complex("2", {
-          address: "2 Upkeep Ln",
-          tally: everyPeriod({ structure: { violation: 1 } }),
+          address: "2 Permit Ln",
+          tally: everyPeriod({ permit: { violation: 1 } }),
         }),
+        clean,
       ],
       permitsOnly,
     );
 
-    expect(card("1 Upkeep Ln").getByText("None")).toBeVisible();
-    expect(
-      card("1 Upkeep Ln").getByText("no work without a permit complaints"),
-    ).toBeVisible();
-    expect(card("1 Upkeep Ln").getByText("3 other complaints")).toBeVisible();
-    expect(card("2 Upkeep Ln").getByText("1 other complaint")).toBeVisible();
+    expect(screen.getAllByTestId("card")).toHaveLength(1);
+    expect(card("2 Permit Ln").getByText("1")).toBeVisible();
+    expect(screen.queryByText("1 Upkeep Ln")).toBeNull();
+    expect(screen.getByText("2 with none of this type")).toBeVisible();
   });
 
-  it("falls back to acres when the building has no complaints at all", () => {
-    renderTray([clean], permitsOnly);
-
-    expect(card("1107 W Gibson St").getByText("None")).toBeVisible();
-    expect(
-      card("1107 W Gibson St").getByText("no work without a permit complaints"),
-    ).toBeVisible();
-    expect(card("1107 W Gibson St").getByText("2.4 acres")).toBeVisible();
-  });
-
-  it("counts other types in the selected period only", () => {
+  it("says so in a note when no complex in view has a complaint of that type in the period", () => {
     renderTray(
       [
         complex("1", {
           address: "1 Old Case Ln",
-          tally: { m12: {}, y2: {}, y3: { property: { none: 4 } } },
+          tally: { m12: {}, y2: {}, y3: { permit: { none: 4 } } },
         }),
       ],
       permitsOnly,
     );
 
-    expect(card("1 Old Case Ln").getByText("2.4 acres")).toBeVisible();
+    expect(screen.queryAllByTestId("card")).toHaveLength(0);
+    expect(
+      screen.getByText(
+        "No work without a permit complaints in the last 12 months at the one complex in view.",
+      ),
+    ).toBeVisible();
   });
 });
 
-it("says duplicate reports only on a card whose complaints in the period were all closed as duplicates, with how many in its title", () => {
+it("leaves out a complex whose complaints in the period were all closed as duplicates", () => {
   const duplicatesOnly = complex("400", {
     address: "2606 Wheless Ln",
     tally: { m12: {}, y2: {}, y3: { structure: { none: 25 } } },
     duplicates: { m12: 4, y2: 4, y3: 6 },
   });
-  const oneDuplicate = complex("500", {
-    address: "500 Single Ln",
-    duplicates: { m12: 1, y2: 1, y3: 1 },
-  });
-  renderTray([duplicatesOnly, oneDuplicate, clean]);
+  renderTray([duplicatesOnly, busy]);
 
-  expect(card("2606 Wheless Ln").getByText("None")).toBeVisible();
-  const caption = card("2606 Wheless Ln").getByText("duplicate reports only");
-  expect(caption).toHaveAttribute(
-    "title",
-    "4 duplicate reports in the last 12 months, closed by the city as duplicates of other complaints",
-  );
-  expect(
-    card("2606 Wheless Ln").queryByText("no complaints on file"),
-  ).toBeNull();
-  expect(
-    card("500 Single Ln").getByText("duplicate reports only"),
-  ).toHaveAttribute(
-    "title",
-    "1 duplicate report in the last 12 months, closed by the city as a duplicate of another complaint",
-  );
-  // A complex with no complaints and no duplicates reads as before.
-  expect(
-    card("1107 W Gibson St").getByText("no complaints on file"),
-  ).toBeVisible();
+  expect(screen.queryByText("2606 Wheless Ln")).toBeNull();
+  expect(screen.getByText("1 with no complaints")).toBeVisible();
 });
 
-it("shows None, never NaN or undefined, for a complex whose tally has nothing for the period", () => {
+it("leaves out, and counts, a complex whose tally has nothing for the period, with no NaN or undefined", () => {
   renderTray([
     complex("1", { address: "1 Empty Ln" }),
     complex("2", { address: "2 Missing Ln", tally: {} as Complex["tally"] }),
+    busy,
   ]);
-  for (const address of ["1 Empty Ln", "2 Missing Ln"]) {
-    expect(card(address).getByText("None")).toBeVisible();
-    expect(card(address).getByText("no complaints on file")).toBeVisible();
-  }
+
+  expect(screen.getAllByTestId("card")).toHaveLength(1);
+  expect(screen.getByText("2 with no complaints")).toBeVisible();
   expect(document.body.textContent).not.toMatch(/NaN|undefined/);
 });
 
@@ -499,7 +500,9 @@ it("never renders the words score, grade, rating, rank or code case", () => {
 });
 
 describe("as a citywide list, for a device with no map", () => {
-  const many = Array.from({ length: 95 }, (_, index) => complex(String(index)));
+  const many = Array.from({ length: 95 }, (_, index) =>
+    complex(String(index), { tally: everyPeriod({ structure: { none: 1 } }) }),
+  );
 
   function renderList(complexes: Complex[], view: View = DEFAULT_VIEW) {
     const utils = render(
@@ -541,6 +544,25 @@ describe("as a citywide list, for a device with no map", () => {
     expect(screen.getAllByTestId("card")).toHaveLength(95);
     expect(screen.queryByRole("button", { name: "Show 40 more" })).toBeNull();
     expect(screen.getByText("Showing all 95")).toBeVisible();
+  });
+
+  it("pages through complexes with complaints only, and says how many in Austin have none", () => {
+    renderList([...many, clean, complex("quiet", { address: "2 Quiet Ln" })]);
+
+    expect(
+      screen.getByRole("region", { name: "97 complexes in Austin" }),
+    ).toBeVisible();
+    expect(screen.getByText("Showing 40 of 95")).toBeVisible();
+    expect(screen.getByText("2 with no complaints")).toBeVisible();
+  });
+
+  it("says so in a note when no complex in Austin has a complaint under the filters", () => {
+    renderList([clean, complex("quiet", { address: "2 Quiet Ln" })]);
+    expect(
+      screen.getByText(
+        "No complaints in the last 12 months at the 2 complexes in Austin.",
+      ),
+    ).toBeVisible();
   });
 
   it("offers no more when everything already fits", () => {

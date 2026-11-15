@@ -285,6 +285,25 @@ test("a card's figure is its record's lead figure, in each of the three periods"
   }
 });
 
+test("the tray gives a card only to a complex with complaints, and says how many in view have none", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await waitForMap(page);
+
+  await expect(cards(page).first()).toBeVisible();
+  await expect(page.getByText(/^[\d,]+ with no complaints$/)).toBeVisible();
+  // No card stands for a complex with nothing on file: every card leads with a number above zero.
+  const figures = await cards(page).evaluateAll((elements) =>
+    elements.map((element) =>
+      Number((element.textContent ?? "").replace(/,/g, "").match(/^\d+/)?.[0]),
+    ),
+  );
+  expect(figures.length).toBeGreaterThan(0);
+  expect(figures.every((figure) => figure > 0)).toBe(true);
+  await expect(page.getByText("no complaints on file")).toHaveCount(0);
+});
+
 test("a filtered view survives a reload", async ({ page }) => {
   await page.goto("/?period=3y&order=most");
   await expect(page.getByRole("button", { name: "3 years" })).toHaveAttribute(
@@ -651,11 +670,20 @@ test.describe("when the map cannot start", () => {
   test("Show 40 more reveals more cards, and filters and order still apply", async ({
     page,
   }) => {
+    // The list gives a card only to a complex with complaints in the period, and says how many have none.
+    const withComplaints = complexes.filter(
+      (complex) => complaintsIn(complex, "m12") > 0,
+    ).length;
     await page.goto("/");
     await expect(cards(page)).toHaveCount(40);
     await expect(
       page.getByText(
-        `Showing 40 of ${meta.complexCount.toLocaleString("en-US")}`,
+        `Showing 40 of ${withComplaints.toLocaleString("en-US")}`,
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        `${(meta.complexCount - withComplaints).toLocaleString("en-US")} with no complaints`,
       ),
     ).toBeVisible();
 
