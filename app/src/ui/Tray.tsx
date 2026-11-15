@@ -254,7 +254,7 @@ export function Tray(props: TrayProps) {
             id={countId}
             ref={countRef}
             tabIndex={-1}
-            className="flex items-center gap-2 focus-visible:outline-none"
+            className="flex items-center gap-2"
           >
             <strong className="font-display text-2xl leading-none font-normal text-deep tabular-nums">
               {total.toLocaleString("en-US")}

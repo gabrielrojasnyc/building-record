@@ -885,14 +885,32 @@ test.describe("a picked building", () => {
     await page.getByRole("button", { name: "Fewest first" }).click();
     expect(await cardIds(page)).not.toContain(id);
 
+    const countLine = page
+      .locator('p[tabindex="-1"]')
+      .filter({ hasText: /complex(es)? in / });
+    const ring = () =>
+      countLine.evaluate((line) => {
+        const style = getComputedStyle(line);
+        return `${style.outlineStyle} ${style.outlineWidth}`;
+      });
+
+    // Closed from the keyboard, the count line shows the site's focus ring, so a keyboard user sees where focus went.
     await page.keyboard.press("Escape");
     await expect(panel(page)).toHaveCount(0);
-    await expect(
-      page.locator('p[tabindex="-1"]').filter({ hasText: /complex(es)? in / }),
-    ).toBeFocused();
+    await expect(countLine).toBeFocused();
     expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe(
       "INPUT",
     );
+    expect(await ring()).toMatch(/^solid [1-9]/);
+
+    // Closed with a press, it takes focus with no ring.
+    const again = await openFirstCard(page);
+    await page.getByRole("button", { name: "Most first" }).click();
+    expect(await cardIds(page)).not.toContain(again);
+    await page.getByRole("button", { name: "Close building details" }).click();
+    await expect(panel(page)).toHaveCount(0);
+    await expect(countLine).toBeFocused();
+    expect(await ring()).toMatch(/^none /);
   });
 
   test("on a phone steps the search and filters aside while it is open, and on a desktop leaves them", async ({
