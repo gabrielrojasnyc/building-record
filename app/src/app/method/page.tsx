@@ -558,6 +558,11 @@ export default async function MethodPage() {
               each kind of problem at a property it counts how many entries the
               city lists as cleared and how many it does not.
             </p>
+            <p>
+              A kind of problem is the title of the code section the city cited,
+              shown as the city writes it, with the section number when the city
+              gives one, such as Installation (§605.1).
+            </p>
           </Section>
 
           <Section title="311 requests">

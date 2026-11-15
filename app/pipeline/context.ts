@@ -79,8 +79,21 @@ const CATEGORY_ORDER: Category[] = [
 
 const CLEARED = "Cleared";
 
-/** A trailing section reference such as " (§304.7)". */
-const SECTION_REFERENCE = /\s*\(§[^)]*\)\s*$/;
+/** Longer than any code section title the city has used (54 characters), so free text never reaches the page. */
+const MAX_KIND_LENGTH = 90;
+/** The characters the city's code section titles are written in: letters, digits, spaces and . , ( ) § / & - ' */
+const KIND_CHARACTERS = /^[\p{L}\p{Nd} .,()§/&\-']+$/u;
+
+/**
+ * The kind exactly as the city writes it, section reference and all, so two sections that share a title such as
+ * "General" stay apart; or null for anything that is not a code section title.
+ */
+export function deficiencyKind(raw: string | undefined): string | null {
+  const kind = (raw ?? "").trim();
+  if (!kind || kind.length > MAX_KIND_LENGTH || !KIND_CHARACTERS.test(kind))
+    return null;
+  return kind;
+}
 
 interface DeficiencyRow {
   parcelid?: string;
@@ -95,7 +108,7 @@ export interface DeficiencyList {
   byParcel: Map<string, Deficiency[]>;
   /** Every row the city returned. Lets the caller spot a truncated read. */
   rowsRead: number;
-  /** Rows with a parcel ID left out: a violation category this site does not recognize, or no kind. */
+  /** Rows with a parcel ID left out: a violation category this site does not recognize, or a kind that is missing or not a code section title. */
   skipped: number;
 }
 
@@ -150,9 +163,7 @@ export async function loadDeficiencies(
     const category = DEFICIENCY_CATEGORIES.find(([prefix]) =>
       violationCategory.startsWith(prefix),
     )?.[1];
-    const kind = (row.deficiencycategory ?? "")
-      .replace(SECTION_REFERENCE, "")
-      .trim();
+    const kind = deficiencyKind(row.deficiencycategory);
     if (!category || !kind) {
       skipped += 1;
       continue;
@@ -173,4 +184,3 @@ export async function loadDeficiencies(
     byParcel.set(id, groupDeficiencies(entries));
   return { byParcel, rowsRead: rows.length, skipped };
 }
-

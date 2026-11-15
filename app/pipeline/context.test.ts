@@ -63,7 +63,7 @@ describe("loadDeficiencies", () => {
     ...overrides,
   });
 
-  it("groups deficiencies by category and kind, strips the section reference, and skips unknown categories", async () => {
+  it("groups deficiencies by category and kind, keeps the city's section reference, and skips unknown categories", async () => {
     const { impl } = fakeFetch([
       deficiency(),
       deficiency({ deficiencystatus: "Not Cleared" }),
@@ -102,13 +102,13 @@ describe("loadDeficiencies", () => {
     expect(byParcel.get("0304070701")).toEqual([
       {
         category: "structure",
-        kind: "Roofs and Drainage",
+        kind: "Roofs and Drainage (§304.7)",
         cleared: 1,
         notCleared: 2,
       },
       {
         category: "structure",
-        kind: "Exterior Walls",
+        kind: "Exterior Walls (§304.6)",
         cleared: 1,
         notCleared: 0,
       },
@@ -128,11 +128,62 @@ describe("loadDeficiencies", () => {
     expect(byParcel.get("0312130115")).toEqual([
       {
         category: "structure",
-        kind: "Installation",
+        kind: "Installation (§605.1)",
         cleared: 1,
         notCleared: 0,
       },
     ]);
+  });
+
+  it("keeps apart two code sections that share a title", async () => {
+    const { impl } = fakeFetch([
+      deficiency({ deficiencycategory: "General (§504.1)" }),
+      deficiency({ deficiencycategory: "General (§305.1)" }),
+      deficiency({ deficiencycategory: " General (§504.1) " }),
+    ]);
+    const { byParcel } = await loadDeficiencies(PULLED_AT, impl);
+    expect(
+      byParcel.get("0304070701")?.map(({ kind, cleared }) => [kind, cleared]),
+    ).toEqual([
+      ["General (§504.1)", 2],
+      ["General (§305.1)", 1],
+    ]);
+  });
+
+  it("skips, and counts, a kind longer than 90 characters or with anything but the city's title characters", async () => {
+    const longest = `Plumbing system hazards, Action Plan Required (§504.3) ${"x".repeat(90 - 55)}`;
+    expect(longest).toHaveLength(90);
+    const { impl } = fakeFetch([
+      deficiency({ deficiencycategory: longest }),
+      deficiency({ deficiencycategory: `${longest}x` }),
+      deficiency({
+        deficiencycategory: "Graffiti Prohibited - City Code 9-4-43",
+      }),
+      deficiency({
+        deficiencycategory: "Smoke alarms- residential (§704.6.1.2)",
+      }),
+      deficiency({ deficiencycategory: "Logan's Mill & Co. / Doors, Frames" }),
+      deficiency({
+        deficiencycategory: "Tenant in 4B says: call 512-555-0100!",
+      }),
+      deficiency({ deficiencycategory: "Leak\nin unit" }),
+      deficiency({ deficiencycategory: "<b>Doors</b>" }),
+    ]);
+    const { byParcel, skipped } = await loadDeficiencies(PULLED_AT, impl);
+    expect(
+      byParcel
+        .get("0304070701")
+        ?.map(({ kind }) => kind)
+        .sort(),
+    ).toEqual(
+      [
+        longest,
+        "Graffiti Prohibited - City Code 9-4-43",
+        "Smoke alarms- residential (§704.6.1.2)",
+        "Logan's Mill & Co. / Doors, Frames",
+      ].sort(),
+    );
+    expect(skipped).toBe(4);
   });
 
   it("counts anything but Cleared as not cleared", async () => {
@@ -145,7 +196,7 @@ describe("loadDeficiencies", () => {
     expect(byParcel.get("0304070701")).toEqual([
       {
         category: "structure",
-        kind: "Roofs and Drainage",
+        kind: "Roofs and Drainage (§304.7)",
         cleared: 0,
         notCleared: 3,
       },
@@ -201,4 +252,3 @@ describe("groupDeficiencies", () => {
     ]);
   });
 });
-

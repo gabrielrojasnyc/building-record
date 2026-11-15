@@ -19,7 +19,7 @@ export interface Complaint {
   violationCase: { number: string; url: string | null } | null;
 }
 
-/** One kind of problem the city recorded at a Repeat Offender property, with the section reference removed. */
+/** One kind of problem the city recorded at a Repeat Offender property: the title of the code section it cited, as the city writes it. */
 export interface Deficiency {
   category: Category;
   kind: string;
@@ -103,6 +103,6 @@ export interface Meta {
   duplicateCases: number;
   /** Complaints whose city outcome phrase is not on the allow-list. Never published as text. */
   unrecognizedOutcomes: number;
-  /** Deficiency rows left out: a category this site does not recognize, or no kind. */
+  /** Deficiency rows left out: a category this site does not recognize, or a kind that is missing or not a code section title. */
   skippedDeficiencies: number;
 }

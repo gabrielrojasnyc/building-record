@@ -515,6 +515,15 @@ describe("recorded problems", () => {
     );
     expect(section).toHaveTextContent("recorded in the last 3 years");
   });
+
+  it("says what a kind of problem is", async () => {
+    await renderPage();
+    expect(
+      sectionOf("Recorded problems at Repeat Offender properties"),
+    ).toHaveTextContent(
+      "A kind of problem is the title of the code section the city cited, shown as the city writes it, with the section number when the city gives one, such as Installation (§605.1).",
+    );
+  });
 });
 
 it("describes each of the four ways a building is labelled", async () => {

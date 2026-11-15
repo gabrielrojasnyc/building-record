@@ -779,7 +779,7 @@ describe("buildData", () => {
     );
   });
 
-  it("groups deficiencies by category and kind, strips the section reference, and skips unknown categories", async () => {
+  it("groups deficiencies by category and kind, keeps the section reference, and skips unknown categories", async () => {
     const meta = await buildData(out, NOW, fixtureFetch, options());
     const { deficiencies } = readJson<BuildingDetail>(
       `${out}/buildings/${BIG_PARCEL}.json`,
@@ -787,7 +787,7 @@ describe("buildData", () => {
     expect(deficiencies).toEqual([
       {
         category: "structure",
-        kind: "Roofs and Drainage",
+        kind: "Roofs and Drainage (§304.7)",
         cleared: 1,
         notCleared: 1,
       },
@@ -825,7 +825,7 @@ describe("buildData", () => {
     expect(detail.deficiencies).toEqual([
       {
         category: "structure",
-        kind: "Roofs and Drainage",
+        kind: "Roofs and Drainage (§304.7)",
         cleared: 1,
         notCleared: 1,
       },

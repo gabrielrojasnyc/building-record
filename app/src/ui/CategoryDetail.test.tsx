@@ -207,20 +207,39 @@ describe("CategoryDetail", () => {
       ]);
     });
 
-    it("shows at most eight kinds, then says how many more there are", () => {
+    it("shows eight kinds, then all of them in place on request, with focus on the list it opened", async () => {
       const many = Array.from({ length: 10 }, (_, index) => ({
         category: "structure" as const,
-        kind: `Kind ${index + 1}`,
+        kind: `Kind ${index + 1} (§30${index}.1)`,
         cleared: 20 - index,
         notCleared: 0,
       }));
       renderDetail({ deficiencies: many, isRepeatOffender: true });
       const problems = section("Problems the city recorded here");
       expect(problems.getAllByRole("listitem")).toHaveLength(8);
-      expect(problems.getByText("and 2 more kinds")).toBeVisible();
+      expect(screen.queryByText(/more kinds?$/)).toBeNull();
 
-      renderDetail({ deficiencies: many.slice(0, 9), isRepeatOffender: true });
-      expect(screen.getByText("and 1 more kind")).toBeVisible();
+      await userEvent.click(
+        problems.getByRole("button", { name: "Show all 10 kinds" }),
+      );
+      const rows = problems.getAllByRole("listitem");
+      expect(rows).toHaveLength(10);
+      expect(rows[9]).toHaveTextContent("Kind 10 (§309.1)");
+      expect(problems.getByRole("list")).toHaveFocus();
+      expect(problems.queryByRole("button", { name: /^Show all/ })).toBeNull();
+    });
+
+    it("needs no button for eight kinds or fewer", () => {
+      const eight = Array.from({ length: 8 }, (_, index) => ({
+        category: "structure" as const,
+        kind: `Kind ${index + 1}`,
+        cleared: 1,
+        notCleared: 0,
+      }));
+      renderDetail({ deficiencies: eight, isRepeatOffender: true });
+      const problems = section("Problems the city recorded here");
+      expect(problems.getAllByRole("listitem")).toHaveLength(8);
+      expect(problems.queryByRole("button")).toBeNull();
     });
 
     it("shows nothing in their place for a Repeat Offender property with none recorded in this category", () => {
