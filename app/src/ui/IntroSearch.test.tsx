@@ -64,15 +64,12 @@ afterEach(() => {
 });
 
 describe("IntroSearch", () => {
-  it("asks for an address or a building name, and is named for both", () => {
+  it("asks for an address or a building name in a placeholder short enough for the field, and is named in full", () => {
     setup();
     const input = screen.getByRole("combobox", {
       name: "Search an address or building name",
     });
-    expect(input).toHaveAttribute(
-      "placeholder",
-      "Search an address or building name",
-    );
+    expect(input).toHaveAttribute("placeholder", "Address or building name");
   });
 
   it("searches 250 ms after typing stops, not on every key", async () => {

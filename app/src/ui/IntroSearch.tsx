@@ -10,7 +10,10 @@ import { ADDRESS_SEARCH_MIN_CHARACTERS } from "@/domain/address";
 import type { Complex } from "@/domain/types";
 import { Glass } from "./Glass";
 
-const PLACEHOLDER = "Search an address or building name";
+/** What the field asks for, in full, as its accessible name. */
+const LABEL = "Search an address or building name";
+/** Shorter, so it shows whole in the desktop field as well as the phone's. */
+const PLACEHOLDER = "Address or building name";
 const NO_MATCH = "No Austin address or building name matches that.";
 const NO_COMPLEX_MATCH =
   "No building name or address starts with or contains that.";
@@ -170,7 +173,7 @@ export function IntroSearch({
             }
             aria-autocomplete="list"
             placeholder={PLACEHOLDER}
-            aria-label={PLACEHOLDER}
+            aria-label={LABEL}
             autoComplete="off"
             value={text}
             onChange={(event) => {
