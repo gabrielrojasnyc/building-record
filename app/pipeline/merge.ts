@@ -1,13 +1,18 @@
+import { OUTCOMES } from "@/domain/outcomes";
+import { PERIODS, type Period } from "@/domain/periods";
 import type {
   BuildingDetail,
+  Category,
   Complex,
   Counts,
+  Deficiency,
   Outline,
+  Tally,
 } from "@/domain/types";
 import { caseTotal } from "@/domain/query";
 import { metresBetween, type LabelSource } from "./addresses";
-import type { CaseSummary } from "./cases";
-import type { RepeatOffenderRecord } from "./context";
+import { compareComplaints, type CaseSummary } from "./cases";
+import { groupDeficiencies, type RepeatOffenderRecord } from "./context";
 import { toAcres } from "./parcels";
 
 /** Parcels with the same address whose centroids are this close to another member are one property. */
@@ -31,6 +36,8 @@ export interface LabelledParcel {
   summary: CaseSummary;
   /** An active Repeat Offender registration on this parcel. */
   offender: RepeatOffenderRecord | null;
+  /** What the city recorded at this parcel in the 3 year period. Empty unless it is on the Repeat Offender list. */
+  deficiencies: Deficiency[];
 }
 
 /** A published complex and the history file that goes with it. */
@@ -47,6 +54,30 @@ const addCounts = (a: Counts, b: Counts): Counts => ({
   landuse: a.landuse + b.landuse,
   permit: a.permit + b.permit,
 });
+
+const CATEGORIES: Category[] = ["structure", "property", "landuse", "permit"];
+
+/** Adds tallies cell by cell. Zeros stay omitted. */
+function addTallies(tallies: Tally[]): Tally {
+  const sum: Tally = {};
+  for (const tally of tallies) {
+    for (const category of CATEGORIES) {
+      for (const outcome of OUTCOMES) {
+        const count = tally[category]?.[outcome];
+        if (!count) continue;
+        const cell = (sum[category] ??= {});
+        cell[outcome] = (cell[outcome] ?? 0) + count;
+      }
+    }
+  }
+  return sum;
+}
+
+const forEachPeriod = <T>(make: (period: Period) => T): Record<Period, T> =>
+  Object.fromEntries(PERIODS.map((period) => [period, make(period)])) as Record<
+    Period,
+    T
+  >;
 
 /** Only a label read from the city's own address for this land can say two parcels are one property. */
 const namesTheLand = (parcel: LabelledParcel) =>
@@ -151,6 +182,16 @@ function combine(group: LabelledParcel[]): Property {
       lastCases.length === 0
         ? null
         : lastCases.reduce((newest, date) => (date > newest ? date : newest)),
+    tally: forEachPeriod((period) =>
+      addTallies(summaries.map(({ tally }) => tally[period])),
+    ),
+    duplicates: forEachPeriod((period) =>
+      summaries.reduce((sum, { duplicates }) => sum + duplicates[period], 0),
+    ),
+    violationsOpen: summaries.reduce(
+      (sum, { violationsOpen }) => sum + violationsOpen,
+      0,
+    ),
     repeatOffender: offender
       ? {
           name: offender.name,
@@ -170,6 +211,12 @@ function combine(group: LabelledParcel[]): Property {
         .flatMap(({ detail }) => detail.latest)
         .sort(newestFirst)
         .slice(0, LATEST_LIMIT),
+      complaints: summaries
+        .flatMap(({ detail }) => detail.complaints)
+        .sort(compareComplaints),
+      deficiencies: groupDeficiencies(
+        members.flatMap(({ deficiencies }) => deficiencies),
+      ),
       outline: members.flatMap(({ outline }) => outline),
       bbox: unionBox(members.map(({ bbox }) => bbox)),
     },

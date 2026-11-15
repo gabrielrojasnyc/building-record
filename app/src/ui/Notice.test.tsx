@@ -14,6 +14,10 @@ const meta: Meta = {
   skippedParcelRows: 0,
   namedComplexes: 0,
   namesAsOf: null,
+  periodStarts: { m12: "2025-11-14", y2: "2024-11-14", y3: "2023-11-14" },
+  duplicateCases: 0,
+  unrecognizedOutcomes: 0,
+  skippedDeficiencies: 0,
 };
 
 it("says the site is not official, gives the pull date and links to the method page", () => {

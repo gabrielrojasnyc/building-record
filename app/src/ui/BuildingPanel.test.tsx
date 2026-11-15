@@ -28,6 +28,9 @@ const busy: Complex = {
   cases12: counts({ structure: 11, landuse: 1 }),
   cases: counts({ structure: 254, property: 24, landuse: 5, permit: 1 }),
   open: 1,
+  tally: { m12: {}, y2: {}, y3: {} },
+  duplicates: { m12: 0, y2: 0, y3: 0 },
+  violationsOpen: 0,
   lastCase: "2026-05-20",
   repeatOffender: {
     name: "Mia Riverside",
@@ -49,6 +52,8 @@ const busyDetail: BuildingDetail = {
     { opened: "2026-05-20", category: "structure", status: "Active" },
     { opened: "2026-04-28", category: "landuse", status: "Closed" },
   ],
+  complaints: [],
+  deficiencies: [],
   outline: [],
   bbox: [-97.7308, 30.2361, -97.7277, 30.2408],
 };
@@ -64,6 +69,9 @@ const clean: Complex = {
   cases12: counts(),
   cases: counts(),
   open: 0,
+  tally: { m12: {}, y2: {}, y3: {} },
+  duplicates: { m12: 0, y2: 0, y3: 0 },
+  violationsOpen: 0,
   lastCase: null,
   repeatOffender: null,
 };
@@ -75,6 +83,8 @@ const cleanDetail: BuildingDetail = {
     { month: "2026-11", count: 0 },
   ],
   latest: [],
+  complaints: [],
+  deficiencies: [],
   outline: [],
   bbox: [-97.79, 30.456, -97.787, 30.458],
 };

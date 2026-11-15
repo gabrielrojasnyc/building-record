@@ -26,6 +26,9 @@ const burton: Complex = {
   cases12: counts({ structure: 100, property: 50 }),
   cases: counts({ structure: 200, property: 84 }),
   open: 3,
+  tally: { m12: {}, y2: {}, y3: {} },
+  duplicates: { m12: 0, y2: 0, y3: 0 },
+  violationsOpen: 0,
   lastCase: "2026-10-01",
   repeatOffender: {
     name: "Burton Holdings",

@@ -3,10 +3,11 @@ import { dirname, join } from 'node:path';
 import type { Complex, Meta } from '@/domain/types';
 import { formatRegisteredAddress } from '@/domain/address';
 import { HISTORY_START, austinCalendarDate } from '@/domain/history';
+import { periodStarts } from '@/domain/periods';
 import { caseTotal } from '@/domain/query';
 import { buildAddressResolver, loadAddressPoints } from './addresses';
 import { emptyCaseSummary, loadCases } from './cases';
-import { loadRepeatOffenders } from './context';
+import { loadDeficiencies, loadRepeatOffenders } from './context';
 import { assertUniqueAddresses, combineParcels, type LabelledParcel } from './merge';
 import { NAMES_SNAPSHOT_PATH, chooseName, readNamesSnapshot } from './names';
 import { loadApartmentParcels, toOutline } from './parcels';
@@ -16,15 +17,20 @@ export const MIN_EXPECTED_COMPLEXES = 2000; // live: about 2,400 once parcels sh
 export const MIN_EXPECTED_CASES = 50_000; // live: 82,384
 export const MIN_EXPECTED_ADDRESS_POINTS = 300_000; // live: 441,043
 export const MIN_EXPECTED_REPEAT_OFFENDER_ROWS = 40; // live: 80
+export const MIN_EXPECTED_DEFICIENCY_ROWS = 2_000; // live: 5,376 in the last three years
 /** More unrecognized descriptions than this share of all cases read means the city changed its categories. */
 export const MAX_UNCATEGORIZED_SHARE = 0.01;
+/** More outcome phrases outside the allow-list than this share of all cases read means the city changed its wording. */
+export const MAX_UNRECOGNIZED_OUTCOME_SHARE = 0.01;
 
 export interface BuildOptions {
   minComplexes?: number;
   minCases?: number;
   minAddressPoints?: number;
   minRepeatOffenderRows?: number;
+  minDeficiencyRows?: number;
   maxUncategorizedShare?: number;
+  maxUnrecognizedOutcomeShare?: number;
   /** The committed OpenStreetMap names file. Missing or unreadable means no OpenStreetMap names. */
   namesSnapshotPath?: string;
 }
@@ -54,21 +60,29 @@ async function assemble(
   floors: Floors,
   namesSnapshotPath: string,
 ): Promise<{ files: Files; meta: Meta }> {
-  const [landUse, addressPoints, caseIndex, repeatOffenders, namesSnapshot] = await Promise.all([
+  const [landUse, addressPoints, caseIndex, repeatOffenders, deficiencies, namesSnapshot] = await Promise.all([
     loadApartmentParcels(fetchImpl),
     loadAddressPoints(fetchImpl),
     loadCases(pulledAt, fetchImpl),
     loadRepeatOffenders(fetchImpl),
+    loadDeficiencies(pulledAt, fetchImpl),
     readNamesSnapshot(namesSnapshotPath),
   ]);
 
   requireAtLeast('address points', addressPoints.length, floors.minAddressPoints);
   requireAtLeast('code cases', caseIndex.totalCases, floors.minCases);
   requireAtLeast('Repeat Offender rows', repeatOffenders.rowsRead, floors.minRepeatOffenderRows);
+  requireAtLeast('Repeat Offender deficiency rows', deficiencies.rowsRead, floors.minDeficiencyRows);
   const uncategorizedShare = caseIndex.totalCases === 0 ? 0 : caseIndex.uncategorizedCases / caseIndex.totalCases;
   if (uncategorizedShare > floors.maxUncategorizedShare) {
     throw new Error(
       `${caseIndex.uncategorizedCases} of ${caseIndex.totalCases} cases (${(uncategorizedShare * 100).toFixed(1)}%) carry a description this site does not recognize, more than the ${floors.maxUncategorizedShare * 100}% allowed. Refusing to write.`,
+    );
+  }
+  const unrecognizedShare = caseIndex.totalCases === 0 ? 0 : caseIndex.unrecognizedOutcomes / caseIndex.totalCases;
+  if (unrecognizedShare > floors.maxUnrecognizedOutcomeShare) {
+    throw new Error(
+      `${caseIndex.unrecognizedOutcomes} of ${caseIndex.totalCases} cases (${(unrecognizedShare * 100).toFixed(1)}%) carry an outcome phrase this site does not recognize, more than the ${floors.maxUnrecognizedOutcomeShare * 100}% allowed. Refusing to write.`,
     );
   }
   const { offenders } = repeatOffenders;
@@ -98,6 +112,7 @@ async function assemble(
       outline: toOutline(parcel.polygon.coordinates),
       summary: caseIndex.byParcel.get(parcel.id) ?? emptyCaseSummary(parcel.id, pulledAt),
       offender,
+      deficiencies: deficiencies.byParcel.get(parcel.id) ?? [],
     };
   });
 
@@ -124,6 +139,10 @@ async function assemble(
     skippedParcelRows,
     namedComplexes: complexes.filter(({ name }) => name !== null).length,
     namesAsOf: namesSnapshot?.fetchedAt ?? null,
+    periodStarts: periodStarts(austinCalendarDate(pulledAt)),
+    duplicateCases: complexes.reduce((sum, c) => sum + c.duplicates.y3, 0),
+    unrecognizedOutcomes: caseIndex.unrecognizedOutcomes,
+    skippedDeficiencies: deficiencies.skipped,
   };
   files.set('complexes.json', JSON.stringify(complexes));
   files.set('meta.json', JSON.stringify(meta));
@@ -173,11 +192,21 @@ export async function buildData(
     minCases = MIN_EXPECTED_CASES,
     minAddressPoints = MIN_EXPECTED_ADDRESS_POINTS,
     minRepeatOffenderRows = MIN_EXPECTED_REPEAT_OFFENDER_ROWS,
+    minDeficiencyRows = MIN_EXPECTED_DEFICIENCY_ROWS,
     maxUncategorizedShare = MAX_UNCATEGORIZED_SHARE,
+    maxUnrecognizedOutcomeShare = MAX_UNRECOGNIZED_OUTCOME_SHARE,
     namesSnapshotPath = NAMES_SNAPSHOT_PATH,
   }: BuildOptions = {},
 ): Promise<Meta> {
-  const floors = { minComplexes, minCases, minAddressPoints, minRepeatOffenderRows, maxUncategorizedShare };
+  const floors = {
+    minComplexes,
+    minCases,
+    minAddressPoints,
+    minRepeatOffenderRows,
+    minDeficiencyRows,
+    maxUncategorizedShare,
+    maxUnrecognizedOutcomeShare,
+  };
   const { files, meta } = await assemble(pulledAt, fetchImpl, floors, namesSnapshotPath);
 
   await mkdir(dirname(outDir), { recursive: true });
