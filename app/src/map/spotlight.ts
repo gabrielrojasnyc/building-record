@@ -3,6 +3,7 @@ import type {
   GeoJSONSource,
   LayerSpecification,
   Map as MapLibreMap,
+  PaddingOptions,
 } from "maplibre-gl";
 import { FALLBACK_HEIGHT_M, type BuildingShapes } from "@/city/footprints";
 import { isInsideOutline, outlineBbox, ringCenter } from "@/domain/outline";
@@ -142,11 +143,21 @@ export interface SpotlightDependencies {
 export interface Spotlight {
   /** Brings the target forward, replacing any target already showing. */
   show(target: SpotlightTarget): void;
-  /** Frames the target again under the map's current padding, then turns as on entering. Does nothing when none is showing. */
-  reframe(): void;
   /**
-   * Returns the city to how it was before the first target, and the camera too unless `returnCamera` is false,
-   * for when the screen is moving the camera somewhere else. Does nothing when none is showing.
+   * Applies the screen's padding, as the spotlight's own movement so it is not taken for someone moving the
+   * camera, and frames a target that is showing inside it again, then turns as on entering. A resize of the map
+   * frames it again by itself.
+   */
+  setPadding(padding: PaddingOptions): void;
+  /**
+   * The bearing the camera had before the first target, while one is showing or the camera is still easing
+   * back, so a fly that replaces the spotlight can undo the turn.
+   */
+  bearingBefore(): number | null;
+  /**
+   * Returns the city to how it was before the first target, and eases the camera back too unless `returnCamera`
+   * is false, for when the screen is moving the camera somewhere else. A target shown before the camera is back
+   * keeps the same camera to return to. Does nothing when none is showing.
    */
   clear(options?: { returnCamera?: boolean }): void;
   /** Stops every pending step without touching the map, for a map about to be removed. */
@@ -160,9 +171,14 @@ interface Camera {
   bearing: number;
 }
 
+interface Size {
+  width: number;
+  height: number;
+}
+
 /**
- * Every camera call the spotlight makes carries this in its event data, so its own movements can be
- * told from the person's or the screen's, and from those of a target it has since replaced.
+ * Every camera call the spotlight makes carries this in its event data: a number for that movement, so its own
+ * movements can be told from the person's or the screen's, and its latest from one it has since replaced.
  */
 interface SpotlightEventData {
   spotlight: number;
@@ -191,7 +207,10 @@ export function createSpotlight(
   /** Counts targets; a step that finds a different number belongs to a target that is gone. */
   let run = 0;
   let current: SpotlightTarget | null = null;
+  /** Where the camera was before the first target: kept while one is showing, and after it until the camera is back there. */
   let cameraBefore: Camera | null = null;
+  /** The movement that eases the camera back to `cameraBefore` after a clear, while it runs. */
+  let easeBack: number | null = null;
   let label: { remove(): void } | null = null;
   let motion: Motion = "still";
   let growthFrame: number | null = null;
@@ -200,11 +219,30 @@ export function createSpotlight(
   let arrived = false;
   /** Set while the city has no shapes for the target: draws the tile buildings, which load only once the camera is there. */
   let drawTileShapes: (() => void) | null = null;
+  let latestMovement = 0;
+  /** The canvas size the target was last framed on. */
+  let framedOn: Size | null = null;
 
-  const ours = (): SpotlightEventData => ({ spotlight: run });
+  const ours = (): SpotlightEventData => ({ spotlight: ++latestMovement });
   const isOwn = (event: object) => "spotlight" in event;
-  const isCurrent = (event: object) =>
-    (event as Partial<SpotlightEventData>).spotlight === run;
+  const isLatest = (event: object) =>
+    (event as Partial<SpotlightEventData>).spotlight === latestMovement;
+
+  const canvasSize = (): Size => {
+    const { clientWidth: width, clientHeight: height } = map.getCanvas();
+    return { width, height };
+  };
+  const sameSize = (a: Size, b: Size) =>
+    a.width === b.width && a.height === b.height;
+
+  /**
+   * MapLibre sizes its canvas to the container only from a throttled ResizeObserver, which runs after the page
+   * has laid out the resized window, and after the screen has already handed over padding for the new size.
+   */
+  const catchUpWithResize = () => {
+    const { clientWidth: width, clientHeight: height } = map.getContainer();
+    if (!sameSize({ width, height }, canvasSize())) map.resize(ours());
+  };
 
   const setData = (source: string, data: GeoJSON.GeoJSON) =>
     map.getSource<GeoJSONSource>(source)?.setData(data);
@@ -248,10 +286,20 @@ export function createSpotlight(
    * announces itself in between, and leaves the camera to whoever started it.
    */
   const onMoveEnd = (event: object) => {
-    if (!isCurrent(event)) return;
+    if (!isLatest(event)) return;
+    // The camera is back. An ease back that something of the spotlight's own interrupted, such as the padding
+    // of the next pick, is not the latest movement and keeps the camera to return to.
+    if ((event as Partial<SpotlightEventData>).spotlight === easeBack) {
+      forgetCameraBefore();
+    }
     arrived = true;
     if (motion === "still" || turnFrame !== null) return;
     turnFrame = deps.requestFrame(turnOnce);
+  };
+
+  const forgetCameraBefore = () => {
+    cameraBefore = null;
+    easeBack = null;
   };
 
   /**
@@ -272,8 +320,11 @@ export function createSpotlight(
     turnFrame = null;
   };
 
+  /** Someone else has the camera: the turn stops, and once the spotlight has gone, so does the way back. */
   const onMoveStart = (event: object) => {
-    if (!isOwn(event)) holdStill();
+    if (isOwn(event)) return;
+    holdStill();
+    if (!current) forgetCameraBefore();
   };
 
   const onInput = () => {
@@ -282,10 +333,31 @@ export function createSpotlight(
     if (wasTurning) map.stop();
   };
 
+  /** A window resize changes what fits, with or without new padding. */
+  const onResize = (event: object) => {
+    if (!current || isOwn(event)) return;
+    if (framedOn && sameSize(framedOn, canvasSize())) return;
+    frameAfresh(current);
+  };
+
   map.on("moveend", onMoveEnd);
   map.on("movestart", onMoveStart);
+  map.on("resize", onResize);
   map.on("render", drawTileShapesOnceLoaded);
   for (const input of INPUTS_THAT_TAKE_OVER) map.on(input, onInput);
+
+  /** Frames the target on the canvas as it is now, flying in (or jumping, under reduced motion) and turning once there. */
+  const frameAfresh = (target: SpotlightTarget): boolean => {
+    // Still first, so the end of any movement this stops starts no turn.
+    holdStill();
+    catchUpWithResize();
+    const reducedMotion = deps.prefersReducedMotion();
+    motion = reducedMotion ? "still" : "flying";
+    arrived = false;
+    framedOn = canvasSize();
+    frame(target, reducedMotion);
+    return reducedMotion;
+  };
 
   const frame = (target: SpotlightTarget, reducedMotion: boolean) => {
     const [west, south, east, north] = outlineBbox(target.outline);
@@ -356,21 +428,20 @@ export function createSpotlight(
     show(target) {
       run += 1;
       const mine = run;
-      const reducedMotion = deps.prefersReducedMotion();
       takeDown();
       if (!current) {
+        // While the camera is still easing back from the last target, it is not where the person was.
         const { lng, lat } = map.getCenter();
-        cameraBefore = {
+        cameraBefore ??= {
           center: [lng, lat],
           zoom: map.getZoom(),
           pitch: map.getPitch(),
           bearing: map.getBearing(),
         };
+        easeBack = null;
         showCity(false);
       }
       current = target;
-      motion = reducedMotion ? "still" : "flying";
-      arrived = false;
 
       setData(SHAPES_SOURCE, NO_SHAPES);
       setHeight(0);
@@ -380,17 +451,17 @@ export function createSpotlight(
         geometry: { type: "MultiPolygon", coordinates: target.outline },
       });
       label = deps.placeLabel(target.title, [target.lon, target.lat]);
-      frame(target, reducedMotion);
+      const reducedMotion = frameAfresh(target);
       void drawShapes(target, mine, reducedMotion);
     },
 
-    reframe() {
-      if (!current) return;
-      const reducedMotion = deps.prefersReducedMotion();
-      holdStill();
-      motion = reducedMotion ? "still" : "flying";
-      arrived = false;
-      frame(current, reducedMotion);
+    setPadding(padding) {
+      map.setPadding(padding, ours());
+      if (current) frameAfresh(current);
+    },
+
+    bearingBefore() {
+      return cameraBefore?.bearing ?? null;
     },
 
     clear({ returnCamera = true } = {}) {
@@ -402,11 +473,11 @@ export function createSpotlight(
       setData(PARCEL_SOURCE, NO_SHAPES);
       setData(SHAPES_SOURCE, NO_SHAPES);
       showCity(true);
-      if (cameraBefore && returnCamera) {
-        if (deps.prefersReducedMotion()) map.jumpTo(cameraBefore, ours());
-        else map.easeTo({ ...cameraBefore, duration: RESTORE_MS }, ours());
-      }
-      cameraBefore = null;
+      if (!cameraBefore || !returnCamera) return forgetCameraBefore();
+      const back = ours();
+      easeBack = back.spotlight;
+      if (deps.prefersReducedMotion()) map.jumpTo(cameraBefore, back);
+      else map.easeTo({ ...cameraBefore, duration: RESTORE_MS }, back);
     },
 
     dispose() {
@@ -416,6 +487,7 @@ export function createSpotlight(
       takeDown();
       map.off("moveend", onMoveEnd);
       map.off("movestart", onMoveStart);
+      map.off("resize", onResize);
       map.off("render", drawTileShapesOnceLoaded);
       for (const input of INPUTS_THAT_TAKE_OVER) map.off(input, onInput);
     },

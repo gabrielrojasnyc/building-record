@@ -248,8 +248,12 @@ function headerLine(complex: Complex): string {
 
 type PhotoStatus = "loading" | "loaded" | "failed";
 
+/** Lifts ice text off a photo, and off the steel ground while there is none. */
+const PHOTO_TEXT_SHADOW =
+  "[text-shadow:0_1px_2px_color-mix(in_srgb,var(--color-navy)_70%,transparent)]";
+
 /**
- * The building's title over its aerial photo. The fog gradient and the title stand from the first
+ * The building's title over its aerial photo. A steel ground and the title stand from the first
  * moment; USGS can take seconds, so the photo fades in over them once it has loaded, and a photo
  * that fails is dropped, never shown as a broken image.
  */
@@ -278,7 +282,7 @@ function Header(props: {
   );
 
   return (
-    <div className="relative h-[204px] overflow-hidden rounded-t-[27px] bg-linear-to-b/srgb from-ice/80 to-mist/75 phone:h-[170px]">
+    <div className="relative h-[204px] overflow-hidden rounded-t-[27px] bg-linear-to-b/srgb from-steel to-slate phone:h-[170px]">
       {src !== null && status !== "failed" && (
         // A plain img: the photo comes straight from USGS in the browser, never through this site's server.
         // eslint-disable-next-line @next/next/no-img-element
@@ -301,14 +305,17 @@ function Header(props: {
         <Heading
           id={props.headingId}
           title={title}
-          className="line-clamp-2 font-display text-[30px] leading-[1.02] font-normal text-balance"
+          className={`line-clamp-2 font-display text-[30px] leading-[1.02] font-normal text-balance ${PHOTO_TEXT_SHADOW}`}
         >
           {title}
         </Heading>
         <p className="mt-1 text-[13px] opacity-88">{headerLine(complex)}</p>
       </div>
       {status === "loaded" && (
-        <span className="pointer-events-none absolute top-[58px] right-3.5 z-1 text-[10.5px] text-ice opacity-80 [text-shadow:0_1px_2px_color-mix(in_srgb,var(--color-navy)_70%,transparent)]">
+        // Under the close button over the map; in the corner on the building's own page, which has none.
+        <span
+          className={`pointer-events-none absolute ${props.onClose ? "top-[58px]" : "top-3.5"} right-3.5 z-1 text-[10.5px] text-ice opacity-80 ${PHOTO_TEXT_SHADOW}`}
+        >
           Aerial photo: USGS
         </span>
       )}

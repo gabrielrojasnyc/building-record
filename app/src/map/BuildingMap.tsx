@@ -340,19 +340,27 @@ export function BuildingMap(props: BuildingMapProps) {
     const map = mapRef.current;
     if (!ready || !map) return;
     const padding = { top, right, bottom, left };
-    map.setPadding(padding);
+    // Setting the padding stops any camera movement, so the spotlight sets it and frames its model again.
+    const spotlight = spotlightRef.current;
+    if (spotlight) spotlight.setPadding(padding);
+    else map.setPadding(padding);
     latest.current.onViewAreaChange(viewAreaOf(map, padding));
-    // Setting the padding stops any camera movement, the spotlight's flight or turn among them.
-    spotlightRef.current?.reframe();
   }, [ready, top, right, bottom, left]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map || !flyTo) return;
+    // A fly in the same update as the spotlight leaving replaces it (this runs before it is cleared), so it also undoes the turn.
+    const bearingBeforeSpotlight = latest.current.spotlight
+      ? null
+      : (spotlightRef.current?.bearingBefore() ?? null);
     const target = {
       center: [flyTo.lon, flyTo.lat] as [number, number],
       zoom: flyTo.zoom,
       pitch: FLY_PITCH,
+      ...(bearingBeforeSpotlight === null
+        ? {}
+        : { bearing: bearingBeforeSpotlight }),
     };
     if (prefersReducedMotion()) {
       map.jumpTo(target);

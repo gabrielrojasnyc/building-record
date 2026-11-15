@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -56,13 +57,17 @@ const PHONE_QUERY = "(max-width: 760px)";
 const DESKTOP_PADDING: CameraPadding = { top: 80, right: 0, bottom: 261, left: 0 };
 const PHONE_PADDING: CameraPadding = { top: 170, right: 0, bottom: 279, left: 0 };
 
-/* While a building stands forward, the camera frames it clear of the record panel on the right, or above the phone's record sheet. */
+/*
+  While a building stands forward, the camera frames it clear of the record panel on the right, or
+  above the phone's record sheet. On a phone the title block and filters step aside meanwhile, so the
+  frame reaches near the top of the screen.
+*/
 const DESKTOP_SPOTLIGHT_PADDING: CameraPadding = { top: 110, right: 440, bottom: 268, left: 70 };
 const PHONE_SHEET_SHARE = 0.6;
 
 function phoneSpotlightPadding(viewportHeight: number): CameraPadding {
   return {
-    top: 190,
+    top: 90,
     right: 30,
     bottom: Math.round(viewportHeight * PHONE_SHEET_SHARE) + 20,
     left: 30,
@@ -74,6 +79,23 @@ interface FlyTarget {
   lat: number;
   zoom: number;
 }
+
+/**
+ * The tray's hold: the ground it keeps counting while a building is open and until the camera is back.
+ * `area` is null when the building was picked before the map first reported, and that first report fills it.
+ */
+interface Hold {
+  area: ViewArea | null;
+}
+
+/** The camera eases back for about a second after a building closes; past this the tray stops waiting for it. */
+const HOLD_AFTER_CLOSE_MS = 1500;
+
+/* On a phone the title block and filters step out of the way while a building is open, fading under motion-safe only. */
+const CONTROLS_PRESENT = "motion-safe:*:transition-opacity motion-safe:*:duration-250";
+// Visibility switches when the fade ends, so the controls stay seen while they fade and leave the tab order and the accessibility tree with it.
+const CONTROLS_ASIDE =
+  "*:invisible *:opacity-0 motion-safe:*:transition-[opacity,visibility] motion-safe:*:duration-250";
 
 /** About a centimetre: two reports this close are the same camera. */
 const SAME_GROUND_DEGREES = 1e-7;
@@ -167,11 +189,8 @@ export function Finder({
   const [viewArea, setViewArea] = useState<ViewArea | null>(null);
   const [mapUnavailable, setMapUnavailable] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  /**
-   * The ground the tray was counting when a building was picked. The tray keeps counting it while the
-   * building is open and until the camera is back from it, so a moving camera never reshuffles the cards.
-   */
-  const [heldArea, setHeldArea] = useState<ViewArea | null>(null);
+  /** So a moving camera never reshuffles the cards while a building is open. */
+  const [hold, setHold] = useState<Hold | null>(null);
   const [stage, setStage] = useState<SpotlightTarget | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [flyTo, setFlyTo] = useState<FlyTarget | null>(null);
@@ -181,7 +200,7 @@ export function Finder({
     [complexes],
   );
 
-  const countedArea = heldArea ?? viewArea;
+  const countedArea = hold ? hold.area : viewArea;
   // Citywide until the map first reports where it is looking, and for good if it never can.
   const trayArea = mapUnavailable ? CITYWIDE : (countedArea ?? CITYWIDE);
   const inView = useMemo(
@@ -189,8 +208,13 @@ export function Finder({
     [complexes, trayArea, view],
   );
 
+  // One value for the map, its padding and the fog, so a model staged before the map gave up leaves nothing behind.
+  const spotlight = mapUnavailable ? null : stage;
+  // On a phone, while a building is open on the map, the title block and filters step aside for it.
+  const controlsAside = isPhone && selectedId !== null && !mapUnavailable;
+
   // The model and its padding change in the same render, so the map frames the model inside the padding it is shown with.
-  const padding = stage
+  const padding = spotlight
     ? isPhone
       ? phoneSpotlightPadding(viewportHeight)
       : DESKTOP_SPOTLIGHT_PADDING
@@ -228,42 +252,63 @@ export function Finder({
 
   const reportViewArea = (area: ViewArea) => {
     setViewArea(area);
-    // After a building closes the camera eases back to where it was, and the tray lets go once it is there.
-    if (selectedId === null && heldArea !== null && sameGround(area, heldArea)) {
-      setHeldArea(null);
-    }
+    setHold((current) => {
+      if (current === null) return null;
+      // A pick made before the map first reported holds the first ground it reports.
+      if (current.area === null) return selectedId === null ? null : { area };
+      // After a building closes the camera eases back to where it was, and the tray lets go once it is there.
+      if (selectedId === null && sameGround(area, current.area)) return null;
+      return current;
+    });
   };
 
+  // The camera may never come back to the same ground (a rotation, a resized window), so the hold ends soon after closing regardless.
+  useEffect(() => {
+    if (selectedId !== null || hold === null) return;
+    const timer = setTimeout(() => setHold(null), HOLD_AFTER_CLOSE_MS);
+    return () => clearTimeout(timer);
+  }, [selectedId, hold]);
+
   // Someone moving the map themselves is not waiting for the camera to come back.
-  const releaseHeldArea = () => {
-    if (selectedId === null) setHeldArea(null);
+  const releaseHold = () => {
+    if (selectedId === null) setHold(null);
   };
 
   const selected = selectedId === null ? undefined : byId.get(selectedId);
-  // Closing the panel hands focus back to the card for the building that was open.
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const closedId = useRef<string | null>(null);
+
   const clearSelection = useCallback(() => {
-    if (selectedId !== null) {
-      document
-        .querySelector<HTMLElement>(`[data-testid="card"][data-complex-id="${CSS.escape(selectedId)}"]`)
-        ?.focus();
-    }
+    closedId.current = selectedId;
     setSelectedId(null);
     setStage(null);
     // With no model the camera has nowhere to come back from, so the tray follows the map at once.
-    if (stage === null) setHeldArea(null);
-  }, [selectedId, stage]);
+    if (spotlight === null) setHold(null);
+  }, [selectedId, spotlight]);
+
+  // Closing hands focus back to the card for the building that was open, or to the search when the tray has no card for it.
+  // After the render, so on a phone the search is back and can take it.
+  useEffect(() => {
+    const id = closedId.current;
+    if (id === null || selectedId !== null) return;
+    closedId.current = null;
+    const card = document.querySelector<HTMLElement>(
+      `[data-testid="card"][data-complex-id="${CSS.escape(id)}"]`,
+    );
+    (card ?? controlsRef.current?.querySelector<HTMLElement>('[role="combobox"]'))?.focus();
+  }, [selectedId]);
 
   const select = (id: string) => {
     if (!byId.has(id)) return;
     setSelectedId(id);
-    setHeldArea((held) => held ?? viewArea);
+    setHold((current) => current ?? { area: viewArea });
   };
 
   // Asked for in the same update as the model leaves, so the map hands the camera to the fly instead of easing back.
   const leaveFor = (target: FlyTarget) => {
     setSelectedId(null);
     setStage(null);
-    setHeldArea(null);
+    setHold(null);
     setFlyTo(target);
   };
 
@@ -280,17 +325,24 @@ export function Finder({
     <main>
       <div
         aria-hidden
-        className={`fog pointer-events-none fixed inset-0 z-1 ${stage ? "fog-spotlight" : ""}`}
+        className={`fog pointer-events-none fixed inset-0 z-1 ${spotlight ? "fog-spotlight" : ""}`}
       />
 
-      <IntroSearch complexes={complexes} onChoose={goToAddress} complexesOnly={mapUnavailable} />
-      <Filters view={view} onChange={changeView} />
+      {/* No position, opacity or z-index of its own, so the two keep their places above the fog and the map. */}
+      <div
+        ref={controlsRef}
+        inert={controlsAside}
+        className={controlsAside ? CONTROLS_ASIDE : CONTROLS_PRESENT}
+      >
+        <IntroSearch complexes={complexes} onChoose={goToAddress} complexesOnly={mapUnavailable} />
+        <Filters view={view} onChange={changeView} />
+      </div>
       {/* After the title block and filters and before the tray, so Tab reaches the map between them. It is positioned, so its place in the markup moves nothing. */}
       <div
         className="fixed inset-0"
-        onPointerDownCapture={releaseHeldArea}
-        onWheelCapture={releaseHeldArea}
-        onKeyDownCapture={releaseHeldArea}
+        onPointerDownCapture={releaseHold}
+        onWheelCapture={releaseHold}
+        onKeyDownCapture={releaseHold}
       >
         <BuildingMap
           complexes={complexes}
@@ -299,7 +351,7 @@ export function Finder({
           hoveredId={hoveredId}
           flyTo={flyTo}
           padding={padding}
-          spotlight={stage}
+          spotlight={spotlight}
           onViewAreaChange={reportViewArea}
           onSelect={select}
           onHover={setHoveredId}

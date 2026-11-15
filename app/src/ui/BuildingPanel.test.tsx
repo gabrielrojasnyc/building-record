@@ -7,7 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { aerialPhotoUrl } from "@/city/aerialPhoto";
 import { forgetBuildingDetails } from "@/city/buildingDetail";
 import { DEFAULT_VIEW, type View } from "@/domain/query";
@@ -16,6 +16,10 @@ import { BuildingPanel } from "./BuildingPanel";
 
 // The building file is shared and remembered, so each test starts from an empty cache.
 beforeEach(forgetBuildingDetails);
+// Spies on prototypes and the console are put back even when an assertion fails, so nothing leaks into later tests.
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const PERIOD_STARTS: Meta["periodStarts"] = {
   m12: "2025-11-14",
@@ -343,9 +347,9 @@ describe("the header", () => {
   });
 
   it("takes a photo that finished before the page could listen for it", () => {
-    const complete = vi
-      .spyOn(HTMLImageElement.prototype, "complete", "get")
-      .mockReturnValue(true);
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(
+      true,
+    );
     const width = vi
       .spyOn(HTMLImageElement.prototype, "naturalWidth", "get")
       .mockReturnValue(744);
@@ -358,8 +362,6 @@ describe("the header", () => {
     width.mockReturnValue(0);
     renderPage(named, busyDetail);
     expect(screen.queryByRole("img", { name: /^Aerial photo/ })).toBeNull();
-    complete.mockRestore();
-    width.mockRestore();
   });
 });
 
@@ -505,7 +507,6 @@ it("lists 311 rows that share a label, such as two Unspecified types, without mi
     "Unspecified2",
   ]);
   expect(keyWarnings).not.toHaveBeenCalled();
-  keyWarnings.mockRestore();
 });
 
 it("says when the city has no 311 requests in the area", async () => {
