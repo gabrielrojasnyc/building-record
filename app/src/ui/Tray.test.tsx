@@ -535,3 +535,17 @@ describe("as a citywide list, for a device with no map", () => {
     ).toBeVisible();
   });
 });
+
+it("separates thousands in a card's figure and outcome line, as the record panel does", () => {
+  renderTray([
+    complex("1", {
+      address: "1 Busy Ln",
+      tally: everyPeriod({ structure: { violation: 1200, none: 34 } }),
+    }),
+  ]);
+  expect(card("1 Busy Ln").getByText("1,234")).toBeVisible();
+  expect(card("1 Busy Ln").getByText("1,200 confirmed, 34 none found")).toHaveAttribute(
+    "title",
+    "1,200 violations confirmed, 34 no violation found",
+  );
+});

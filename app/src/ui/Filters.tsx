@@ -1,24 +1,28 @@
 import type { ReactNode } from "react";
+import { CATEGORY_LABEL, CATEGORY_MEANING } from "@/domain/labels";
 import { PERIODS, PERIOD_LABEL } from "@/domain/periods";
 import type { CategoryFilter, View } from "@/domain/query";
 import { Glass } from "./Glass";
 
+/** One word each, so the bar fits beside the title block on a 1280 px screen; the title gives the full name and what it covers. */
 const CATEGORIES: { value: CategoryFilter; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "structure", label: "Structure" },
-  { value: "property", label: "Property" },
-  { value: "landuse", label: "Land use" },
+  { value: "structure", label: "Building" },
+  { value: "property", label: "Grounds" },
+  { value: "landuse", label: "Zoning" },
   { value: "permit", label: "Permits" },
 ];
 
 function FilterButton(props: {
   pressed: boolean;
   onClick(): void;
+  title?: string;
   children: ReactNode;
 }) {
   return (
     <button
       type="button"
+      title={props.title}
       aria-pressed={props.pressed}
       onClick={props.onClick}
       className="flex h-[34px] cursor-pointer items-center gap-2 rounded-full px-3.5 text-sm font-normal whitespace-nowrap text-slate motion-safe:transition-[background-color,color] motion-safe:duration-200 not-aria-pressed:hover:bg-white/40 aria-pressed:bg-deep aria-pressed:text-ice aria-pressed:inset-shadow-2xs aria-pressed:inset-shadow-white/18"
@@ -63,6 +67,7 @@ export function Filters({
             key={value}
             pressed={view.category === value}
             onClick={() => onChange({ ...view, category: value })}
+            title={value === "all" ? undefined : `${CATEGORY_LABEL[value]}: ${CATEGORY_MEANING[value]}`}
           >
             {label}
           </FilterButton>

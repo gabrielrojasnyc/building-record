@@ -503,9 +503,9 @@ test.describe("when the map cannot start", () => {
     ).toBeVisible();
     await expect(cards(page)).toHaveCount(40);
 
-    await page.getByRole("button", { name: "Property", exact: true }).click();
+    await page.getByRole("button", { name: "Grounds", exact: true }).click();
     await expect(
-      page.getByRole("button", { name: "Property", exact: true }),
+      page.getByRole("button", { name: "Grounds", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
     await expect(cards(page).first()).toBeVisible();
   });

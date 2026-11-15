@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from "react";
-import { formatAcres } from "@/domain/format";
+import { formatAcres, formatCount } from "@/domain/format";
 import { CATEGORY_LABEL, OUTCOME_CARD_PHRASE, titleOf } from "@/domain/labels";
 import { OUTCOMES, OUTCOME_LABEL, type Outcome } from "@/domain/outcomes";
 import { countFor, outcomeSplit, viewToSearchParams, type View } from "@/domain/query";
@@ -57,8 +57,8 @@ function outcomeLine(split: Record<Outcome, number>): { text: string; title: str
     .sort((a, b) => split[b] - split[a] || OUTCOMES.indexOf(a) - OUTCOMES.indexOf(b))
     .slice(0, 2);
   return {
-    text: largest.map((outcome) => `${split[outcome]} ${OUTCOME_CARD_PHRASE[outcome]}`).join(", "),
-    title: largest.map((outcome) => `${split[outcome]} ${outcomeInFull(outcome, split[outcome])}`).join(", "),
+    text: largest.map((outcome) => `${formatCount(split[outcome])} ${OUTCOME_CARD_PHRASE[outcome]}`).join(", "),
+    title: largest.map((outcome) => `${formatCount(split[outcome])} ${outcomeInFull(outcome, split[outcome])}`).join(", "),
   };
 }
 
@@ -81,7 +81,7 @@ function cardCopy(complex: Complex, view: View, count: number): { caption: strin
   const others = countFor(complex, { ...view, category: "all" });
   return {
     caption: `no ${label.toLowerCase()} complaints`,
-    detail: others === 0 ? acres : `${others} other ${complaintsWord(others)}`,
+    detail: others === 0 ? acres : `${formatCount(others)} other ${complaintsWord(others)}`,
   };
 }
 
@@ -124,7 +124,7 @@ function TrayCard(props: {
             <span
               className={`block text-[46px] leading-[0.9] font-extralight tracking-[-0.03em] tabular-nums ${selected ? "text-ice" : "text-deep"}`}
             >
-              {count}
+              {formatCount(count)}
             </span>
           )}
         </span>

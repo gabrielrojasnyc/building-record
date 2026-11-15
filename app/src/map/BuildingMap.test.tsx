@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadFootprints, type BuildingShapes } from "@/city/footprints";
 import { DEFAULT_VIEW } from "@/domain/query";
 import type { Outline } from "@/domain/types";
-import { BuildingMap, type BuildingMapProps } from "./BuildingMap";
+import {
+  BuildingMap,
+  describeComplaints,
+  type BuildingMapProps,
+} from "./BuildingMap";
 import { GROW_MS, type SpotlightTarget } from "./spotlight";
 
 type EventData = Record<string, unknown>;
@@ -1150,5 +1154,14 @@ describe("BuildingMap spotlight", () => {
 
     expect(shapesDrawn(map)).toEqual([]);
     expect(map.querySourceFeatures).not.toHaveBeenCalled();
+  });
+});
+
+describe("a pin's tooltip", () => {
+  it("names the address and its complaints, in the singular for one and in words for none", () => {
+    expect(describeComplaints("2000 Burton Dr", 201)).toBe("2000 Burton Dr: 201 complaints");
+    expect(describeComplaints("2000 Burton Dr", 1)).toBe("2000 Burton Dr: 1 complaint");
+    expect(describeComplaints("2000 Burton Dr", 0)).toBe("2000 Burton Dr: no complaints");
+    expect(describeComplaints("2000 Burton Dr", 1234)).toBe("2000 Burton Dr: 1,234 complaints");
   });
 });

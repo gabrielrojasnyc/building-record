@@ -51,6 +51,35 @@ it("reports a complaint type and keeps the rest of the view", async () => {
   expect(onChange).toHaveBeenCalledWith({ ...view, category: "permit" });
 });
 
+it("names each complaint type in one word, and gives its full name and what it covers on hover", () => {
+  render(<Filters view={DEFAULT_VIEW} onChange={vi.fn()} />);
+  const types = within(screen.getByRole("group", { name: "Complaint type" }));
+  expect(types.getAllByRole("button").map((button) => button.textContent)).toEqual([
+    "All",
+    "Building",
+    "Grounds",
+    "Zoning",
+    "Permits",
+  ]);
+  expect(types.getByRole("button", { name: "All" })).not.toHaveAttribute("title");
+  expect(types.getByRole("button", { name: "Grounds" })).toHaveAttribute(
+    "title",
+    "Trash and grounds: The land around them: trash, dumping, overgrowth and other unsanitary conditions.",
+  );
+  expect(types.getByRole("button", { name: "Building" })).toHaveAttribute(
+    "title",
+    expect.stringMatching(/^Building condition: The buildings themselves: /),
+  );
+  expect(types.getByRole("button", { name: "Zoning" })).toHaveAttribute(
+    "title",
+    expect.stringMatching(/^Signs, zoning and use: Site rules: /),
+  );
+  expect(types.getByRole("button", { name: "Permits" })).toHaveAttribute(
+    "title",
+    expect.stringMatching(/^Work without a permit: Construction, repair or demolition /),
+  );
+});
+
 it("toggles Repeat Offenders only", async () => {
   const onChange = vi.fn();
   const view = { ...DEFAULT_VIEW, repeatOffendersOnly: true };

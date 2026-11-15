@@ -14,7 +14,7 @@ import {
 import { aerialPhotoUrl } from "@/city/aerialPhoto";
 import { loadBuildingDetail } from "@/city/buildingDetail";
 import { load311Summary, type RequestTypeCount } from "@/city/requests311";
-import { formatAcres } from "@/domain/format";
+import { formatAcres, formatCount } from "@/domain/format";
 import { CATEGORY_LABEL, NO_CASES_CAUTION, titleOf } from "@/domain/labels";
 import { PERIODS, PERIOD_LABEL, PERIOD_PHRASE, type Period } from "@/domain/periods";
 import { countFor, DEFAULT_VIEW, type View } from "@/domain/query";
@@ -35,7 +35,7 @@ export type BuildingPanelProps = Placement & {
   fetchImpl?: typeof fetch;
 };
 
-type Outcome<T> =
+type LoadState<T> =
   { status: "loading" } | { status: "failed" } | { status: "ready"; value: T };
 
 const LOADING = { status: "loading" } as const;
@@ -62,10 +62,10 @@ const LIST_ROW = "items-center border-t border-deep/10 py-[9px]";
 function useLoad<S, T>(
   source: S | null,
   load: (source: S) => Promise<T>,
-): Outcome<T> {
+): LoadState<T> {
   const [settled, setSettled] = useState<{
     source: S;
-    outcome: Outcome<T>;
+    outcome: LoadState<T>;
   } | null>(null);
 
   useEffect(() => {
@@ -105,7 +105,6 @@ function formatDate(
 const formatMonth = (yearMonth: string) =>
   formatDate(yearMonth, { month: "short", year: "numeric" });
 
-const formatCount = (count: number) => count.toLocaleString("en-US");
 const complaintsWord = (count: number) => (count === 1 ? "complaint" : "complaints");
 
 export function BuildingPanel(props: BuildingPanelProps) {
@@ -129,7 +128,7 @@ export function BuildingPanel(props: BuildingPanelProps) {
     props.place === "map" ? complex.id : null,
     fetchHistory,
   );
-  const detail: Outcome<BuildingDetail> =
+  const detail: LoadState<BuildingDetail> =
     props.place === "page" ? { status: "ready", value: props.detail } : history;
   const requests = useLoad(
     detail.status === "ready" ? detail.value.bbox : null,
@@ -520,7 +519,7 @@ function MonthChart({ monthly }: { monthly: BuildingDetail["monthly"] }) {
   );
 }
 
-function Requests311({ outcome }: { outcome: Outcome<RequestTypeCount[]> }) {
+function Requests311({ outcome }: { outcome: LoadState<RequestTypeCount[]> }) {
   return (
     <Section title="311 requests around this parcel">
       <p className={`${MESSAGE} mb-2`}>
