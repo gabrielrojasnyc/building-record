@@ -217,6 +217,17 @@ const writeNames = (
   fetchedAt = "2026-11-10",
 ) => writeFileSync(namesPath, JSON.stringify({ fetchedAt, places }));
 
+/** The fixture's Repeat Offender registration name, as the city gives it. */
+const REGISTERED_NAME = "Riverside Terrace Apartments";
+let reviewPath: string;
+const writeReview = (
+  cityTitles: Record<string, string> = { [BIG_PARCEL]: REGISTERED_NAME },
+  withheld: Record<string, string> = {},
+) => writeFileSync(reviewPath, JSON.stringify({ cityTitles, withheld }));
+
+/** What the build printed for a person to read, one entry per line. */
+let logged: string[];
+
 const LOW = {
   minComplexes: 1,
   minCases: 1,
@@ -224,7 +235,12 @@ const LOW = {
   minRepeatOffenderRows: 1,
   minDeficiencyRows: 1,
 };
-const options = () => ({ ...LOW, namesSnapshotPath: namesPath });
+const options = () => ({
+  ...LOW,
+  namesSnapshotPath: namesPath,
+  titleReviewPath: reviewPath,
+  log: (line: string) => logged.push(line),
+});
 
 const readJson = <T>(path: string) =>
   JSON.parse(readFileSync(path, "utf8")) as T;
@@ -238,6 +254,9 @@ beforeEach(() => {
   namesRoot = mkdtempSync(join(tmpdir(), "names-test-"));
   namesPath = join(namesRoot, "apartment-names.json");
   writeNames([]);
+  reviewPath = join(namesRoot, "title-review.json");
+  writeReview();
+  logged = [];
 });
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
@@ -439,15 +458,16 @@ describe("buildData", () => {
     const [bigLon, bigLat] = [-97.728744, 30.23791];
     const [smallLon, smallLat] = [-97.716249, 30.335624];
     writeNames([
-      { name: "Royal Crest", lon: bigLon, lat: bigLat },
-      { name: "Royal Crest", lon: bigLon + 0.0001, lat: bigLat },
+      { name: "Riverside Terrace", lon: bigLon, lat: bigLat },
+      { name: "Riverside Terrace", lon: bigLon + 0.0001, lat: bigLat },
       { name: "Guadalupe North", lon: smallLon, lat: smallLat },
       { name: "Guadalupe South", lon: smallLon, lat: smallLat },
       { name: "Somewhere Else", lon: -97.0, lat: 30.0 },
     ]);
     const meta = await buildData(out, NOW, fixtureFetch, options());
+    // The registration, Riverside Terrace Apartments, agrees with it.
     expect(complexById(BIG_PARCEL).name).toEqual({
-      text: "Royal Crest",
+      text: "Riverside Terrace",
       source: "openstreetmap",
     });
     // Two different names inside: no name at all, and the city's name is not used to break the tie.
@@ -458,12 +478,51 @@ describe("buildData", () => {
     expect(readJson<Meta>(`${out}/meta.json`)).toEqual(meta);
   });
 
-  it("falls back to the Repeat Offender registration name when OpenStreetMap has none inside", async () => {
+  it("shows no name where the OpenStreetMap name and the registration disagree", async () => {
+    const [bigLon, bigLat] = [-97.728744, 30.23791];
+    writeNames([{ name: "Royal Crest", lon: bigLon, lat: bigLat }]);
+    const meta = await buildData(out, NOW, fixtureFetch, options());
+    expect(complexById(BIG_PARCEL).name).toBeNull();
+    expect(complexById(BIG_PARCEL).repeatOffender?.name).toBe(REGISTERED_NAME);
+    expect(meta.namedComplexes).toBe(0);
+  });
+
+  it("falls back to the Repeat Offender registration name when OpenStreetMap has none inside, once a person approved it", async () => {
     await buildData(out, NOW, fixtureFetch, options());
     expect(complexById(BIG_PARCEL).name).toEqual({
       text: "Riverside Terrace Apartments",
       source: "city",
     });
+    expect(logged.join("\n")).not.toContain(REGISTERED_NAME);
+  });
+
+  it("leaves an unapproved city name off, and lists it in the build log with its parcel, address and name", async () => {
+    writeReview({});
+    const meta = await buildData(out, NOW, fixtureFetch, options());
+    expect(complexById(BIG_PARCEL).name).toBeNull();
+    expect(meta.namedComplexes).toBe(0);
+    const awaiting = logged.find((line) => line.includes(REGISTERED_NAME));
+    expect(awaiting).toContain(BIG_PARCEL);
+    expect(awaiting).toContain("1519 Royal Crest Dr");
+    expect(logged.join("\n")).toContain("title-review.json");
+  });
+
+  it("shows no name at all for a withheld parcel", async () => {
+    writeReview(
+      { [BIG_PARCEL]: REGISTERED_NAME },
+      { [BIG_PARCEL]: "Former name" },
+    );
+    await buildData(out, NOW, fixtureFetch, options());
+    expect(complexById(BIG_PARCEL).name).toBeNull();
+    expect(logged.join("\n")).not.toContain(REGISTERED_NAME);
+  });
+
+  it("refuses to write without a readable title review", async () => {
+    writeFileSync(reviewPath, "{");
+    await expect(buildData(out, NOW, fixtureFetch, options())).rejects.toThrow(
+      /title review/,
+    );
+    expect(existsSync(out)).toBe(false);
   });
 
   it("builds without names when the snapshot file is missing", async () => {

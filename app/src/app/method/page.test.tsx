@@ -580,9 +580,12 @@ describe("names, building shapes and photos", () => {
     expect(section).toHaveTextContent(
       "A name is shown only when one clear name lies inside the parcel.",
     );
+    expect(section).toHaveTextContent(
+      "If the property is registered on the city's Repeat Offender list under another name, neither name is shown.",
+    );
     // A few names come from the city, so the page must not say every name is from OpenStreetMap.
     expect(section).toHaveTextContent(
-      "When OpenStreetMap has no name inside the parcel, the name the property is registered under on the city's Repeat Offender list is used, unless it reads as a company's.",
+      "When OpenStreetMap has no name inside the parcel, the name the property is registered under on the city's Repeat Offender list is shown only after a person has checked and approved it, and never when it reads as a company's.",
     );
     expect(section).toHaveTextContent("Names as of November 14, 2026.");
     expect(section).toHaveTextContent(

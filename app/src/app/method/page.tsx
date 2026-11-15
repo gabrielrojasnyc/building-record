@@ -512,10 +512,12 @@ export default async function MethodPage() {
               {meta.namesAsOf &&
                 ` Names as of ${formatPullDate(meta.namesAsOf)}.`}{" "}
               A name is shown only when one clear name lies inside the parcel.
-              When OpenStreetMap has no name inside the parcel, the name the
-              property is registered under on the city&apos;s Repeat Offender
-              list is used, unless it reads as a company&apos;s.{" "}
-              {formatCount(meta.namedComplexes)} of these{" "}
+              If the property is registered on the city&apos;s Repeat Offender
+              list under another name, neither name is shown. When OpenStreetMap
+              has no name inside the parcel, the name the property is registered
+              under on the city&apos;s Repeat Offender list is shown only after
+              a person has checked and approved it, and never when it reads as a
+              company&apos;s. {formatCount(meta.namedComplexes)} of these{" "}
               {formatCount(meta.complexCount)} complexes have a name.
             </p>
             <p>

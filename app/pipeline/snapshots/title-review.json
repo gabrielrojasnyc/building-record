@@ -1,0 +1,19 @@
+{
+  "cityTitles": {
+    "0168090512": "Summit At Westwood",
+    "0229080212": "Sunset Palms Apartments",
+    "0234111501": "Capella Apartments",
+    "0235160412": "Woodland Heights Apartments",
+    "0236120208": "Oaks On Lamar Apartments",
+    "0303050358": "Parker Heights Apartments",
+    "0304020541": "Cascade Apartments",
+    "0310080313": "Chevy Chase Downs Apartments",
+    "0403010250": "Oak Creek Village Apartments",
+    "0422030118": "Hillside On Cannon Apartment Homes",
+    "0426050105": "Bluff Springs Townhomes"
+  },
+  "withheld": {
+    "0147380101": "OpenStreetMap name is a former name; listings now show another (web check 2026-11-14)",
+    "0209150204": "No apartment complex of this name could be confirmed at this address (web check 2026-11-14)"
+  }
+}
