@@ -6,7 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { forgetBuildingDetails } from "@/city/buildingDetail";
 import type { ViewArea } from "@/domain/query";
 import type { BuildingDetail, Complex, Counts, Meta } from "@/domain/types";
@@ -121,21 +121,45 @@ function detailFor({ id, lon, lat }: Complex): BuildingDetail {
   };
 }
 
-/** Answers each building file with its detail, or with the status given for it. The city's live APIs are never answered. */
-function serveBuildingFiles(failing: Record<string, number> = {}) {
+interface FileOptions {
+  /** Building files answered with this status instead of the detail. */
+  failing?: Record<string, number>;
+  /** Building files held back until the test lets them through with `release` or `fail`. */
+  heldBack?: string[];
+}
+
+/**
+ * Answers each building file with its detail, or with the status given for it, or holds it back.
+ * The city's address search finds nothing; the city's other live APIs are never answered.
+ */
+function serveBuildingFiles({ failing = {}, heldBack = [] }: FileOptions = {}) {
+  const waiting = new Map<string, (response: Response) => void>();
   vi.stubGlobal(
     "fetch",
     vi.fn<typeof fetch>(async (input) => {
       const url = String(input);
+      if (url.startsWith("https://data.austintexas.gov/resource/9s7j-tygf.json")) return Response.json([]);
       if (url.startsWith("https://")) return new Promise<Response>(() => {});
       const id = /\/data\/buildings\/(.+)\.json$/.exec(url)?.[1];
       const found = everything.find((candidate) => candidate.id === id);
       if (!found) throw new Error(`Unexpected fetch: ${url}`);
+      if (heldBack.includes(found.id)) {
+        return new Promise<Response>((resolve) => waiting.set(found.id, resolve));
+      }
       if (failing[found.id])
         return new Response("", { status: failing[found.id] });
       return Response.json(detailFor(found));
     }),
   );
+  const answer = async (id: string, response: () => Response) => {
+    const resolve = waiting.get(id);
+    if (!resolve) throw new Error(`No request for ${id} is waiting`);
+    await act(async () => resolve(response()));
+  };
+  return {
+    release: (target: Complex) => answer(target.id, () => Response.json(detailFor(target))),
+    fail: (target: Complex) => answer(target.id, () => new Response("", { status: 503 })),
+  };
 }
 
 function setScreen({
@@ -192,12 +216,28 @@ async function pick(target: Complex) {
 const staged = (target: Complex) =>
   waitFor(() => expect(lastMap().spotlight?.id).toBe(target.id));
 
+/** The search box and the filter bar, inside the wrapper that steps them aside on a phone. */
+const controls = () => {
+  const wrapper = screen.getByRole("combobox").closest("main > div:not(.fog)");
+  if (!wrapper) throw new Error("No wrapper around the search and filters");
+  return wrapper;
+};
+
+async function pickFromSearch(text: string, target: Complex) {
+  await userEvent.type(screen.getByRole("combobox"), text);
+  await userEvent.click(
+    await screen.findByRole("option", { name: new RegExp(target.address) }),
+  );
+}
+
 function openFinder() {
   render(<Finder complexes={everything} meta={meta} />);
   reportView(RIVERSIDE);
 }
 
 beforeEach(() => {
+  // The view lives in the query string, so a filter one test sets would carry into the next.
+  window.history.replaceState(null, "", "/");
   mapRenders.length = 0;
   forgetBuildingDetails();
   setScreen({ phone: false });
@@ -239,14 +279,14 @@ it("on a phone, frames the model above a record sheet 60% of the screen tall, as
   openFinder();
   await pick(array);
   await staged(array);
-  expect(lastMap().padding).toEqual({ top: 190, right: 30, bottom: 507, left: 30 });
+  expect(lastMap().padding).toEqual({ top: 90, right: 30, bottom: 507, left: 30 });
 
   // Turned to landscape, or a window made shorter: the map frames the model again in the new strip.
   vi.stubGlobal("innerHeight", 700);
   act(() => {
     window.dispatchEvent(new Event("resize"));
   });
-  expect(lastMap().padding).toEqual({ top: 190, right: 30, bottom: 440, left: 30 });
+  expect(lastMap().padding).toEqual({ top: 90, right: 30, bottom: 440, left: 30 });
 });
 
 it("keeps the tray on the ground it was counting while a building is open, and until the camera is back from it", async () => {
@@ -287,7 +327,7 @@ it("lets the tray follow the map once someone moves it themselves, before the ca
 });
 
 it("lets the tray follow the map at once when a building with no model closes", async () => {
-  serveBuildingFiles({ [array.id]: 503 });
+  serveBuildingFiles({ failing: { [array.id]: 503 } });
   openFinder();
   await pick(array);
   await waitFor(() => expect(lastMap().flyTo).not.toBeNull());
@@ -335,7 +375,7 @@ it("switches the model straight to another building picked while one is open", a
 });
 
 it("flies to the building's point, with no model, when its file cannot be loaded, and still opens its record", async () => {
-  serveBuildingFiles({ [array.id]: 503 });
+  serveBuildingFiles({ failing: { [array.id]: 503 } });
   openFinder();
   await pick(array);
 
@@ -358,7 +398,7 @@ it("flies to the building's point, with no model, when its file cannot be loaded
 });
 
 it("asks for the fallback fly in the same render as an earlier model leaves, so the map hands the camera to it", async () => {
-  serveBuildingFiles({ [crest.id]: 503 });
+  serveBuildingFiles({ failing: { [crest.id]: 503 } });
   openFinder();
   await pick(array);
   await staged(array);
@@ -398,4 +438,133 @@ it("without a map, opens a picked building's record with its photo and stages no
   ).toBeVisible();
   expect(mapRenders.every((props) => !props.spotlight)).toBe(true);
   expect(document.querySelector(".fog")).not.toHaveClass("fog-spotlight");
+});
+
+it("a pick made before the map has reported holds the first ground the map reports", async () => {
+  render(<Finder complexes={everything} meta={meta} />);
+  expect(screen.getByRole("region", { name: "3 complexes in Austin" })).toBeVisible();
+  await pick(array);
+  await staged(array);
+
+  reportView(RIVERSIDE);
+  expect(cardIds()).toEqual([crest.id, array.id]);
+  reportView(NORTH);
+  expect(cardIds()).toEqual([crest.id, array.id]);
+  expect(screen.getByRole("region", { name: "2 complexes in view" })).toBeVisible();
+});
+
+it("lets go of the tray 1.5 seconds after a building closes, when the camera never comes back to the same ground", async () => {
+  openFinder();
+  await pick(array);
+  await staged(array);
+  await userEvent.keyboard("{Escape}");
+
+  // A rotation while the building was open: the camera returns, but to ground that no longer matches.
+  reportView(NORTH);
+  expect(cardIds()).toEqual([crest.id, array.id]);
+  await act(() => new Promise((resolve) => setTimeout(resolve, 1000)));
+  expect(cardIds()).toEqual([crest.id, array.id]);
+  await act(() => new Promise((resolve) => setTimeout(resolve, 600)));
+  expect(cardIds()).toEqual([domain.id]);
+});
+
+it("drops a model whose map gave up after it was staged: no model, no selection padding, no spotlight fog", async () => {
+  openFinder();
+  await pick(array);
+  await staged(array);
+
+  act(() => lastMap().onUnavailable());
+  expect(lastMap().spotlight).toBeNull();
+  expect(lastMap().padding).toEqual(NORMAL_PADDING);
+  expect(document.querySelector(".fog")).not.toHaveClass("fog-spotlight");
+  expect(screen.getByRole("heading", { level: 2, name: "Array Apartments" })).toBeVisible();
+});
+
+it("returns focus to the search when the closed building has no card in the tray", async () => {
+  openFinder();
+  expect(cardIds()).not.toContain(domain.id);
+  await pickFromSearch("11800", domain);
+  await staged(domain);
+
+  await userEvent.keyboard("{Escape}");
+  expect(screen.getByRole("combobox")).toHaveFocus();
+});
+
+describe("a building file that settles after the pick has moved on", () => {
+  it("leaves no model, fog or fly when it arrives after the building closed", async () => {
+    const files = serveBuildingFiles({ heldBack: [array.id] });
+    openFinder();
+    await pick(array);
+    await userEvent.keyboard("{Escape}");
+
+    await files.release(array);
+    expect(mapRenders.every((props) => !props.spotlight && props.flyTo === null)).toBe(true);
+    expect(document.querySelector(".fog")).not.toHaveClass("fog-spotlight");
+  });
+
+  it("leaves no fly when it fails after the building closed", async () => {
+    const files = serveBuildingFiles({ heldBack: [array.id] });
+    openFinder();
+    await pick(array);
+    await userEvent.keyboard("{Escape}");
+
+    await files.fail(array);
+    expect(mapRenders.every((props) => !props.spotlight && props.flyTo === null)).toBe(true);
+  });
+
+  it("shows only the second building when the first's file arrives after it", async () => {
+    const files = serveBuildingFiles({ heldBack: [array.id] });
+    openFinder();
+    await pick(array);
+    await pick(crest);
+    await staged(crest);
+
+    await files.release(array);
+    expect(lastMap().spotlight?.id).toBe(crest.id);
+    expect(mapRenders.some((props) => props.spotlight?.id === array.id)).toBe(false);
+  });
+});
+
+describe("on a phone", () => {
+  beforeEach(() => setScreen({ phone: true, height: 812 }));
+
+  it("steps the search and filters out of the way while a building is open, and brings them back when it closes", async () => {
+    openFinder();
+    expect(controls()).not.toHaveAttribute("inert");
+
+    await pick(array);
+    expect(controls()).toHaveAttribute("inert");
+    expect(screen.getByRole("complementary")).toHaveFocus();
+
+    await userEvent.keyboard("{Escape}");
+    expect(controls()).not.toHaveAttribute("inert");
+  });
+
+  it("moves focus from the search into the record when a pick made there steps the search aside", async () => {
+    openFinder();
+    await pickFromSearch("11800", domain);
+
+    expect(controls()).toHaveAttribute("inert");
+    expect(screen.getByRole("complementary")).toHaveFocus();
+    expect(controls()).not.toContainElement(document.activeElement as HTMLElement);
+
+    // That building has no card in the tray, so closing hands focus back to the search, which is back by then.
+    await staged(domain);
+    await userEvent.keyboard("{Escape}");
+    expect(controls()).not.toHaveAttribute("inert");
+    expect(screen.getByRole("combobox")).toHaveFocus();
+  });
+
+  it("keeps the search and filters where they are without a map", async () => {
+    openFinder();
+    act(() => lastMap().onUnavailable());
+    await pick(array);
+    expect(controls()).not.toHaveAttribute("inert");
+  });
+});
+
+it("keeps the search and filters where they are on a desktop while a building is open", async () => {
+  openFinder();
+  await pick(array);
+  expect(controls()).not.toHaveAttribute("inert");
 });

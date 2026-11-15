@@ -151,6 +151,9 @@ async function waitForMap(page: Page) {
     .toBeLessThan(meta.complexCount);
 }
 
+const onPhone = () => test.info().project.name === "phone";
+const search = (page: Page) => page.getByRole("combobox");
+
 const spotlit = (page: Page, id: string) => page.locator(`[data-spotlight="${id}"]`);
 const labels = (page: Page) => page.locator(".spotlight-label");
 const cardIds = (page: Page) =>
@@ -242,6 +245,7 @@ test("the building panel takes focus, closes on Escape and hands focus back to i
 test("with suggestions open, the first Escape closes only the suggestions", async ({
   page,
 }) => {
+  test.skip(onPhone(), "On a phone the search steps aside while a building is open.");
   await page.goto("/");
   await waitForMap(page);
   await openFirstCard(page);
@@ -275,6 +279,14 @@ test("a building page is reachable directly", async ({ page }) => {
   await expect(
     page.getByRole("link", { name: "Back to the map" }),
   ).toHaveAttribute("href", "/");
+
+  // The stubbed photo answers at once, often before the page is hydrated, and must still be taken.
+  const photo = page.getByRole("img", { name: /^Aerial photo of / });
+  await expect(photo).toHaveAttribute("data-loaded", "true");
+  // With no close button on the page, the credit sits in the header's corner.
+  const header = await photo.locator("..").boundingBox();
+  const credit = await page.getByText("Aerial photo: USGS").boundingBox();
+  expect(credit && header && credit.y - header.y).toBe(14);
 });
 
 test("an unknown building id is a 404 that leads back to the map", async ({ page }) => {
@@ -545,7 +557,7 @@ test.describe("a picked building", () => {
     await expect(spotlit(page, NAMED.id)).toBeAttached();
   });
 
-  test("leaves on Escape: the model goes and the tray counts what it did before the pick", async ({
+  test("leaves on Escape: the model goes, the tray counts what it did before the pick, then follows the map again", async ({
     page,
   }) => {
     await page.goto("/");
@@ -559,6 +571,60 @@ test.describe("a picked building", () => {
     await expect(page.locator("[data-spotlight]")).toHaveCount(0);
     await expect(labels(page)).toHaveCount(0);
     await expect(trayCount(page)).toHaveText(before);
+
+    // A tray still holding would not follow a camera move the screen did not ask for, such as a smaller window.
+    const viewport = page.viewportSize();
+    if (!viewport) throw new Error("No viewport");
+    await page.setViewportSize({ width: viewport.width, height: viewport.height - 220 });
+    await expect(trayCount(page)).not.toHaveText(before);
+    await page.setViewportSize(viewport);
+
+    if (!onPhone()) {
+      const settled = await trayCount(page).innerText();
+      await page.getByRole("button", { name: "Downtown" }).click();
+      await expect(trayCount(page)).not.toHaveText(settled);
+    }
+  });
+
+  test("hands focus back to the search on closing, when the tray has no card for the building", async ({
+    page,
+  }) => {
+    if (!NAMED) return;
+    await page.goto("/");
+    await waitForMap(page);
+    expect(await cardIds(page)).not.toContain(NAMED.id);
+
+    await pickFromSearch(page, NAMED.address, NAMED);
+    await expect(spotlit(page, NAMED.id)).toBeAttached();
+    await expect(panel(page)).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(search(page)).toBeFocused();
+  });
+
+  test("on a phone steps the search and filters aside while it is open, and on a desktop leaves them", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await waitForMap(page);
+    const period = page.getByRole("button", { name: "12 months" });
+
+    await openFirstCard(page);
+    await expect(panel(page)).toBeFocused();
+    if (onPhone()) {
+      await expect(search(page)).toBeHidden();
+      await expect(period).toBeHidden();
+      // Not reachable by Tab either: from the panel, Shift+Tab never lands in them. Found by CSS, since a hidden box has no role.
+      await page.keyboard.press("Shift+Tab");
+      const searchBox = page.locator('input[type="search"]');
+      expect(await searchBox.evaluate((input) => input === document.activeElement)).toBe(false);
+    } else {
+      await expect(search(page)).toBeVisible();
+      await expect(period).toBeVisible();
+    }
+
+    await page.keyboard.press("Escape");
+    await expect(search(page)).toBeVisible();
+    await expect(period).toBeVisible();
   });
 
   test("keeps the tray's cards while it is open, though the camera moves", async ({ page }) => {
@@ -576,15 +642,15 @@ test.describe("a picked building", () => {
   });
 
   test("picked and then replaced straight away leaves one label, for the second", async ({ page }) => {
+    test.skip(onPhone(), "On a phone the record sheet covers the tray and the search steps aside, so no second pick is in reach.");
     await page.goto("/");
     await waitForMap(page);
     const [, secondId] = await cardIds(page);
     expect(secondId).toBeTruthy();
     const second = recordOf(secondId ?? "");
 
-    // A card first, then search, which a phone's record sheet does not cover.
     await cards(page).first().click();
-    await pickFromSearch(page, second.address, second);
+    await cards(page).nth(1).click();
 
     await expect(spotlit(page, second.id)).toBeAttached();
     await expect(labels(page)).toHaveCount(1);
