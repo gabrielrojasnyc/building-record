@@ -41,6 +41,14 @@ export const CITY_CATEGORY_TERM: Record<Category, string> = {
   permit: "Work Without Permit",
 };
 
+/** The full text of the city's `description` for each category, exactly as the portal has it. Each includes its term above. */
+export const CITY_CATEGORY_DESCRIPTION: Record<Category, string> = {
+  structure: "Structure Condition Violation(s)",
+  property: "Property Abatement",
+  landuse: "Land Use Violation(s)",
+  permit: "Work Without Permit",
+};
+
 /** Each outcome as it reads after a count on a tray card, where a full label does not fit. */
 export const OUTCOME_CARD_PHRASE: Record<Outcome, string> = {
   violation: "confirmed",

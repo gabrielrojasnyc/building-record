@@ -223,7 +223,7 @@ describe("what counts as a complaint", () => {
       );
       expect(item, category).toBeDefined();
       expect(item).toHaveTextContent(
-        `the city's term is ${CITY_CATEGORY_TERM[category]}`,
+        `the city's description includes ${CITY_CATEGORY_TERM[category]}`,
       );
       expect(item).toHaveTextContent(CATEGORY_MEANING[category]);
     }
@@ -238,6 +238,23 @@ describe("what counts as a complaint", () => {
         /the examples come from the kinds of problem the city recorded at Repeat Offender properties/i,
       ),
     ).toBeVisible();
+  });
+
+  it("says which of the city's descriptions end with Violation(s), and that it says nothing about a finding", async () => {
+    await renderPage();
+    const section = sectionOf("What counts as a complaint");
+
+    expect(section).toHaveTextContent(
+      `Two of the city's descriptions, for ${CATEGORY_LABEL.structure} and ${CATEGORY_LABEL.landuse}, end with the word "Violation(s)". That is part of the city's name for the type of complaint. It is there whether or not a violation was found.`,
+    );
+    expect(section).toHaveTextContent(
+      "Each complaint counted here is in one of four categories",
+    );
+    // The full descriptions are not printed beside the categories, where they would read like findings.
+    expect(document.body.textContent).not.toContain(
+      "Structure Condition Violation(s)",
+    );
+    expect(document.body.textContent).not.toContain("Land Use Violation(s)");
   });
 });
 
@@ -418,7 +435,7 @@ describe("what Violation confirmed means and does not", () => {
     expect(section).toHaveTextContent("It does not say who was responsible.");
     expect(section).toHaveTextContent("It does not say the violation remains.");
     expect(section).toHaveTextContent(
-      "Still open means the city's record of the case was not marked Closed when the data was pulled.",
+      "Still open means the city's record of the complaint was not marked Closed when the data was pulled.",
     );
   });
 });

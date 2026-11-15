@@ -6,6 +6,7 @@ import {
   CATEGORY_BUTTON_LABEL,
   CATEGORY_LABEL,
   CATEGORY_MEANING,
+  CITY_CATEGORY_DESCRIPTION,
   CITY_CATEGORY_TERM,
   NO_CASES_CAUTION,
   OUTCOME_CARD_PHRASE,
@@ -77,6 +78,18 @@ const CATEGORIES: Category[] = ["structure", "property", "landuse", "permit"];
 
 /** The table's last heading: the one phrase that leaves a complaint out of every count. */
 const NOT_COUNTED = "Not counted: duplicate report";
+
+const COUNT_WORD: Record<number, string> = {
+  1: "One",
+  2: "Two",
+  3: "Three",
+  4: "Four",
+};
+
+/** The categories whose city description ends with "Violation(s)", worked out from the descriptions, not named here. */
+const violationWordCategories = CATEGORIES.filter((category) =>
+  CITY_CATEGORY_DESCRIPTION[category].endsWith("Violation(s)"),
+);
 
 /** "A, B and C", the way the page says a list of words. */
 function sayList(words: string[]): string {
@@ -287,19 +300,34 @@ export default async function MethodPage() {
                 : `${formatCount(meta.duplicateCases)} complaints at these complexes were closed by the city as duplicates of another complaint and are not counted.`}
             </p>
             <p>
-              Each complaint is in one of four categories. This site shows them
-              under these names, with the city&apos;s own term for each. The
-              examples come from the kinds of problem the city recorded at
-              Repeat Offender properties.
+              Each complaint counted here is in one of four categories. This
+              site shows them under these names, with the word the city&apos;s
+              description includes for each. The examples come from the kinds of
+              problem the city recorded at Repeat Offender properties.
             </p>
             <ul className="list-disc pl-5">
               {CATEGORIES.map((category) => (
                 <li key={category}>
-                  {CATEGORY_LABEL[category]} (the city&apos;s term is{" "}
-                  {CITY_CATEGORY_TERM[category]}). {CATEGORY_MEANING[category]}
+                  {CATEGORY_LABEL[category]} (the city&apos;s description
+                  includes {CITY_CATEGORY_TERM[category]}).{" "}
+                  {CATEGORY_MEANING[category]}
                 </li>
               ))}
             </ul>
+            {violationWordCategories.length > 0 && (
+              <p>
+                {COUNT_WORD[violationWordCategories.length]} of the city&apos;s
+                descriptions, for{" "}
+                {sayList(
+                  violationWordCategories.map(
+                    (category) => CATEGORY_LABEL[category],
+                  ),
+                )}
+                , end with the word &quot;Violation(s)&quot;. That is part of
+                the city&apos;s name for the type of complaint. It is there
+                whether or not a violation was found.
+              </p>
+            )}
             <p>
               The type buttons on the filter bar read{" "}
               {sayList(
@@ -392,8 +420,8 @@ export default async function MethodPage() {
               <li>It does not say the violation remains.</li>
             </ul>
             <p>
-              Still open means the city&apos;s record of the case was not marked
-              Closed when the data was pulled.
+              Still open means the city&apos;s record of the complaint was not
+              marked Closed when the data was pulled.
             </p>
           </Section>
 
