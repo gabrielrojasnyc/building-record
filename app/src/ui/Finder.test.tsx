@@ -13,18 +13,42 @@ import type { BuildingDetail, Complex, Counts, Meta } from "@/domain/types";
 import type { BuildingMapProps, CameraPadding } from "@/map/BuildingMap";
 import { Finder } from "./Finder";
 
-const { mapRenders } = vi.hoisted(() => ({
+const { mapRenders, mapScript } = vi.hoisted(() => ({
   mapRenders: [] as BuildingMapProps[],
+  mapScript: {
+    /** Like the real map, report this ground at once when the padding changes to the selection's. */
+    groundUnderSelectionPadding: null as ViewArea | null,
+    /** Press Escape in the commit that stages a model, before React has run that commit's effects. */
+    escapeOnStage: false,
+  },
 }));
 
 // MapLibre cannot start here, so the map is a stand-in that records what the screen asks of it on every render.
-vi.mock("next/dynamic", () => ({
-  default: () =>
-    function RecordedMap(props: BuildingMapProps) {
-      mapRenders.push(props);
-      return <div data-testid="map" />;
-    },
-}));
+vi.mock("next/dynamic", async () => {
+  const { useEffect, useLayoutEffect, useRef } = await import("react");
+  return {
+    default: () =>
+      function RecordedMap(props: BuildingMapProps) {
+        mapRenders.push(props);
+        const sides = props.padding?.right ?? 0;
+        const reportedSides = useRef(0);
+        useEffect(() => {
+          if (sides === reportedSides.current) return;
+          reportedSides.current = sides;
+          if (sides !== 0 && mapScript.groundUnderSelectionPadding) {
+            props.onViewAreaChange(mapScript.groundUnderSelectionPadding);
+          }
+        });
+        // A slow machine can deliver a keypress here: after the staging commit, before its effects.
+        useLayoutEffect(() => {
+          if (!mapScript.escapeOnStage || !props.spotlight) return;
+          mapScript.escapeOnStage = false;
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+        });
+        return <div data-testid="map" />;
+      },
+  };
+});
 
 const NORMAL_PADDING: CameraPadding = {
   top: 80,
@@ -202,6 +226,8 @@ function lastMap(): BuildingMapProps {
 
 const reportView = (area: ViewArea) =>
   act(() => lastMap().onViewAreaChange(area));
+const cardOf = (target: Complex) =>
+  screen.getAllByTestId("card").find((card) => card.dataset.complexId === target.id);
 const cardIds = () =>
   screen.getAllByTestId("card").map((card) => card.dataset.complexId);
 
@@ -239,6 +265,8 @@ beforeEach(() => {
   // The view lives in the query string, so a filter one test sets would carry into the next.
   window.history.replaceState(null, "", "/");
   mapRenders.length = 0;
+  mapScript.groundUnderSelectionPadding = null;
+  mapScript.escapeOnStage = false;
   forgetBuildingDetails();
   setScreen({ phone: false });
   serveBuildingFiles();
@@ -326,15 +354,29 @@ it("lets the tray follow the map once someone moves it themselves, before the ca
   expect(cardIds()).toEqual([domain.id]);
 });
 
-it("lets the tray follow the map at once when a building with no model closes", async () => {
+it("with no model, closing hands focus back to the card, and the tray follows the map once the hold ends", async () => {
   serveBuildingFiles({ failing: { [array.id]: 503 } });
   openFinder();
   await pick(array);
   await waitFor(() => expect(lastMap().flyTo).not.toBeNull());
 
   await userEvent.keyboard("{Escape}");
+  expect(cardOf(array)).toHaveFocus();
+  fireEvent.pointerDown(screen.getByTestId("map"));
   reportView(NORTH);
   expect(cardIds()).toEqual([domain.id]);
+});
+
+it("hands focus back to the picked card when Escape lands after the model is staged but before the screen has run that render's effects", async () => {
+  // The map reports the smaller ground under the selection padding as soon as that padding arrives.
+  mapScript.groundUnderSelectionPadding = NORTH;
+  mapScript.escapeOnStage = true;
+  openFinder();
+  await pick(array);
+
+  await waitFor(() => expect(screen.queryByRole("complementary")).toBeNull());
+  expect(cardIds()).toEqual([crest.id, array.id]);
+  expect(cardOf(array)).toHaveFocus();
 });
 
 it("still applies a filter changed while a building is open, to the ground the tray was counting", async () => {
@@ -440,17 +482,19 @@ it("without a map, opens a picked building's record with its photo and stages no
   expect(document.querySelector(".fog")).not.toHaveClass("fog-spotlight");
 });
 
-it("a pick made before the map has reported holds the first ground the map reports", async () => {
+it("a pick made before the map has reported holds the list it was picked from, all of Austin, and its card", async () => {
   render(<Finder complexes={everything} meta={meta} />);
   expect(screen.getByRole("region", { name: "3 complexes in Austin" })).toBeVisible();
-  await pick(array);
-  await staged(array);
+  await pick(domain);
+  await staged(domain);
 
+  // The map's first report shows ground without that building; the list stays the one it was picked from.
   reportView(RIVERSIDE);
-  expect(cardIds()).toEqual([crest.id, array.id]);
   reportView(NORTH);
-  expect(cardIds()).toEqual([crest.id, array.id]);
-  expect(screen.getByRole("region", { name: "2 complexes in view" })).toBeVisible();
+  expect(screen.getByRole("region", { name: "3 complexes in Austin" })).toBeVisible();
+
+  await userEvent.keyboard("{Escape}");
+  expect(cardOf(domain)).toHaveFocus();
 });
 
 it("lets go of the tray 1.5 seconds after a building closes, when the camera never comes back to the same ground", async () => {

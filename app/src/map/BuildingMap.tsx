@@ -109,7 +109,10 @@ function placeLabel(
   const element = document.createElement("div");
   const pill = document.createElement("div");
   pill.className = "glass spotlight-label";
-  pill.textContent = title;
+  // The name has a box of its own, so a long one is cut with an ellipsis while the stem below the pill is not.
+  const name = document.createElement("span");
+  name.textContent = title;
+  pill.append(name);
   element.append(pill);
   return new maplibregl.Marker({ element, anchor: "bottom", offset: [0, -64] })
     .setLngLat(at)

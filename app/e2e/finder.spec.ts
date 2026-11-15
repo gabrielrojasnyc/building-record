@@ -42,6 +42,8 @@ const NO_MAP_SENTENCE =
 const CAUTION =
   "No cases means none reached Code Enforcement. It does not mean the building has no problems.";
 const COMPLEX_WITH_RECORD = "0304070701";
+/** An unnamed complex whose label is long: "Parcel 0201520114, near 4612 Sojourner St". */
+const LONG_LABEL = "0201520114";
 const FOOTPRINTS = "https://data.austintexas.gov/resource/3qcc-8uhz.json**";
 const AERIAL_PHOTOS = "https://imagery.nationalmap.gov/**";
 /** One navy pixel, standing in for the USGS aerial photo. */
@@ -53,6 +55,11 @@ const PHOTO = Buffer.from(
 const titleOf = (complex: ComplexRecord) => complex.name?.text ?? complex.address;
 const formatAcres = (acres: number) =>
   acres < 0.1 ? "under 0.1 acres" : `${acres} ${acres === 1 ? "acre" : "acres"}`;
+
+/** The complex with the longest title in the data. */
+const LONGEST_TITLE = complexes.reduce((longest, complex) =>
+  titleOf(complex).length > titleOf(longest).length ? complex : longest,
+);
 
 /** A named complex on one parcel whose name no other complex's name or address contains, so a search for it finds it alone. */
 const NAMED = complexes.find((complex) => {
@@ -240,6 +247,30 @@ test("the building panel takes focus, closes on Escape and hands focus back to i
   await expect(
     page.locator(`[data-testid="card"][data-complex-id="${id}"]`),
   ).toBeFocused();
+});
+
+test("hands focus back to its card even when Escape lands in the commit that stages the model", async ({
+  page,
+}) => {
+  // The map's wrapper gets data-spotlight in that commit. A MutationObserver runs right after it and before
+  // React has run its effects, which is where a busy machine can deliver a keypress.
+  await page.addInitScript(() => {
+    const observer = new MutationObserver((records) => {
+      if (!records.some((record) => (record.target as Element).hasAttribute("data-spotlight"))) return;
+      observer.disconnect();
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    document.addEventListener("DOMContentLoaded", () =>
+      observer.observe(document.body, { attributes: true, attributeFilter: ["data-spotlight"], subtree: true }),
+    );
+  });
+  await page.goto("/");
+  await waitForMap(page);
+
+  const id = await cards(page).first().getAttribute("data-complex-id");
+  await cards(page).first().click();
+  await expect(panel(page)).toBeHidden();
+  await expect(page.locator(`[data-testid="card"][data-complex-id="${id}"]`)).toBeFocused();
 });
 
 test("with suggestions open, the first Escape closes only the suggestions", async ({
@@ -655,6 +686,42 @@ test.describe("a picked building", () => {
     await expect(spotlit(page, second.id)).toBeAttached();
     await expect(labels(page)).toHaveCount(1);
     await expect(labels(page)).toHaveText(titleOf(second));
+  });
+
+  test("keeps a long name's map label inside a phone's screen, and shows a shorter long one in full on a desktop", async ({
+    page,
+  }) => {
+    // On a phone the longest title of all, so the label's width limit has to cut it.
+    const complex = onPhone() ? LONGEST_TITLE : recordOf(LONG_LABEL);
+    await page.goto("/");
+    await waitForMap(page);
+    await pickFromSearch(page, complex.id, complex);
+    await expect(spotlit(page, complex.id)).toBeAttached();
+    await expect(labels(page)).toHaveText(titleOf(complex));
+
+    const viewport = page.viewportSize();
+    if (!viewport) throw new Error("No viewport");
+    const label = labels(page);
+    const cut = () =>
+      label.evaluate((pill) => {
+        const name = pill.firstElementChild ?? pill;
+        return name.scrollWidth > name.clientWidth;
+      });
+    if (onPhone()) {
+      expect(await cut(), "the name is cut with an ellipsis").toBe(true);
+      // Once the camera has flown in (under two seconds) and through the start of the turn, the pill stays on screen.
+      await page.waitForTimeout(2_500);
+      for (let sample = 0; sample < 4; sample += 1) {
+        await page.waitForTimeout(1_000);
+        const box = await label.boundingBox();
+        expect(box, "the label is on screen").not.toBeNull();
+        if (!box) return;
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+      }
+    } else {
+      expect(await cut(), "the whole name fits").toBe(false);
+    }
   });
 
   test("still opens its full record and stands forward when the city's building footprints fail", async ({
