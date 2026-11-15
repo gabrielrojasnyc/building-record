@@ -1,5 +1,6 @@
 import type { Outcome } from "./outcomes";
 import type { Period } from "./periods";
+import type { FamilyCount, Pest } from "./problems";
 
 export type Category = "structure" | "property" | "landuse" | "permit";
 /** Complaints per category and outcome. Zeros are omitted. Duplicates are never in a tally. */
@@ -36,11 +37,21 @@ export interface ComplexName {
   source: "openstreetmap" | "city";
 }
 
+/** What the city recorded at a Repeat Offender property in the 3 year period, counted by family. */
+export interface RecordedProblems {
+  /** Every family with any, most recorded first. The same counts as the building file's deficiencies give. */
+  families: FamilyCount[];
+  /** How many pest problems named each pest in the city's note. A note can name several, and some name none. */
+  pests: Partial<Record<Pest, number>>;
+}
+
 export interface RepeatOffender {
   name: string | null;
   units: number;
   activeViolations: number;
   totalViolations: number;
+  /** Null when the city recorded nothing here in the 3 year period. */
+  recorded: RecordedProblems | null;
 }
 
 export interface Complex {
@@ -79,6 +90,14 @@ export interface BuildingDetail {
   bbox: [number, number, number, number];
 }
 
+/** How one period's complaint counts spread across every published complex. */
+export interface CountSpread {
+  /** Share of complexes with no complaints in the period, 2 decimals. */
+  noneShare: number;
+  /** Nine complexes in ten had this many complaints or fewer. */
+  nineInTen: number;
+}
+
 export interface Meta {
   /** Austin calendar date of the pull, YYYY-MM-DD. */
   pulledAt: string;
@@ -105,6 +124,8 @@ export interface Meta {
   unrecognizedOutcomes: number;
   /** Deficiency rows left out: a category this site does not recognize, or a kind that is missing or not a code section title. */
   skippedDeficiencies: number;
+  /** How complaint counts spread across every published complex, by period, so one building's count has something to stand against. */
+  spread: Record<Period, CountSpread>;
   /**
    * Allow-listed phrases whose closed complaints in the 3 years nearly all carry a violation case number, most used
    * first. Read from every complaint the city published, not only those at apartment complexes.

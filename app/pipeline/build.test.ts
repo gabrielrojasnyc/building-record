@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { countFamilies } from "@/domain/problems";
 import type { BuildingDetail, Complex, Meta } from "@/domain/types";
 import addressRows from "./fixtures/addresses.json";
 import parcelRows from "./fixtures/parcels.json";
@@ -25,6 +26,7 @@ import {
   MAX_BLANK_OUTCOME_SHARE,
   MIN_CLOSED_SHARE,
   MAX_SKIPPED_DEFICIENCY_SHARE,
+  spreadOf,
   buildData,
   refuseIncompletePull,
   type PullReadings,
@@ -379,6 +381,12 @@ describe("buildData", () => {
       duplicateCases: 2,
       unrecognizedOutcomes: 1,
       skippedDeficiencies: 1,
+      // Six complexes: three with no complaints, two with 2 in every period, and the big one.
+      spread: {
+        m12: { noneShare: 0.5, nineInTen: 7 },
+        y2: { noneShare: 0.5, nineInTen: 50 },
+        y3: { noneShare: 0.5, nineInTen: 283 },
+      },
       phrasesUsuallyWithCase: [],
     });
   });
@@ -404,6 +412,13 @@ describe("buildData", () => {
       units: 300,
       activeViolations: 12,
       totalViolations: 41,
+      recorded: {
+        families: [
+          { family: "exterior", count: 2, notCleared: 1 },
+          { family: "trash", count: 1, notCleared: 1 },
+        ],
+        pests: {},
+      },
     });
     const everything = readdirSync(out, { recursive: true, encoding: "utf8" })
       .filter((f) => f.endsWith(".json"))
@@ -833,6 +848,77 @@ describe("buildData", () => {
     ]);
   });
 
+  it("counts what the city recorded by family for a listed complex, the same as its building file gives", async () => {
+    await buildData(out, NOW, fixtureFetch, options());
+    for (const complex of readJson<Complex[]>(`${out}/complexes.json`)) {
+      const detail = readJson<BuildingDetail>(
+        `${out}/buildings/${complex.id}.json`,
+      );
+      const families = countFamilies(detail.deficiencies);
+      if (complex.repeatOffender === null) continue;
+      expect(complex.repeatOffender.recorded?.families ?? []).toEqual(families);
+    }
+    // A complex that is not on the list carries no summary, whatever the city recorded at its parcels.
+    const unlisted = readJson<Complex[]>(`${out}/complexes.json`).find(
+      ({ parcelIds }) => parcelIds.includes("0204080102"),
+    );
+    expect(unlisted?.repeatOffender).toBeNull();
+    expect(
+      readJson<BuildingDetail>(`${out}/buildings/${unlisted?.id}.json`)
+        .deficiencies,
+    ).not.toEqual([]);
+  });
+
+  it("names the pests the city's notes name, and publishes no word of a note", async () => {
+    const note =
+      "Cockroaches in the kitchen of unit Z9. The tenant, Jane Example, said she has seen mice.";
+    const pestRow = (description: string) => ({
+      ...deficiencyRow(
+        BIG_PARCEL,
+        "Structure Condition Violations",
+        "Infestation (§309.1)",
+        "Cleared",
+      ),
+      deficiencydescription: description,
+    });
+    const withPests = (async (url: string | URL | Request) =>
+      datasetOf(url) === "ge82-ij4h"
+        ? new Response(
+            JSON.stringify([
+              ...FIXTURES["ge82-ij4h"],
+              pestRow(note),
+              pestRow("A wasp nest hangs over the door of unit Z8."),
+              pestRow(
+                "All structures shall be kept free from insect and rodent infestation.",
+              ),
+            ]),
+            { status: 200 },
+          )
+        : fixtureFetch(url)) as typeof fetch;
+
+    await buildData(out, NOW, withPests, options());
+
+    const recorded = complexById(BIG_PARCEL).repeatOffender?.recorded;
+    expect(recorded?.families).toContainEqual({
+      family: "pests",
+      count: 3,
+      notCleared: 0,
+    });
+    expect(recorded?.pests).toEqual({ roaches: 1, rodents: 1, wasps: 1 });
+    expect(logged).toContain(
+      "3 pest notes read, 2 naming a pest. No word of a note is published.",
+    );
+
+    const everything = readdirSync(out, { recursive: true, encoding: "utf8" })
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => readFileSync(join(out, f), "utf8"))
+      .join("");
+    expect(everything).not.toMatch(
+      /cockroach|kitchen|unit Z9|tenant|Jane|mice|wasp nest|unit Z8|shall be kept/i,
+    );
+    expect(everything).not.toContain("deficiencydescription");
+  });
+
   it("never requests inspector or owner from any dataset", async () => {
     const urls: string[] = [];
     const recording = (async (url: string | URL | Request) => {
@@ -933,5 +1019,37 @@ describe("the guards on a pull", () => {
     ).toThrow(
       "101 of 2,000 Repeat Offender deficiency rows (5.1%) were skipped for an unknown category or a missing or unsafe kind, more than the 5% allowed (MAX_SKIPPED_DEFICIENCY_SHARE in pipeline/build.ts). Refusing to write.",
     );
+  });
+});
+
+describe("spreadOf", () => {
+  const withCounts = (counts: number[]) =>
+    counts.map(
+      (count, index) =>
+        ({
+          id: String(index),
+          tally: {
+            m12: count > 0 ? { structure: { none: count } } : {},
+            y2: {},
+            y3: {},
+          },
+        }) as Complex,
+    );
+
+  it("gives the share of complexes with none and the count nine in ten stay at or under", () => {
+    const complexes = withCounts([0, 0, 0, 0, 0, 1, 2, 3, 5, 40]);
+    expect(spreadOf(complexes, "m12")).toEqual({ noneShare: 0.5, nineInTen: 5 });
+    expect(spreadOf(complexes, "y2")).toEqual({ noneShare: 1, nineInTen: 0 });
+  });
+
+  it("does not depend on the order the complexes come in", () => {
+    expect(spreadOf(withCounts([40, 0, 5, 0, 3, 0, 2, 0, 1, 0]), "m12")).toEqual(
+      { noneShare: 0.5, nineInTen: 5 },
+    );
+  });
+
+  it("rounds the share to 2 decimals, and says nothing of no complexes", () => {
+    expect(spreadOf(withCounts([0, 1, 1]), "m12").noneShare).toBe(0.33);
+    expect(spreadOf([], "m12")).toEqual({ noneShare: 0, nineInTen: 0 });
   });
 });

@@ -58,6 +58,7 @@ const busy: Complex = {
     units: 562,
     activeViolations: 0,
     totalViolations: 166,
+    recorded: null,
   },
 };
 
@@ -409,6 +410,7 @@ it("counts a single registered unit in the singular", () => {
         units: 1,
         activeViolations: 1,
         totalViolations: 1,
+        recorded: null,
       },
     },
     busyDetail,

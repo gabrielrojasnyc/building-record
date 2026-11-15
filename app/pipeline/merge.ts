@@ -6,12 +6,18 @@ import type {
   Complex,
   Deficiency,
   Outline,
+  RecordedProblems,
   Tally,
 } from "@/domain/types";
+import { countFamilies } from "@/domain/problems";
 import { complaintTotal } from "@/domain/query";
 import { metresBetween, type LabelSource } from "./addresses";
 import { compareComplaints, type CaseSummary } from "./cases";
-import { groupDeficiencies, type RepeatOffenderRecord } from "./context";
+import {
+  addPests,
+  groupDeficiencies,
+  type RepeatOffenderRecord,
+} from "./context";
 import { toAcres } from "./parcels";
 
 /** Parcels with the same address whose centroids are this close to another member are one property. */
@@ -36,6 +42,8 @@ export interface LabelledParcel {
   offender: RepeatOffenderRecord | null;
   /** What the city recorded at this parcel in the 3 year period. Empty unless it is on the Repeat Offender list. */
   deficiencies: Deficiency[];
+  /** The pests the city's notes name at this parcel in the 3 year period. */
+  pests: RecordedProblems["pests"];
 }
 
 /** A published complex and the history file that goes with it. */
@@ -141,6 +149,12 @@ function combine(group: LabelledParcel[]): Property {
       null,
     );
 
+  const deficiencies = groupDeficiencies(
+    members.flatMap((member) => member.deficiencies),
+  );
+  // Counted from the same deficiencies the building file carries, so the summary and the list always agree.
+  const families = countFamilies(deficiencies);
+
   const summaries = members.map((member) => member.summary);
   const monthly = busiest.summary.detail.monthly.map(({ month }) => ({
     month,
@@ -178,6 +192,13 @@ function combine(group: LabelledParcel[]): Property {
           units: offender.units,
           activeViolations: offender.activeViolations,
           totalViolations: offender.totalViolations,
+          recorded:
+            families.length === 0
+              ? null
+              : {
+                  families,
+                  pests: addPests(members.map((member) => member.pests)),
+                },
         }
       : null,
   };
@@ -190,9 +211,7 @@ function combine(group: LabelledParcel[]): Property {
       complaints: summaries
         .flatMap(({ detail }) => detail.complaints)
         .sort(compareComplaints),
-      deficiencies: groupDeficiencies(
-        members.flatMap(({ deficiencies }) => deficiencies),
-      ),
+      deficiencies,
       outline: members.flatMap(({ outline }) => outline),
       bbox: unionBox(members.map(({ bbox }) => bbox)),
     },

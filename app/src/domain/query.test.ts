@@ -166,7 +166,7 @@ describe('complexesInView ordering', () => {
 describe('complexesInView filtering', () => {
   it('keeps only Repeat Offender properties when the toggle is on', () => {
     const ro = complex('ro', {
-      repeatOffender: { name: 'Example Apartments', units: 100, activeViolations: 2, totalViolations: 5 },
+      repeatOffender: { name: 'Example Apartments', units: 100, activeViolations: 2, totalViolations: 5, recorded: null },
     });
     const plain = complex('plain');
     const view: View = { ...DEFAULT_VIEW, repeatOffendersOnly: true };

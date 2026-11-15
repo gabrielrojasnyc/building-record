@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import repeatOffenderRows from "./fixtures/repeat-offenders.json";
 import {
+  addPests,
   groupDeficiencies,
   loadDeficiencies,
+  loadPestNotes,
   loadRepeatOffenders,
 } from "./context";
 
@@ -250,5 +252,104 @@ describe("groupDeficiencies", () => {
       { category: "structure", kind: "Walls", cleared: 1, notCleared: 1 },
       { category: "property", kind: "Trash", cleared: 1, notCleared: 0 },
     ]);
+  });
+});
+
+
+describe("loadPestNotes", () => {
+  const PULLED_AT = new Date("2026-11-14T15:00:00Z");
+  const pestRow = (overrides: Record<string, string> = {}) => ({
+    // A parcel ID that does not exist, and notes made up for the test: nothing here is a real record.
+    parcelid: "9900000001",
+    violationcategory: "Structure Condition Violations",
+    deficiencycategory: "Infestation (§309.1)",
+    deficiencydescription: "Cockroaches seen in the kitchen.",
+    ...overrides,
+  });
+
+  it("asks the city for the notes of pest problems alone, in the 3 years, and never for the owner", async () => {
+    const { impl, urls } = fakeFetch([]);
+    await loadPestNotes(PULLED_AT, impl);
+    const params = new URL(urls[0]).searchParams;
+    expect(new URL(urls[0]).pathname).toContain("ge82-ij4h");
+    expect(params.get("$select")).toBe(
+      "parcelid,violationcategory,deficiencycategory,deficiencydescription",
+    );
+    expect(params.get("$where")).toBe(
+      "deficiencyindate >= '2023-11-14' AND (deficiencycategory like '%§%309.%' OR deficiencycategory like '%§%302.5%')",
+    );
+    expect(decodeURIComponent(urls.join("\n"))).not.toMatch(/owner/i);
+  });
+
+  it("counts, per parcel, how many notes name each pest", async () => {
+    const { impl } = fakeFetch([
+      pestRow(),
+      pestRow({ deficiencydescription: "Roaches and bed bugs in the bedroom." }),
+      pestRow({ deficiencydescription: "A wasp nest hangs over the door." }),
+      pestRow({
+        parcelid: "9900000002",
+        deficiencycategory: "Owner (§309.2)",
+        deficiencydescription: "Signs of rodents under the stairs.",
+      }),
+    ]);
+    const { byParcel, notesRead, notesNaming } = await loadPestNotes(
+      PULLED_AT,
+      impl,
+    );
+    expect(byParcel.get("9900000001")).toEqual({
+      roaches: 2,
+      bedBugs: 1,
+      wasps: 1,
+    });
+    expect(byParcel.get("9900000002")).toEqual({ rodents: 1 });
+    expect(notesRead).toBe(4);
+    expect(notesNaming).toBe(4);
+  });
+
+  it("reads the note of a pest kind however the city spaces its section reference", async () => {
+    const { impl } = fakeFetch([
+      pestRow({ deficiencycategory: "Infestation (§ 309.1)" }),
+      pestRow({ deficiencycategory: "Rodent harborage (§302.5 )" }),
+    ]);
+    const { byParcel, notesRead } = await loadPestNotes(PULLED_AT, impl);
+    expect(notesRead).toBe(2);
+    expect(byParcel.get("9900000001")).toEqual({ roaches: 2 });
+  });
+
+  it("reads a note that only quotes the code, and names nothing from it", async () => {
+    const { impl } = fakeFetch([
+      pestRow({
+        deficiencydescription:
+          "All structures shall be kept free from insect and rodent infestation.",
+      }),
+    ]);
+    const { byParcel, notesRead, notesNaming } = await loadPestNotes(
+      PULLED_AT,
+      impl,
+    );
+    expect(byParcel.size).toBe(0);
+    expect(notesRead).toBe(1);
+    expect(notesNaming).toBe(0);
+  });
+
+  it("reads no note of a row that is not counted as a pest problem, whatever the city sends back", async () => {
+    const { impl } = fakeFetch([
+      pestRow({ deficiencycategory: "Exterior Walls (§304.6)" }),
+      pestRow({ violationcategory: "Mystery Violations" }),
+      pestRow({ deficiencycategory: "  " }),
+      pestRow({ parcelid: " " }),
+    ]);
+    const { byParcel, notesRead } = await loadPestNotes(PULLED_AT, impl);
+    expect(byParcel.size).toBe(0);
+    expect(notesRead).toBe(0);
+  });
+});
+
+describe("addPests", () => {
+  it("adds up the pests of several parcels, in the pests' own order, leaving out those with none", () => {
+    const sum = addPests([{ wasps: 1, roaches: 2 }, {}, { roaches: 1, ants: 1 }]);
+    expect(sum).toEqual({ roaches: 3, wasps: 1, ants: 1 });
+    expect(Object.keys(sum)).toEqual(["roaches", "wasps", "ants"]);
+    expect(addPests([])).toEqual({});
   });
 });

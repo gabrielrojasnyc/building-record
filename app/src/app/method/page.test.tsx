@@ -31,6 +31,11 @@ const meta: Meta = {
   duplicateCases: 1732,
   unrecognizedOutcomes: 0,
   skippedDeficiencies: 0,
+  spread: {
+    m12: { noneShare: 0.52, nineInTen: 5 },
+    y2: { noneShare: 0.41, nineInTen: 9 },
+    y3: { noneShare: 0.35, nineInTen: 14 },
+  },
   phrasesUsuallyWithCase: [],
 };
 

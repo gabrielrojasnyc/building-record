@@ -1,13 +1,21 @@
 import { austinCalendarDate } from "@/domain/history";
 import { periodStarts } from "@/domain/periods";
-import type { Category, Deficiency, RepeatOffender } from "@/domain/types";
+import { familyOf, PESTS } from "@/domain/problems";
+import type {
+  Category,
+  Deficiency,
+  RecordedProblems,
+  RepeatOffender,
+} from "@/domain/types";
+import { pestsNamed } from "./pests";
 import { readAll } from "./socrata";
 
 const REPEAT_OFFENDER_DATASET = "86z9-i27i";
 const ACTIVE_STATUS = "Active";
 
 /** A Repeat Offender entry plus the street address the city registered it under. The address never reaches the published files as such. */
-export interface RepeatOffenderRecord extends RepeatOffender {
+export interface RepeatOffenderRecord
+  extends Omit<RepeatOffender, "recorded"> {
   registeredAddress: string | null;
 }
 
@@ -103,6 +111,19 @@ interface DeficiencyRow {
   deficiencystatus?: string;
 }
 
+/** The category and kind a row is counted under, or null for a row this site leaves out. */
+function countedAs(row: {
+  violationcategory?: string;
+  deficiencycategory?: string;
+}): { category: Category; kind: string } | null {
+  const violationCategory = row.violationcategory?.trim() ?? "";
+  const category = DEFICIENCY_CATEGORIES.find(([prefix]) =>
+    violationCategory.startsWith(prefix),
+  )?.[1];
+  const kind = deficiencyKind(row.deficiencycategory);
+  return category && kind ? { category, kind } : null;
+}
+
 export interface DeficiencyList {
   /** Deficiencies recorded since the 3 year start, grouped by category and kind, keyed by parcel ID. */
   byParcel: Map<string, Deficiency[]>;
@@ -159,15 +180,12 @@ export async function loadDeficiencies(
   for (const row of rows) {
     const id = row.parcelid?.trim();
     if (!id) continue;
-    const violationCategory = row.violationcategory?.trim() ?? "";
-    const category = DEFICIENCY_CATEGORIES.find(([prefix]) =>
-      violationCategory.startsWith(prefix),
-    )?.[1];
-    const kind = deficiencyKind(row.deficiencycategory);
-    if (!category || !kind) {
+    const counted = countedAs(row);
+    if (!counted) {
       skipped += 1;
       continue;
     }
+    const { category, kind } = counted;
     const cleared = row.deficiencystatus?.trim() === CLEARED;
     const entries = perParcel.get(id) ?? [];
     perParcel.set(id, entries);
@@ -183,4 +201,79 @@ export async function loadDeficiencies(
   for (const [id, entries] of perParcel)
     byParcel.set(id, groupDeficiencies(entries));
   return { byParcel, rowsRead: rows.length, skipped };
+}
+
+interface PestNoteRow {
+  parcelid?: string;
+  violationcategory?: string;
+  deficiencycategory?: string;
+  deficiencydescription?: string;
+}
+
+export interface PestNotes {
+  /** How many recorded pest problems named each pest in the city's note, keyed by parcel ID. */
+  byParcel: Map<string, RecordedProblems["pests"]>;
+  /** Pest notes read, and how many of them named a pest. For the build log. */
+  notesRead: number;
+  notesNaming: number;
+}
+
+/**
+ * The kinds of the pest family, as the city's API can filter them: code sections 309 and 302.5, however the
+ * city spaces the reference. Loose on purpose; `familyOf` decides, row by row, which notes are read.
+ */
+const PEST_KINDS =
+  "(deficiencycategory like '%§%309.%' OR deficiencycategory like '%§%302.5%')";
+
+/**
+ * Which pests the city's notes name, for the pest problems recorded on or after the 3 year start.
+ * The note is free text that can hold a unit number or what a tenant said, so it is requested for
+ * pest rows alone and only ever read by `pestsNamed`: no word of it is kept. The owner column is
+ * never requested.
+ */
+export async function loadPestNotes(
+  pulledAt: Date,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PestNotes> {
+  const since = periodStarts(austinCalendarDate(pulledAt)).y3;
+  const rows = await readAll<PestNoteRow>(
+    DEFICIENCIES_DATASET,
+    {
+      select:
+        "parcelid,violationcategory,deficiencycategory,deficiencydescription",
+      where: `deficiencyindate >= '${since}' AND ${PEST_KINDS}`,
+      order: "parcelid,:id",
+    },
+    fetchImpl,
+  );
+
+  const byParcel: PestNotes["byParcel"] = new Map();
+  let notesRead = 0;
+  let notesNaming = 0;
+  for (const row of rows) {
+    const id = row.parcelid?.trim();
+    const counted = countedAs(row);
+    // Only a row counted as a pest problem can name a pest, so the names never outnumber the problems.
+    if (!id || !counted || familyOf(counted.kind) !== "pests") continue;
+    notesRead += 1;
+    const named = pestsNamed(row.deficiencydescription ?? "");
+    if (named.length === 0) continue;
+    notesNaming += 1;
+    const counts = byParcel.get(id) ?? {};
+    byParcel.set(id, counts);
+    for (const pest of named) counts[pest] = (counts[pest] ?? 0) + 1;
+  }
+  return { byParcel, notesRead, notesNaming };
+}
+
+/** Adds up the pests named at several parcels, in the pests' own order. */
+export function addPests(
+  counts: RecordedProblems["pests"][],
+): RecordedProblems["pests"] {
+  const sum: RecordedProblems["pests"] = {};
+  for (const pest of PESTS) {
+    const total = counts.reduce((all, one) => all + (one[pest] ?? 0), 0);
+    if (total > 0) sum[pest] = total;
+  }
+  return sum;
 }

@@ -29,6 +29,7 @@ const burton: Complex = {
     units: 300,
     activeViolations: 9,
     totalViolations: 90,
+    recorded: null,
   },
 };
 

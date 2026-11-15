@@ -104,6 +104,7 @@ function parcel(
     summary: summary(id),
     offender: null,
     deficiencies: [],
+    pests: {},
     ...overrides,
   };
 }
@@ -285,6 +286,7 @@ describe("combineParcels", () => {
     const [{ complex }] = combineParcels([busy, listed]);
     expect(complex.id).toBe("0000000002");
     expect(complex.repeatOffender).toEqual({
+      recorded: null,
       name: "Listed Flats",
       units: 200,
       activeViolations: 1,
@@ -459,6 +461,49 @@ describe("combineParcels outcome fields", () => {
       },
       { category: "property", kind: "Trash", cleared: 1, notCleared: 0 },
     ]);
+  });
+
+  it("counts what the city recorded by family for a listed complex, adding up the members' pests", () => {
+    const first = parcel("0204040107", {
+      offender: offender(),
+      deficiencies: [
+        deficiency({ kind: "Installation (§605.1)", cleared: 3, notCleared: 1 }),
+        deficiency({ kind: "Infestation (§309.1)", cleared: 2, notCleared: 0 }),
+      ],
+      pests: { roaches: 1, rodents: 1 },
+    });
+    const second = parcel("0203020605", {
+      metresNorth: 20,
+      deficiencies: [
+        deficiency({ kind: "Luminaires (§605.3)", cleared: 1, notCleared: 0 }),
+        deficiency({ kind: "Infestation (§309.1)", cleared: 0, notCleared: 1 }),
+      ],
+      pests: { roaches: 1, wasps: 1 },
+    });
+
+    const [{ complex }] = combineParcels([first, second]);
+
+    expect(complex.repeatOffender?.recorded).toEqual({
+      families: [
+        { family: "electrical", count: 5, notCleared: 1 },
+        { family: "pests", count: 3, notCleared: 1 },
+      ],
+      pests: { roaches: 2, rodents: 1, wasps: 1 },
+    });
+  });
+
+  it("gives a listed complex no summary when the city recorded nothing, and an unlisted one none at all", () => {
+    const [{ complex: listed }] = combineParcels([
+      parcel("0204040107", { offender: offender() }),
+    ]);
+    expect(listed.repeatOffender?.recorded).toBeNull();
+
+    const [{ complex: unlisted }] = combineParcels([
+      parcel("0204040107", {
+        deficiencies: [deficiency({ kind: "Installation (§605.1)" })],
+      }),
+    ]);
+    expect(unlisted.repeatOffender).toBeNull();
   });
 
   it("does not let the order members are given in change the order of complaints opened the same day", () => {

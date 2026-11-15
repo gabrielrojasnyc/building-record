@@ -45,6 +45,7 @@ const busy = complex("200", {
     units: 120,
     activeViolations: 4,
     totalViolations: 40,
+    recorded: null,
   },
 });
 const single = complex("300", {

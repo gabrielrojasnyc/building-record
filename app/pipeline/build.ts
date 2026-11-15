@@ -1,13 +1,17 @@
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { Complex, Meta } from "@/domain/types";
+import type { Complex, CountSpread, Meta } from "@/domain/types";
 import { formatRegisteredAddress } from "@/domain/address";
 import { austinCalendarDate } from "@/domain/history";
-import { periodStarts } from "@/domain/periods";
+import { PERIODS, periodStarts, type Period } from "@/domain/periods";
 import { complaintTotal } from "@/domain/query";
 import { buildAddressResolver, loadAddressPoints } from "./addresses";
 import { emptyCaseSummary, loadCases } from "./cases";
-import { loadDeficiencies, loadRepeatOffenders } from "./context";
+import {
+  loadDeficiencies,
+  loadPestNotes,
+  loadRepeatOffenders,
+} from "./context";
 import {
   assertUniqueAddresses,
   combineParcels,
@@ -259,6 +263,26 @@ function printReadings(
 
 const WRITE_BATCH = 100;
 
+const forEachPeriod = <T>(make: (period: Period) => T): Record<Period, T> =>
+  Object.fromEntries(PERIODS.map((period) => [period, make(period)])) as Record<
+    Period,
+    T
+  >;
+
+/** How one period's complaint counts spread across the complexes: the share with none, and the count nine in ten stay at or under. */
+export function spreadOf(complexes: Complex[], period: Period): CountSpread {
+  const counts = complexes
+    .map((complex) => complaintTotal(complex.tally[period]))
+    .sort((a, b) => a - b);
+  if (counts.length === 0) return { noneShare: 0, nineInTen: 0 };
+  const none = counts.filter((count) => count === 0).length;
+  return {
+    noneShare: Math.round((none / counts.length) * 100) / 100,
+    // The smallest count that at least nine complexes in ten do not exceed.
+    nineInTen: counts[Math.ceil(counts.length * 0.9) - 1],
+  };
+}
+
 const roundTo3 = (value: number) => Math.round(value * 1000) / 1000;
 
 const startsWithHouseNumber = (address: string) => /^\d/.test(address);
@@ -280,6 +304,7 @@ async function assemble(
     caseIndex,
     repeatOffenders,
     deficiencies,
+    pestNotes,
     namesSnapshot,
     titleReview,
   ] = await Promise.all([
@@ -288,6 +313,7 @@ async function assemble(
     loadCases(pulledAt, fetchImpl),
     loadRepeatOffenders(fetchImpl),
     loadDeficiencies(pulledAt, fetchImpl),
+    loadPestNotes(pulledAt, fetchImpl),
     readNamesSnapshot(namesSnapshotPath),
     readTitleReview(titleReviewPath),
   ]);
@@ -305,6 +331,9 @@ async function assemble(
   };
   // Printed before the guards, so a refused build still says what it saw.
   printReadings(readings, caseIndex.unrecognizedPhrases, log);
+  log(
+    `${count(pestNotes.notesRead)} pest notes read, ${count(pestNotes.notesNaming)} naming a pest. No word of a note is published.`,
+  );
   refuseIncompletePull(readings, limits);
   const { offenders } = repeatOffenders;
 
@@ -341,6 +370,7 @@ async function assemble(
         emptyCaseSummary(parcel.id, pulledAt),
       offender,
       deficiencies: deficiencies.byParcel.get(parcel.id) ?? [],
+      pests: pestNotes.byParcel.get(parcel.id) ?? {},
     };
   });
 
@@ -396,6 +426,7 @@ async function assemble(
     duplicateCases: complexes.reduce((sum, c) => sum + c.duplicates.y3, 0),
     unrecognizedOutcomes: caseIndex.unrecognizedOutcomes,
     skippedDeficiencies: deficiencies.skipped,
+    spread: forEachPeriod((period) => spreadOf(complexes, period)),
     phrasesUsuallyWithCase: caseIndex.phrasesUsuallyWithCase,
   };
   files.set("complexes.json", JSON.stringify(complexes));
