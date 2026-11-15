@@ -1,6 +1,6 @@
 import { useId, useRef, useState } from "react";
 import { formatAcres } from "@/domain/format";
-import { CATEGORY_LABEL } from "@/domain/labels";
+import { CATEGORY_LABEL, titleOf } from "@/domain/labels";
 import { caseTotal, countFor, viewToSearchParams, type View } from "@/domain/query";
 import type { Category, Complex, Counts } from "@/domain/types";
 import { Glass } from "./Glass";
@@ -85,6 +85,7 @@ function TrayCard(props: {
   const { complex, view, selected, hovered } = props;
   const count = countFor(complex, view);
   const { caption, detail } = cardCopy(complex, view, count);
+  const title = titleOf(complex);
 
   return (
     <button
@@ -127,12 +128,16 @@ function TrayCard(props: {
           </span>
         )}
       </span>
-      <span className="mt-auto leading-[1.25] font-normal">
-        {complex.address}
+      {/* The card's height is fixed, so the title keeps to one line, and so does an address under a name. */}
+      <span className="mt-auto min-w-0 leading-[1.25] font-normal">
+        <span title={title} className="block truncate">
+          {title}
+        </span>
         <small
-          className={`mt-0.5 block text-[12.5px] font-light ${selected ? "text-mist" : "text-slate"}`}
+          title={complex.name ? complex.address : undefined}
+          className={`mt-0.5 block text-[12.5px] font-light ${complex.name ? "truncate" : ""} ${selected ? "text-mist" : "text-slate"}`}
         >
-          {detail}
+          {complex.name ? complex.address : detail}
         </small>
       </span>
     </button>

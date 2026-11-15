@@ -42,7 +42,16 @@ const SOURCES = [
     id: "xwdj-i9he",
     use: "311 service requests, read live when a building's record opens.",
   },
+  {
+    name: "Building Footprints Year 2013",
+    id: "3qcc-8uhz",
+    use: "building shapes and heights for the model a picked building stands up as, read live.",
+  },
 ] as const;
+
+const NAIP =
+  "https://www.usgs.gov/centers/eros/science/usgs-eros-archive-aerial-photography-national-agriculture-imagery-program-naip";
+const ODBL = "https://opendatacommons.org/licenses/odbl/";
 
 const CITY_TERMS: { category: Category; term: string }[] = [
   { category: "structure", term: "Structure Condition Violation" },
@@ -117,8 +126,13 @@ export default async function MethodPage() {
               ))}
             </ul>
             <p>
-              All five datasets are published by the City of Austin on its open data portal. Credit
+              All six datasets are published by the City of Austin on its open data portal. Credit
               goes to the City of Austin and its Development Services and 311 departments.
+            </p>
+            <p>
+              Aerial photos are from the{" "}
+              <ExternalLink href={NAIP}>USGS National Agriculture Imagery Program</ExternalLink>.
+              Most building names are from OpenStreetMap contributors.
             </p>
             <p>
               Map data is from OpenStreetMap contributors, delivered through OpenMapTiles and
@@ -217,6 +231,31 @@ export default async function MethodPage() {
             <p>
               If two complexes far apart would still share a label, each also carries its parcel ID.
               Any of these labels can differ from the address a leasing office uses.
+            </p>
+          </Section>
+
+          <Section title="Names, building shapes and photos">
+            <p>
+              Names come from OpenStreetMap, where they are recorded by volunteers and may be out of
+              date.{meta.namesAsOf && ` Names as of ${formatPullDate(meta.namesAsOf)}.`} A name is
+              shown only when one clear name lies inside the parcel. When OpenStreetMap has no name
+              inside the parcel, the name the property is registered under on the city&apos;s Repeat
+              Offender list is used, unless it reads as a company&apos;s.{" "}
+              {formatCount(meta.namedComplexes)} of these {formatCount(meta.complexCount)} complexes
+              have a name.
+            </p>
+            <p>
+              Building shapes are from the city&apos;s 2013 survey of building footprints, with
+              OpenStreetMap shapes for newer buildings and estimated heights where none was
+              measured.
+            </p>
+            <p>
+              Aerial photos are from the USGS National Agriculture Imagery Program and are in the
+              public domain.
+            </p>
+            <p>
+              OpenStreetMap data is available under the{" "}
+              <ExternalLink href={ODBL}>Open Database License</ExternalLink>.
             </p>
           </Section>
 

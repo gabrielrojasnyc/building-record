@@ -112,6 +112,42 @@ describe("the line under the address, with every complaint type counted", () => 
   });
 });
 
+describe("a card's title", () => {
+  const array = complex("1", {
+    address: "2000 Burton Dr",
+    name: { text: "Array Apartments", source: "openstreetmap" },
+    cases12: counts({ property: 3 }),
+  });
+
+  it("is the complex's name when it has one, with its address as the second line in place of the cases line", () => {
+    renderTray([array]);
+    const named = card("Array Apartments");
+    expect(named.getByText("Array Apartments")).toBeVisible();
+    expect(named.getByText("2000 Burton Dr")).toBeVisible();
+    expect(named.queryByText("Mostly property upkeep")).toBeNull();
+    expect(named.getByText("3")).toBeVisible();
+  });
+
+  it("is the address otherwise, with the cases line under it", () => {
+    renderTray([busy]);
+    expect(card("909 S Lamar Blvd").getByText("909 S Lamar Blvd")).toBeVisible();
+    expect(card("909 S Lamar Blvd").getByText("Mostly property upkeep")).toBeVisible();
+  });
+
+  it("keeps the full text of a long title, and of the address under a name, in their title attributes, since the card cuts them short", () => {
+    const label = "Parcel 0229230206, near 2104 E Anderson Ln SVRD WB";
+    renderTray([
+      complex("1", { address: label }),
+      complex("2", { address: label.replace("0229230206", "0229230207"), name: { text: "Foundation Communities: Lakeline Station Apts", source: "openstreetmap" } }),
+    ]);
+    expect(screen.getByTitle(label)).toHaveTextContent(label);
+    expect(screen.getByTitle("Foundation Communities: Lakeline Station Apts")).toHaveTextContent(
+      "Foundation Communities: Lakeline Station Apts",
+    );
+    expect(screen.getByTitle("Parcel 0229230207, near 2104 E Anderson Ln SVRD WB")).toBeVisible();
+  });
+});
+
 it("says a sliver parcel is under a tenth of an acre", () => {
   renderTray([complex("1", { address: "1 Sliver Ln", acres: 0 })]);
   expect(card("1 Sliver Ln").getByText("under 0.1 acres")).toBeVisible();

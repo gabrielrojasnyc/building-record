@@ -43,7 +43,9 @@ export async function generateMetadata({
   if (!complex) notFound();
 
   return {
-    title: `${complex.address}: code complaint record`,
+    title: complex.name
+      ? `${complex.name.text}, ${complex.address}: code complaint record`
+      : `${complex.address}: code complaint record`,
     description: describeRecord(complex),
   };
 }

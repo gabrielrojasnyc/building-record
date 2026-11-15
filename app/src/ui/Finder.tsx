@@ -1,8 +1,16 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { AddressMatch } from "@/city/addressSearch";
+import { loadBuildingDetail } from "@/city/buildingDetail";
+import { titleOf } from "@/domain/labels";
 import {
   complexesInView,
   viewFromSearchParams,
@@ -12,6 +20,7 @@ import {
 } from "@/domain/query";
 import type { Complex, Meta } from "@/domain/types";
 import type { CameraPadding } from "@/map/BuildingMap";
+import type { SpotlightTarget } from "@/map/spotlight";
 import { BuildingPanel } from "./BuildingPanel";
 import { Filters } from "./Filters";
 import { Glass } from "./Glass";
@@ -33,6 +42,7 @@ const CITYWIDE: ViewArea = [
   [180, -90],
   [-180, -90],
 ];
+/** Only for a building whose file cannot be read: with an outline, the map frames the model itself. */
 const SELECTION_ZOOM = 14.6;
 const AREA_ZOOM = 13.9;
 const ADDRESS_ZOOM = 15;
@@ -46,10 +56,35 @@ const PHONE_QUERY = "(max-width: 760px)";
 const DESKTOP_PADDING: CameraPadding = { top: 80, right: 0, bottom: 243, left: 0 };
 const PHONE_PADDING: CameraPadding = { top: 170, right: 0, bottom: 261, left: 0 };
 
+/* While a building stands forward, the camera frames it clear of the record panel on the right, or above the phone's record sheet. */
+const DESKTOP_SPOTLIGHT_PADDING: CameraPadding = { top: 110, right: 440, bottom: 250, left: 70 };
+const PHONE_SHEET_SHARE = 0.6;
+
+function phoneSpotlightPadding(viewportHeight: number): CameraPadding {
+  return {
+    top: 190,
+    right: 30,
+    bottom: Math.round(viewportHeight * PHONE_SHEET_SHARE) + 20,
+    left: 30,
+  };
+}
+
 interface FlyTarget {
   lon: number;
   lat: number;
   zoom: number;
+}
+
+/** About a centimetre: two reports this close are the same camera. */
+const SAME_GROUND_DEGREES = 1e-7;
+
+/** True when two reports show the same ground, as when the camera has come back to exactly where it was. */
+function sameGround(a: ViewArea, b: ViewArea): boolean {
+  return a.every(
+    ([lon, lat], corner) =>
+      Math.abs(lon - b[corner][0]) < SAME_GROUND_DEGREES &&
+      Math.abs(lat - b[corner][1]) < SAME_GROUND_DEGREES,
+  );
 }
 
 /*
@@ -70,6 +105,20 @@ function subscribeToViewport(onChange: () => void) {
   const query = window.matchMedia(PHONE_QUERY);
   query.addEventListener("change", onChange);
   return () => query.removeEventListener("change", onChange);
+}
+
+function subscribeToResize(onChange: () => void) {
+  window.addEventListener("resize", onChange);
+  return () => window.removeEventListener("resize", onChange);
+}
+
+/** The window's height, which sizes the phone's record sheet. Never read on the server, where nothing is staged. */
+function useViewportHeight(): number {
+  return useSyncExternalStore(
+    subscribeToResize,
+    () => window.innerHeight,
+    () => 0,
+  );
 }
 
 function usePhoneLayout(): boolean {
@@ -114,9 +163,16 @@ export function Finder({
 }) {
   const [view, changeView] = useViewInUrl();
   const isPhone = usePhoneLayout();
+  const viewportHeight = useViewportHeight();
   const [viewArea, setViewArea] = useState<ViewArea | null>(null);
   const [mapUnavailable, setMapUnavailable] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /**
+   * The ground the tray was counting when a building was picked. The tray keeps counting it while the
+   * building is open and until the camera is back from it, so a moving camera never reshuffles the cards.
+   */
+  const [heldArea, setHeldArea] = useState<ViewArea | null>(null);
+  const [stage, setStage] = useState<SpotlightTarget | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [flyTo, setFlyTo] = useState<FlyTarget | null>(null);
 
@@ -125,12 +181,63 @@ export function Finder({
     [complexes],
   );
 
+  const countedArea = heldArea ?? viewArea;
   // Citywide until the map first reports where it is looking, and for good if it never can.
-  const trayArea = mapUnavailable ? CITYWIDE : (viewArea ?? CITYWIDE);
+  const trayArea = mapUnavailable ? CITYWIDE : (countedArea ?? CITYWIDE);
   const inView = useMemo(
     () => complexesInView(complexes, trayArea, view),
     [complexes, trayArea, view],
   );
+
+  // The model and its padding change in the same render, so the map frames the model inside the padding it is shown with.
+  const padding = stage
+    ? isPhone
+      ? phoneSpotlightPadding(viewportHeight)
+      : DESKTOP_SPOTLIGHT_PADDING
+    : isPhone
+      ? PHONE_PADDING
+      : DESKTOP_PADDING;
+
+  // Once a picked building's outline is known, the map brings it forward and frames it. Picking another switches the model directly.
+  useEffect(() => {
+    const complex = selectedId === null ? undefined : byId.get(selectedId);
+    if (!complex || mapUnavailable) return;
+    let current = true;
+    loadBuildingDetail(complex.id).then(
+      ({ outline }) => {
+        if (!current) return;
+        setStage({
+          id: complex.id,
+          title: titleOf(complex),
+          lon: complex.lon,
+          lat: complex.lat,
+          outline,
+        });
+      },
+      () => {
+        if (!current) return;
+        // With no outline there is no model: fly to the building's point, as before there were models.
+        setStage(null);
+        setFlyTo({ lon: complex.lon, lat: complex.lat, zoom: SELECTION_ZOOM });
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [selectedId, byId, mapUnavailable]);
+
+  const reportViewArea = (area: ViewArea) => {
+    setViewArea(area);
+    // After a building closes the camera eases back to where it was, and the tray lets go once it is there.
+    if (selectedId === null && heldArea !== null && sameGround(area, heldArea)) {
+      setHeldArea(null);
+    }
+  };
+
+  // Someone moving the map themselves is not waiting for the camera to come back.
+  const releaseHeldArea = () => {
+    if (selectedId === null) setHeldArea(null);
+  };
 
   const selected = selectedId === null ? undefined : byId.get(selectedId);
   // Closing the panel hands focus back to the card for the building that was open.
@@ -141,42 +248,59 @@ export function Finder({
         ?.focus();
     }
     setSelectedId(null);
-  }, [selectedId]);
+    setStage(null);
+    // With no model the camera has nowhere to come back from, so the tray follows the map at once.
+    if (stage === null) setHeldArea(null);
+  }, [selectedId, stage]);
 
   const select = (id: string) => {
-    const complex = byId.get(id);
-    if (!complex) return;
+    if (!byId.has(id)) return;
     setSelectedId(id);
-    setFlyTo({ lon: complex.lon, lat: complex.lat, zoom: SELECTION_ZOOM });
+    setHeldArea((held) => held ?? viewArea);
+  };
+
+  // Asked for in the same update as the model leaves, so the map hands the camera to the fly instead of easing back.
+  const leaveFor = (target: FlyTarget) => {
+    setSelectedId(null);
+    setStage(null);
+    setHeldArea(null);
+    setFlyTo(target);
   };
 
   const jump = (area: Area) => {
-    setSelectedId(null);
-    setFlyTo({ lon: area.lon, lat: area.lat, zoom: AREA_ZOOM });
+    leaveFor({ lon: area.lon, lat: area.lat, zoom: AREA_ZOOM });
   };
 
   const goToAddress = (match: AddressMatch) => {
     if (match.complexId) return select(match.complexId);
-    setSelectedId(null);
-    setFlyTo({ lon: match.lon, lat: match.lat, zoom: ADDRESS_ZOOM });
+    leaveFor({ lon: match.lon, lat: match.lat, zoom: ADDRESS_ZOOM });
   };
 
   return (
     <main>
-      <div aria-hidden className="fog pointer-events-none fixed inset-0 z-1" />
+      <div
+        aria-hidden
+        className={`fog pointer-events-none fixed inset-0 z-1 ${stage ? "fog-spotlight" : ""}`}
+      />
 
       <IntroSearch complexes={complexes} onChoose={goToAddress} complexesOnly={mapUnavailable} />
       <Filters view={view} onChange={changeView} />
       {/* After the title block and filters and before the tray, so Tab reaches the map between them. It is positioned, so its place in the markup moves nothing. */}
-      <div className="fixed inset-0">
+      <div
+        className="fixed inset-0"
+        onPointerDownCapture={releaseHeldArea}
+        onWheelCapture={releaseHeldArea}
+        onKeyDownCapture={releaseHeldArea}
+      >
         <BuildingMap
           complexes={complexes}
           view={view}
           selectedId={selectedId}
           hoveredId={hoveredId}
           flyTo={flyTo}
-          padding={isPhone ? PHONE_PADDING : DESKTOP_PADDING}
-          onViewAreaChange={setViewArea}
+          padding={padding}
+          spotlight={stage}
+          onViewAreaChange={reportViewArea}
           onSelect={select}
           onHover={setHoveredId}
           onUnavailable={() => setMapUnavailable(true)}
@@ -204,7 +328,7 @@ export function Finder({
         )}
         <Tray
           citywide={mapUnavailable}
-          awaitingView={viewArea === null}
+          awaitingView={countedArea === null}
           complexes={inView}
           view={view}
           selectedId={selectedId}

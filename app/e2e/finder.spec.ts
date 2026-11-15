@@ -6,6 +6,8 @@ interface ComplexRecord {
   id: string;
   parcelIds: string[];
   address: string;
+  name: { text: string } | null;
+  acres: number;
 }
 
 interface MetaRecord {
@@ -40,6 +42,27 @@ const NO_MAP_SENTENCE =
 const CAUTION =
   "No cases means none reached Code Enforcement. It does not mean the building has no problems.";
 const COMPLEX_WITH_RECORD = "0304070701";
+const FOOTPRINTS = "https://data.austintexas.gov/resource/3qcc-8uhz.json**";
+const AERIAL_PHOTOS = "https://imagery.nationalmap.gov/**";
+/** One navy pixel, standing in for the USGS aerial photo. */
+const PHOTO = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGPgFpYHAABqAD4U+VRBAAAAAElFTkSuQmCC",
+  "base64",
+);
+
+const titleOf = (complex: ComplexRecord) => complex.name?.text ?? complex.address;
+const formatAcres = (acres: number) =>
+  acres < 0.1 ? "under 0.1 acres" : `${acres} ${acres === 1 ? "acre" : "acres"}`;
+
+/** A named complex on one parcel whose name no other complex's name or address contains, so a search for it finds it alone. */
+const NAMED = complexes.find((complex) => {
+  const name = complex.name?.text.toLowerCase();
+  if (!name || complex.parcelIds.length > 1) return false;
+  const containing = complexes.filter((other) =>
+    [other.name?.text, other.address].some((text) => text?.toLowerCase().includes(name)),
+  );
+  return containing.length === 1;
+});
 
 /** The city's APIs are live and not ours, so every test answers them itself. */
 async function stubCity(page: Page) {
@@ -61,6 +84,11 @@ async function stubCity(page: Page) {
       route.fulfill({
         json: [{ sr_type_desc: "Street Light Issue", count: "2" }],
       }),
+  );
+  // No surveyed shapes, so the map stands up whatever buildings its own tiles hold.
+  await page.route(FOOTPRINTS, (route) => route.fulfill({ json: [] }));
+  await page.route(AERIAL_PHOTOS, (route) =>
+    route.fulfill({ contentType: "image/png", body: PHOTO }),
   );
 }
 
@@ -121,6 +149,28 @@ async function waitForMap(page: Page) {
   await expect
     .poll(() => readCount(trayCount(page)))
     .toBeLessThan(meta.complexCount);
+}
+
+const spotlit = (page: Page, id: string) => page.locator(`[data-spotlight="${id}"]`);
+const labels = (page: Page) => page.locator(".spotlight-label");
+const cardIds = (page: Page) =>
+  cards(page).evaluateAll((elements) =>
+    elements.map((element) => element.getAttribute("data-complex-id")),
+  );
+
+function recordOf(id: string): ComplexRecord {
+  const complex = complexes.find((candidate) => candidate.id === id);
+  if (!complex) throw new Error(`${id} is not in the data`);
+  return complex;
+}
+
+/** Picks a complex from the search box by its name or address; its suggestion carries its address either way. */
+async function pickFromSearch(page: Page, text: string, complex: ComplexRecord) {
+  await page.getByRole("combobox").fill(text);
+  await page
+    .getByRole("option")
+    .filter({ has: page.getByText(complex.address, { exact: true }) })
+    .click();
 }
 
 async function openFirstCard(page: Page): Promise<string> {
@@ -215,8 +265,12 @@ test("a building page is reachable directly", async ({ page }) => {
   expect(complex, `${COMPLEX_WITH_RECORD} is in the data`).toBeDefined();
 
   await page.goto(`/building/${COMPLEX_WITH_RECORD}`);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
-    complex?.address ?? "",
+  if (!complex) return;
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(titleOf(complex));
+  await expect(page).toHaveTitle(
+    complex.name
+      ? `${complex.name.text}, ${complex.address}: code complaint record`
+      : `${complex.address}: code complaint record`,
   );
   await expect(
     page.getByRole("link", { name: "Back to the map" }),
@@ -390,6 +444,11 @@ test.describe("when the map cannot start", () => {
     await cards(page).first().click();
     await expect(page.getByText("What the cases were about")).toBeVisible();
     await expect(panel(page)).toBeFocused();
+    // No map, so nothing is staged, but the record still has its photo.
+    await expect(
+      panel(page).getByRole("img", { name: /^Aerial photo of / }),
+    ).toHaveAttribute("data-loaded", "true");
+    await expect(page.locator("[data-spotlight]")).toHaveCount(0);
   });
 
   test("Tab runs search, filters, order, cards, Show 40 more and the method link, each with a focus indicator", async ({
@@ -445,4 +504,139 @@ test("with the map running, Tab goes search, filters, map, then the first card, 
   for (const index of [search, filter, map, card]) {
     expect(stops[index].ringed, `"${stops[index].label}" shows a focus indicator`).toBe(true);
   }
+});
+
+test.describe("a picked building", () => {
+  test.beforeAll(() => {
+    expect(NAMED, "the data has a complex with a name only it carries").toBeDefined();
+  });
+
+  test("stands forward on the map, and its record is headed by its name, address and aerial photo", async ({
+    page,
+  }) => {
+    if (!NAMED?.name) return;
+    await page.goto("/");
+    await waitForMap(page);
+    await pickFromSearch(page, NAMED.address, NAMED);
+
+    await expect(spotlit(page, NAMED.id)).toBeAttached();
+    await expect(labels(page)).toHaveText(NAMED.name.text);
+    await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText(NAMED.name.text);
+    await expect(
+      panel(page).getByText(`${NAMED.address}, ${formatAcres(NAMED.acres)}`, { exact: true }),
+    ).toBeVisible();
+    await expect(
+      panel(page).getByRole("img", { name: `Aerial photo of ${NAMED.name.text}` }),
+    ).toHaveAttribute("data-loaded", "true");
+    await expect(panel(page).getByText("Aerial photo: USGS")).toBeVisible();
+  });
+
+  test("is found by its name", async ({ page }) => {
+    if (!NAMED?.name) return;
+    await page.goto("/");
+    await waitForMap(page);
+    await page.getByRole("combobox").fill(NAMED.name.text);
+
+    const suggestion = page.getByRole("option").filter({ hasText: NAMED.address });
+    await expect(suggestion).toContainText(NAMED.name.text);
+    await expect(suggestion).toContainText("apartments");
+    await suggestion.click();
+    await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText(NAMED.name.text);
+    await expect(spotlit(page, NAMED.id)).toBeAttached();
+  });
+
+  test("leaves on Escape: the model goes and the tray counts what it did before the pick", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await waitForMap(page);
+    const before = await trayCount(page).innerText();
+
+    const id = await openFirstCard(page);
+    await expect(spotlit(page, id)).toBeAttached();
+    await page.keyboard.press("Escape");
+
+    await expect(page.locator("[data-spotlight]")).toHaveCount(0);
+    await expect(labels(page)).toHaveCount(0);
+    await expect(trayCount(page)).toHaveText(before);
+  });
+
+  test("keeps the tray's cards while it is open, though the camera moves", async ({ page }) => {
+    await page.goto("/");
+    await waitForMap(page);
+    const before = { ids: await cardIds(page), count: await trayCount(page).innerText() };
+
+    const id = await openFirstCard(page);
+    await expect(spotlit(page, id)).toBeAttached();
+    // Unchanging is only shown over time: let the camera fly in and start to turn.
+    await page.waitForTimeout(3_000);
+
+    expect(await cardIds(page)).toEqual(before.ids);
+    await expect(trayCount(page)).toHaveText(before.count);
+  });
+
+  test("picked and then replaced straight away leaves one label, for the second", async ({ page }) => {
+    await page.goto("/");
+    await waitForMap(page);
+    const [, secondId] = await cardIds(page);
+    expect(secondId).toBeTruthy();
+    const second = recordOf(secondId ?? "");
+
+    // A card first, then search, which a phone's record sheet does not cover.
+    await cards(page).first().click();
+    await pickFromSearch(page, second.address, second);
+
+    await expect(spotlit(page, second.id)).toBeAttached();
+    await expect(labels(page)).toHaveCount(1);
+    await expect(labels(page)).toHaveText(titleOf(second));
+  });
+
+  test("still opens its full record and stands forward when the city's building footprints fail", async ({
+    page,
+  }) => {
+    await page.route(FOOTPRINTS, (route) => route.fulfill({ status: 500 }));
+    await page.goto("/");
+    await waitForMap(page);
+
+    const askedForFootprints = page.waitForRequest(/3qcc-8uhz/);
+    const id = await openFirstCard(page);
+    await askedForFootprints;
+
+    await expect(spotlit(page, id)).toBeAttached();
+    await expect(panel(page).getByText("What the cases were about")).toBeVisible();
+    await expect(panel(page).getByRole("region", { name: "Month by month" })).toBeVisible();
+    await expect(panel(page).getByText("Loading from the City of Austin")).toHaveCount(0);
+  });
+
+  test("keeps its name over the header's gradient, with no image, when the aerial photo fails", async ({
+    page,
+  }) => {
+    if (!NAMED?.name) return;
+    await page.route(AERIAL_PHOTOS, (route) => route.fulfill({ status: 500 }));
+    await page.goto("/");
+    await waitForMap(page);
+
+    const photoAnswered = page.waitForResponse(/imagery\.nationalmap\.gov/);
+    await pickFromSearch(page, NAMED.address, NAMED);
+    await photoAnswered;
+
+    await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText(NAMED.name.text);
+    await expect(panel(page).locator("img")).toHaveCount(0);
+    await expect(panel(page).getByText("Aerial photo: USGS")).toHaveCount(0);
+  });
+
+  test("fades its photo in, and not for someone who asked for less motion", async ({ page }) => {
+    if (!NAMED) return;
+    await page.goto("/");
+    await waitForMap(page);
+    await pickFromSearch(page, NAMED.address, NAMED);
+
+    const photo = panel(page).getByRole("img", { name: /^Aerial photo of / });
+    await expect(photo).toHaveAttribute("data-loaded", "true");
+    const fade = () => photo.evaluate((element) => getComputedStyle(element).transitionDuration);
+    expect(await fade()).toBe("0.7s");
+
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    expect(await fade()).toBe("0s");
+  });
 });

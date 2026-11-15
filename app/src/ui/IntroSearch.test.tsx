@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { searchAddresses, searchComplexes, type AddressMatch } from "@/city/addressSearch";
@@ -9,8 +9,9 @@ vi.mock("@/city/addressSearch", () => ({ searchAddresses: vi.fn(), searchComplex
 const search = vi.mocked(searchAddresses);
 const searchLocal = vi.mocked(searchComplexes);
 
-const apartments: AddressMatch = { label: "1601 Royal Crest Dr", lon: -97.7, lat: 30.2, complexId: "a" };
-const street: AddressMatch = { label: "1601 Royal Oak Ln", lon: -97.8, lat: 30.3, complexId: null };
+const apartments: AddressMatch = { label: "1601 Royal Crest Dr", name: null, lon: -97.7, lat: 30.2, complexId: "a" };
+const street: AddressMatch = { label: "1601 Royal Oak Ln", name: null, lon: -97.8, lat: 30.3, complexId: null };
+const named: AddressMatch = { label: "2000 Burton Dr", name: "Array Apartments", lon: -97.73, lat: 30.23, complexId: "b" };
 const complexes: Complex[] = [];
 
 function setup() {
@@ -57,6 +58,22 @@ describe("IntroSearch", () => {
     expect(options.map((option) => option.textContent)).toEqual(["1601 Royal Crest Dr" + "apartments", "1601 Royal Oak Ln"]);
     expect(input).toHaveAttribute("aria-expanded", "true");
     expect(input).toHaveAttribute("aria-controls", screen.getByRole("listbox").id);
+  });
+
+  it("shows a named complex by its name, with its address under it and the apartments tag", async () => {
+    search.mockResolvedValue({ matches: [named, street], cityUnavailable: false });
+    const { user, onChoose, input } = setup();
+    await user.type(input, "Array");
+    await settle();
+
+    const [option] = screen.getAllByRole("option");
+    expect(option).toHaveTextContent("Array Apartments2000 Burton Drapartments");
+    expect(within(option).getByText("Array Apartments")).toBeVisible();
+    expect(within(option).getByText("2000 Burton Dr")).toBeVisible();
+    expect(within(option).getByText("apartments")).toBeVisible();
+
+    await user.click(option);
+    expect(onChoose).toHaveBeenCalledWith(named);
   });
 
   it("ignores a response that arrives after the text has changed", async () => {
@@ -226,6 +243,6 @@ describe("IntroSearch without a map", () => {
     await user.type(screen.getByRole("combobox"), "zzzz");
     await settle();
 
-    expect(screen.getByText("No apartment complex address starts with or contains that.")).toBeInTheDocument();
+    expect(screen.getByText("No apartment complex name or address starts with or contains that.")).toBeInTheDocument();
   });
 });

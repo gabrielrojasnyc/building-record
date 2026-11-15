@@ -4,12 +4,12 @@ import { escapeSoql, searchAddresses, searchComplexes } from "./addressSearch";
 
 const counts: Counts = { structure: 0, property: 0, landuse: 0, permit: 0 };
 
-function complex(id: string, address: string): Complex {
+function complex(id: string, address: string, name: string | null = null): Complex {
   return {
     id,
     parcelIds: [id],
     address,
-    name: null,
+    name: name === null ? null : { text: name, source: "openstreetmap" },
     lon: -97.7,
     lat: 30.2,
     acres: 2,
@@ -97,7 +97,7 @@ describe("searchAddresses", () => {
     const {
       matches: [match],
     } = await searchAddresses("100 Cong", [], fakeCity([cityRow("100 CONGRESS AVE")]));
-    expect(match).toEqual({ label: "100 Congress Ave", lon: -97.74, lat: 30.26, complexId: null });
+    expect(match).toEqual({ label: "100 Congress Ave", name: null, lon: -97.74, lat: 30.26, complexId: null });
   });
 
   it("still returns complex matches when the city lookup fails, and says the city could not be reached", async () => {
@@ -134,6 +134,40 @@ describe("searchAddresses", () => {
       "address_type='1' AND upper(full_street_name) like upper('o''b\\_\\%%')",
     );
     expect(url.searchParams.get("$limit")).toBe("6");
+  });
+});
+
+describe("searching by name", () => {
+  const named = [
+    complex("array", "2000 Burton Dr", "Array Apartments"),
+    complex("arroyo", "4400 Pearce Rd", "The Arrayo"),
+    complex("lane", "12 Array Ln"),
+    complex("court", "Array Ct 5"),
+    complex("other", "900 W 26th St", "Pearl Flats"),
+  ];
+
+  it("finds a named complex by its name and carries the name beside its address", async () => {
+    const { matches } = await searchAddresses("array apart", named, fakeCity([]));
+    expect(matches).toEqual([{ label: "2000 Burton Dr", name: "Array Apartments", lon: -97.7, lat: 30.2, complexId: "array" }]);
+  });
+
+  it("still finds a named complex by its address", async () => {
+    const { matches } = await searchAddresses("2000 bur", named, fakeCity([]));
+    expect(matches).toEqual([expect.objectContaining({ label: "2000 Burton Dr", name: "Array Apartments", complexId: "array" })]);
+  });
+
+  it("gives an unnamed complex no name", async () => {
+    const { matches } = await searchAddresses("12 array", named, fakeCity([]));
+    expect(matches).toEqual([expect.objectContaining({ label: "12 Array Ln", name: null, complexId: "lane" })]);
+  });
+
+  it("ranks names and addresses by one rule: those starting with the text first, then those containing it, each alphabetical by the text that matched", async () => {
+    const { matches } = await searchAddresses("array", named, fakeCity([]));
+    expect(matches.map((match) => match.complexId)).toEqual(["array", "court", "lane", "arroyo"]);
+  });
+
+  it("finds names without a map too", () => {
+    expect(searchComplexes("pearl", named).map((match) => match.complexId)).toEqual(["other"]);
   });
 });
 

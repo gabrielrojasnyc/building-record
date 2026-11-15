@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import type { Meta } from "@/domain/types";
 import { readDataFile } from "../dataFiles";
 import MethodPage from "./page";
@@ -48,7 +48,7 @@ it("reads the numbers it names from the data", async () => {
   expect(screen.getByText("This copy of the data was pulled on November 14, 2026.")).toBeVisible();
 });
 
-it("links and names all five sources, with the map credit", async () => {
+it("links and names all six city sources, with the map credit", async () => {
   await renderPage();
 
   const sources = {
@@ -57,12 +57,13 @@ it("links and names all five sources, with the map credit", async () => {
     "Austin Code Complaint Cases": "https://data.austintexas.gov/d/6wtj-zbtb",
     "Repeat Offender Registrations": "https://data.austintexas.gov/d/86z9-i27i",
     "Austin 311 Public Data": "https://data.austintexas.gov/d/xwdj-i9he",
+    "Building Footprints Year 2013": "https://data.austintexas.gov/d/3qcc-8uhz",
   };
   for (const [name, href] of Object.entries(sources)) {
     expect(screen.getByRole("link", { name })).toHaveAttribute("href", href);
   }
-  expect(screen.getByText(/All five datasets are published by the City of Austin/)).toBeVisible();
-  expect(document.body.textContent).not.toMatch(/Affordable Housing|CC BY-SA|six datasets/);
+  expect(screen.getByText(/All six datasets are published by the City of Austin/)).toBeVisible();
+  expect(document.body.textContent).not.toMatch(/Affordable Housing|CC BY-SA|five datasets/);
   expect(
     screen.getByText(/Map data is from OpenStreetMap contributors, delivered through OpenMapTiles and OpenFreeMap/),
   ).toBeVisible();
@@ -164,4 +165,70 @@ it("says how many cases carry an unrecognized description, only when there are s
   expect(
     screen.getByText(/12 cases carry a description this site does not recognize and are not counted\./),
   ).toBeVisible();
+});
+
+describe("names, building shapes and photos", () => {
+  const named: Meta = {
+    ...meta,
+    complexCount: 2496,
+    namedComplexes: 844,
+    namesAsOf: "2026-11-14",
+  };
+
+  async function renderNamed(overrides: Partial<Meta> = {}) {
+    vi.mocked(readDataFile).mockResolvedValueOnce({ ...named, ...overrides });
+    render(await MethodPage());
+    const heading = screen.getByRole("heading", {
+      name: "Names, building shapes and photos",
+    });
+    if (!heading.parentElement)
+      throw new Error("The section heading has no section");
+    return heading.parentElement;
+  }
+
+  it("says where names come from, what they may get wrong, and when one is shown", async () => {
+    const section = await renderNamed();
+    expect(section).toHaveTextContent(
+      "Names come from OpenStreetMap, where they are recorded by volunteers and may be out of date.",
+    );
+    expect(section).toHaveTextContent(
+      "A name is shown only when one clear name lies inside the parcel.",
+    );
+    // A few names come from the city, so the page must not say every name is from OpenStreetMap.
+    expect(section).toHaveTextContent(
+      "When OpenStreetMap has no name inside the parcel, the name the property is registered under on the city's Repeat Offender list is used, unless it reads as a company's.",
+    );
+    expect(section).toHaveTextContent("Names as of November 14, 2026.");
+    expect(section).toHaveTextContent(
+      "844 of these 2,496 complexes have a name.",
+    );
+  });
+
+  it("leaves out the snapshot date when there is none", async () => {
+    const section = await renderNamed({ namesAsOf: null });
+    expect(section).not.toHaveTextContent("Names as of");
+    expect(section).toHaveTextContent(
+      "844 of these 2,496 complexes have a name.",
+    );
+  });
+
+  it("says where building shapes and aerial photos come from", async () => {
+    const section = await renderNamed();
+    expect(section).toHaveTextContent(
+      "Building shapes are from the city's 2013 survey of building footprints, with OpenStreetMap shapes for newer buildings and estimated heights where none was measured.",
+    );
+    expect(section).toHaveTextContent(
+      "Aerial photos are from the USGS National Agriculture Imagery Program and are in the public domain.",
+    );
+  });
+
+  it("links the Open Database License that OpenStreetMap data is under", async () => {
+    const section = await renderNamed();
+    expect(section).toHaveTextContent(
+      "OpenStreetMap data is available under the Open Database License.",
+    );
+    expect(
+      within(section).getByRole("link", { name: "Open Database License" }),
+    ).toHaveAttribute("href", "https://opendatacommons.org/licenses/odbl/");
+  });
 });

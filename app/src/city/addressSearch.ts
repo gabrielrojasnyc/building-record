@@ -2,7 +2,10 @@ import { ADDRESS_SEARCH_MIN_CHARACTERS, formatAddress } from "@/domain/address";
 import type { Complex } from "@/domain/types";
 
 export interface AddressMatch {
+  /** The address, which stays the unique label even when the complex has a name. */
   label: string;
+  /** The complex's name, shown first when it has one. Null for an unnamed complex and for any other address. */
+  name: string | null;
   lon: number;
   lat: number;
   complexId: string | null;
@@ -32,17 +35,34 @@ export function escapeSoql(text: string): string {
   return text.replace(/'/g, "''").replace(/[\\%_]/g, "\\$&");
 }
 
+/** How a complex matches the text: by the first of its name and address to start with it, else to contain it. */
+function matchOf(complex: Complex, needle: string): { starts: boolean; matched: string } | null {
+  const texts = complex.name ? [complex.name.text, complex.address] : [complex.address];
+  const starting = texts.find((text) => text.toLowerCase().startsWith(needle));
+  if (starting) return { starts: true, matched: starting };
+  const containing = texts.find((text) => text.toLowerCase().includes(needle));
+  return containing ? { starts: false, matched: containing } : null;
+}
+
+/** Names and addresses rank by one rule: those that start with the text first, then those that contain it, each alphabetical by the text that matched. */
 function matchComplexes(text: string, complexes: Complex[]): AddressMatch[] {
   const needle = text.toLowerCase();
   return complexes
-    .filter((complex) => complex.address.toLowerCase().includes(needle))
-    .sort((a, b) => {
-      const aStarts = a.address.toLowerCase().startsWith(needle);
-      const bStarts = b.address.toLowerCase().startsWith(needle);
-      if (aStarts !== bStarts) return aStarts ? -1 : 1;
-      return a.address.localeCompare(b.address);
+    .flatMap((complex) => {
+      const match = matchOf(complex, needle);
+      return match ? [{ complex, ...match }] : [];
     })
-    .map(({ id, address, lon, lat }) => ({ label: address, lon, lat, complexId: id }));
+    .sort((a, b) => {
+      if (a.starts !== b.starts) return a.starts ? -1 : 1;
+      return a.matched.localeCompare(b.matched);
+    })
+    .map(({ complex: { id, address, name, lon, lat } }) => ({
+      label: address,
+      name: name?.text ?? null,
+      lon,
+      lat,
+      complexId: id,
+    }));
 }
 
 async function matchCity(text: string, limit: number, fetchImpl: typeof fetch): Promise<AddressMatch[]> {
@@ -59,7 +79,7 @@ async function matchCity(text: string, limit: number, fetchImpl: typeof fetch): 
   return rows.flatMap(({ full_street_name, the_geom }) => {
     const point = the_geom?.coordinates;
     if (!full_street_name || !point) return [];
-    return [{ label: formatAddress(full_street_name), lon: point[0], lat: point[1], complexId: null }];
+    return [{ label: formatAddress(full_street_name), name: null, lon: point[0], lat: point[1], complexId: null }];
   });
 }
 

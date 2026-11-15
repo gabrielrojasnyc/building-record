@@ -1,6 +1,14 @@
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { aerialPhotoUrl } from "@/city/aerialPhoto";
 import { forgetBuildingDetails } from "@/city/buildingDetail";
 import { DEFAULT_VIEW, type View } from "@/domain/query";
 import type { BuildingDetail, Complex, Counts } from "@/domain/types";
@@ -192,26 +200,115 @@ it('shows None and "no code cases" for a clean building', () => {
   expect(screen.queryByText("Latest cases")).toBeNull();
 });
 
-it("gives the parcel size and no unit count on the parcel line", () => {
-  renderPage(busy, busyDetail);
-  expect(screen.getByText("Apartment parcel, 20.5 acres")).toBeVisible();
+describe("the header", () => {
+  const named: Complex = {
+    ...busy,
+    name: { text: "Royal Crest Apartments", source: "openstreetmap" },
+  };
 
-  cleanup();
-  renderPage(clean, cleanDetail);
-  expect(screen.getByText("Apartment parcel, 15 acres")).toBeVisible();
-});
+  /** The line under the header's title. */
+  function subline(title: string) {
+    const line = screen.getByRole("heading", { name: title }).nextElementSibling;
+    if (!line) throw new Error(`Nothing under ${title}`);
+    return line;
+  }
 
-it("says a sliver parcel is under a tenth of an acre", () => {
-  renderPage({ ...clean, acres: 0 }, cleanDetail);
-  expect(screen.getByText("Apartment parcel, under 0.1 acres")).toBeVisible();
-});
+  it("titles a named complex by its name, over its address and acres", () => {
+    renderPage(named, busyDetail);
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Royal Crest Apartments" }),
+    ).toBeVisible();
+    expect(subline("Royal Crest Apartments")).toHaveTextContent(
+      /^1601 Royal Crest Dr, 20\.5 acres$/,
+    );
+  });
 
-it("says how many parcels a complex covers when parcels sharing an address are shown as one", () => {
-  renderPage(
-    { ...clean, parcelIds: ["0168090512", "R072626"], acres: 13.4 },
-    cleanDetail,
-  );
-  expect(screen.getByText("Apartment parcels (2), 13.4 acres")).toBeVisible();
+  it("titles an unnamed complex by its address, with the acres alone beneath", () => {
+    renderPage(busy, busyDetail);
+    expect(subline("1601 Royal Crest Dr")).toHaveTextContent(/^20\.5 acres$/);
+
+    cleanup();
+    renderPage(clean, cleanDetail);
+    expect(subline("9805 Copper Creek Dr")).toHaveTextContent(/^15 acres$/);
+  });
+
+  it("says a sliver parcel is under a tenth of an acre", () => {
+    renderPage({ ...clean, acres: 0 }, cleanDetail);
+    expect(subline("9805 Copper Creek Dr")).toHaveTextContent(/^under 0\.1 acres$/);
+  });
+
+  it("says how many parcels a complex covers when parcels sharing an address are shown as one, named or not", () => {
+    const merged = { parcelIds: ["0168090512", "R072626"], acres: 13.4 };
+    renderPage({ ...clean, ...merged }, cleanDetail);
+    expect(subline("9805 Copper Creek Dr")).toHaveTextContent(
+      /^Apartment parcels \(2\), 13\.4 acres$/,
+    );
+
+    cleanup();
+    renderPage({ ...named, ...merged }, busyDetail);
+    expect(subline("Royal Crest Apartments")).toHaveTextContent(
+      /^1601 Royal Crest Dr, apartment parcels \(2\), 13\.4 acres$/,
+    );
+  });
+
+  it("keeps the full title in its title attribute, since a long one is cut at two lines", () => {
+    const label = "Parcel 0229230206, near 2104 E Anderson Ln SVRD WB";
+    renderPage({ ...clean, address: label }, cleanDetail);
+    expect(screen.getByRole("heading", { level: 1, name: label })).toHaveAttribute(
+      "title",
+      label,
+    );
+  });
+
+  it("fades in the aerial photo of the parcel once it has loaded, and credits it then", async () => {
+    renderPage(named, busyDetail);
+
+    const photo = screen.getByRole("img", {
+      name: "Aerial photo of Royal Crest Apartments",
+    });
+    expect(photo).toHaveAttribute("src", aerialPhotoUrl(busyDetail.bbox, 744, 400));
+    expect(photo).toHaveAttribute("decoding", "async");
+    expect(photo).not.toHaveAttribute("loading", "lazy");
+    expect(photo).toHaveAttribute("data-loaded", "false");
+    expect(screen.queryByText("Aerial photo: USGS")).toBeNull();
+
+    fireEvent.load(photo);
+    expect(photo).toHaveAttribute("data-loaded", "true");
+    expect(screen.getByText("Aerial photo: USGS")).toBeVisible();
+  });
+
+  it("drops a photo that fails to load, keeping the title over the gradient", () => {
+    renderPage(named, busyDetail);
+
+    fireEvent.error(
+      screen.getByRole("img", { name: "Aerial photo of Royal Crest Apartments" }),
+    );
+    expect(screen.queryByRole("img", { name: /^Aerial photo/ })).toBeNull();
+    expect(screen.queryByText("Aerial photo: USGS")).toBeNull();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Royal Crest Apartments" }),
+    ).toBeVisible();
+  });
+
+  it("takes a photo that finished before the page could listen for it", () => {
+    const complete = vi
+      .spyOn(HTMLImageElement.prototype, "complete", "get")
+      .mockReturnValue(true);
+    const width = vi
+      .spyOn(HTMLImageElement.prototype, "naturalWidth", "get")
+      .mockReturnValue(744);
+    renderPage(named, busyDetail);
+    expect(
+      screen.getByRole("img", { name: "Aerial photo of Royal Crest Apartments" }),
+    ).toHaveAttribute("data-loaded", "true");
+
+    cleanup();
+    width.mockReturnValue(0);
+    renderPage(named, busyDetail);
+    expect(screen.queryByRole("img", { name: /^Aerial photo/ })).toBeNull();
+    complete.mockRestore();
+    width.mockRestore();
+  });
 });
 
 it("notes a listing on the city's Repeat Offender list with its published figures", () => {
@@ -333,6 +430,27 @@ it("lists the 311 request types counted around the parcel", async () => {
   );
 });
 
+it("lists 311 rows that share a label, such as two Unspecified types, without mixing them up", async () => {
+  const keyWarnings = vi.spyOn(console, "error");
+  renderPage(busy, busyDetail, {
+    city: ok([
+      { sr_type_desc: "Unspecified", count: "4" },
+      { sr_type_desc: "Unspecified", count: "2" },
+    ]),
+  });
+
+  const rows = within(
+    await screen.findByRole("region", { name: "311 requests around this parcel" }),
+  );
+  await rows.findAllByText("Unspecified");
+  expect(rows.getAllByRole("listitem").map((row) => row.textContent)).toEqual([
+    "Unspecified4",
+    "Unspecified2",
+  ]);
+  expect(keyWarnings).not.toHaveBeenCalled();
+  keyWarnings.mockRestore();
+});
+
 it("says when the city has no 311 requests in the area", async () => {
   renderPage(clean, cleanDetail, { city: ok([]) });
   expect(
@@ -437,6 +555,29 @@ describe("over the map", () => {
     expect(screen.queryAllByTestId("month-bar")).toHaveLength(0);
     expect(screen.queryByText("Latest cases")).toBeNull();
     expect(screen.getByText("Loading from the City of Austin")).toBeVisible();
+  });
+
+  it("heads the panel with the title over the gradient from the first moment, and adds the photo once the building file arrives", async () => {
+    const { select } = renderOnMap(
+      { ...busy, name: { text: "Royal Crest Apartments", source: "openstreetmap" } },
+      { [HISTORY]: ok(busyDetail), "/data/buildings/R039648.json": pending },
+    );
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Royal Crest Apartments" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Close building details" }),
+    ).toBeVisible();
+
+    expect(
+      await screen.findByRole("img", { name: "Aerial photo of Royal Crest Apartments" }),
+    ).toHaveAttribute("src", aerialPhotoUrl(busyDetail.bbox, 744, 400));
+
+    select(clean);
+    expect(
+      screen.getByRole("heading", { level: 2, name: "9805 Copper Creek Dr" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("img", { name: /^Aerial photo/ })).toBeNull();
   });
 
   it("draws the months and latest cases once the history arrives", async () => {

@@ -11,11 +11,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { aerialPhotoUrl } from "@/city/aerialPhoto";
 import { loadBuildingDetail } from "@/city/buildingDetail";
 import { load311Summary, type RequestTypeCount } from "@/city/requests311";
 import { formatAcres } from "@/domain/format";
 import { HISTORY_START_LONG, HISTORY_START_SHORT } from "@/domain/history";
-import { CATEGORY_LABEL, NO_CASES_CAUTION } from "@/domain/labels";
+import { CATEGORY_LABEL, NO_CASES_CAUTION, titleOf } from "@/domain/labels";
 import { countFor, DEFAULT_VIEW, type Period, type View } from "@/domain/query";
 import type { BuildingDetail, Category, Complex } from "@/domain/types";
 import { Glass } from "./Glass";
@@ -23,7 +24,7 @@ import { Glass } from "./Glass";
 type Placement =
   /** Over the map screen: loads the building's history itself, can close, and links to the building's own page. */
   | { place: "map"; onClose(): void }
-  /** The building's own page: history read from disk at build time, and the address is the page's h1. */
+  /** The building's own page: history read from disk at build time, and the title is the page's h1. */
   | { place: "page"; detail: BuildingDetail };
 
 export type BuildingPanelProps = Placement & {
@@ -52,11 +53,11 @@ const OTHER_PERIOD: Record<Period, { period: Period; label: string }> = {
   the bottom (the tray plus the data notice under it). On a phone it is a bottom sheet over the tray.
 */
 const MAP_PLACEMENT =
-  "building-sheet fixed top-[76px] right-(--gutter) bottom-[259px] z-3 w-[372px] overflow-hidden rounded-[28px] motion-safe:animate-rise phone:top-auto phone:right-0 phone:bottom-0 phone:left-0 phone:z-4 phone:h-[72dvh] phone:w-auto phone:rounded-b-none";
+  "building-sheet fixed top-[76px] right-(--gutter) bottom-[259px] z-3 w-[372px] overflow-hidden rounded-[28px] motion-safe:animate-rise phone:top-auto phone:right-0 phone:bottom-0 phone:left-0 phone:z-4 phone:h-[60dvh] phone:w-auto phone:rounded-b-none";
 const MAP_SCROLLER =
   "h-full overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
 
-/** Section headings sit one level under the building's address: h2 under the page's h1, h3 under the panel's h2. */
+/** Section headings sit one level under the building's title: h2 under the page's h1, h3 under the panel's h2. */
 const SectionLevel = createContext<"h2" | "h3">("h3");
 
 const SECTION = "mt-[22px]";
@@ -153,7 +154,7 @@ export function BuildingPanel(props: BuildingPanelProps) {
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [onClose]);
 
-  // A newly chosen building opens at its address, not wherever the last one was scrolled to.
+  // A newly chosen building opens at its header, not wherever the last one was scrolled to.
   useEffect(() => {
     if (scrollerRef.current) scrollerRef.current.scrollTop = 0;
   }, [complex.id]);
@@ -175,92 +176,165 @@ export function BuildingPanel(props: BuildingPanelProps) {
       className={props.place === "page" ? "rounded-[28px]" : MAP_PLACEMENT}
     >
       <SectionLevel value={props.place === "page" ? "h2" : "h3"}>
-      <div
-        ref={scrollerRef}
-        className={
-          props.place === "page" ? "p-[22px]" : `${MAP_SCROLLER} p-[22px]`
-        }
-      >
-        {onClose && (
-          <button
-            type="button"
-            aria-label="Close building details"
-            onClick={onClose}
-            className="float-right size-8 cursor-pointer rounded-full bg-white/50 text-[18px] leading-none text-deep hover:bg-white/85"
-          >
-            ×
-          </button>
-        )}
-        <Heading
-          id={headingId}
-          className="mr-10 mb-0.5 font-display text-[32px] leading-[1.05] font-normal text-deep"
-        >
-          {complex.address}
-        </Heading>
-        <p className={MESSAGE}>
-          {complex.parcelIds.length > 1
-            ? `Apartment parcels (${complex.parcelIds.length})`
-            : "Apartment parcel"}
-          , {formatAcres(complex.acres)}
-        </p>
+      <div ref={scrollerRef} className={props.place === "page" ? undefined : MAP_SCROLLER}>
+        <Header
+          complex={complex}
+          heading={Heading}
+          headingId={headingId}
+          photo={detail.status === "ready" ? detail.value.bbox : null}
+          onClose={onClose}
+        />
+        <div className="px-[22px] pt-4 pb-[22px]">
+          {complex.repeatOffender && (
+            <RepeatOffenderNote listing={complex.repeatOffender} />
+          )}
+          <LeadFigure complex={complex} period={view.period} />
+          <Figures complex={complex} period={view.period} />
+          <CategoryBars counts={complex[view.period]} />
 
-        {complex.repeatOffender && (
-          <RepeatOffenderNote listing={complex.repeatOffender} />
-        )}
-        <LeadFigure complex={complex} period={view.period} />
-        <Figures complex={complex} period={view.period} />
-        <CategoryBars counts={complex[view.period]} />
+          {detail.status === "failed" ? (
+            <Section title="Month by month">
+              <p className={MESSAGE}>
+                This building&apos;s history could not be loaded. The counts above
+                are still current.
+              </p>
+            </Section>
+          ) : (
+            detail.status === "ready" && (
+              <>
+                <MonthChart monthly={detail.value.monthly} />
+                <LatestCases latest={detail.value.latest} />
+              </>
+            )
+          )}
+          {detail.status !== "failed" && <Requests311 outcome={requests} />}
 
-        {detail.status === "failed" ? (
-          <Section title="Month by month">
-            <p className={MESSAGE}>
-              This building&apos;s history could not be loaded. The counts above
-              are still current.
-            </p>
-          </Section>
-        ) : (
-          detail.status === "ready" && (
-            <>
-              <MonthChart monthly={detail.value.monthly} />
-              <LatestCases latest={detail.value.latest} />
-            </>
-          )
-        )}
-        {detail.status !== "failed" && <Requests311 outcome={requests} />}
+          <p className="mt-[18px] text-[12.5px] leading-normal text-slate">
+            From{" "}
+            <a
+              href="https://data.austintexas.gov/d/6wtj-zbtb"
+              target="_blank"
+              rel="noreferrer"
+              className="text-deep underline"
+            >
+              Austin Code Complaint Cases
+            </a>{" "}
+            and{" "}
+            <a
+              href="https://data.austintexas.gov/d/xwdj-i9he"
+              target="_blank"
+              rel="noreferrer"
+              className="text-deep underline"
+            >
+              Austin 311
+            </a>
+            , City of Austin. {NO_CASES_CAUTION}
+          </p>
 
-        <p className="mt-[18px] text-[12.5px] leading-normal text-slate">
-          From{" "}
-          <a
-            href="https://data.austintexas.gov/d/6wtj-zbtb"
-            target="_blank"
-            rel="noreferrer"
-            className="text-deep underline"
-          >
-            Austin Code Complaint Cases
-          </a>{" "}
-          and{" "}
-          <a
-            href="https://data.austintexas.gov/d/xwdj-i9he"
-            target="_blank"
-            rel="noreferrer"
-            className="text-deep underline"
-          >
-            Austin 311
-          </a>
-          , City of Austin. {NO_CASES_CAUTION}
-        </p>
-
-        {onClose && (
-          <Link
-            href={`/building/${complex.id}`}
-            className="mt-4 inline-flex h-[30px] items-center rounded-full bg-white/55 px-3 text-[13px] font-normal text-deep hover:bg-white/85"
-          >
-            Open this building&apos;s page
-          </Link>
-        )}
+          {onClose && (
+            <Link
+              href={`/building/${complex.id}`}
+              className="mt-4 inline-flex h-[30px] items-center rounded-full bg-white/55 px-3 text-[13px] font-normal text-deep hover:bg-white/85"
+            >
+              Open this building&apos;s page
+            </Link>
+          )}
+        </div>
       </div>
       </SectionLevel>
     </Glass>
+  );
+}
+
+/** What the line under the title says: the address when a name is the title, how many parcels a merged complex covers, and the acres. */
+function headerLine(complex: Complex): string {
+  const acres = formatAcres(complex.acres);
+  const parcels = complex.parcelIds.length;
+  if (complex.name) {
+    return parcels > 1
+      ? `${complex.address}, apartment parcels (${parcels}), ${acres}`
+      : `${complex.address}, ${acres}`;
+  }
+  return parcels > 1 ? `Apartment parcels (${parcels}), ${acres}` : acres;
+}
+
+type PhotoStatus = "loading" | "loaded" | "failed";
+
+/**
+ * The building's title over its aerial photo. The fog gradient and the title stand from the first
+ * moment; USGS can take seconds, so the photo fades in over them once it has loaded, and a photo
+ * that fails is dropped, never shown as a broken image.
+ */
+function Header(props: {
+  complex: Complex;
+  heading: "h1" | "h2";
+  headingId: string;
+  /** The parcel's box, once the building file has arrived. */
+  photo: BuildingDetail["bbox"] | null;
+  onClose: (() => void) | null;
+}) {
+  const { complex, heading: Heading } = props;
+  const title = titleOf(complex);
+  const src = props.photo ? aerialPhotoUrl(props.photo, 744, 400) : null;
+
+  const [settled, setSettled] = useState<{ src: string; status: PhotoStatus } | null>(null);
+  const status: PhotoStatus = settled !== null && settled.src === src ? settled.status : "loading";
+
+  // A photo can finish before the page is hydrated and listening for it, so the element is asked where it got to.
+  const readFinishedPhoto = useCallback(
+    (image: HTMLImageElement | null) => {
+      if (!image?.complete || src === null) return;
+      setSettled({ src, status: image.naturalWidth > 0 ? "loaded" : "failed" });
+    },
+    [src],
+  );
+
+  return (
+    <div className="relative h-[204px] overflow-hidden rounded-t-[27px] bg-linear-to-b/srgb from-ice/80 to-mist/75 phone:h-[170px]">
+      {src !== null && status !== "failed" && (
+        // A plain img: the photo comes straight from USGS in the browser, never through this site's server.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          ref={readFinishedPhoto}
+          src={src}
+          alt={`Aerial photo of ${title}`}
+          decoding="async"
+          data-loaded={status === "loaded"}
+          onLoad={() => setSettled({ src, status: "loaded" })}
+          onError={() => setSettled({ src, status: "failed" })}
+          className="absolute inset-0 size-full scale-[1.06] object-cover opacity-0 data-[loaded=true]:scale-100 data-[loaded=true]:opacity-100 motion-safe:transition-[opacity,scale] motion-safe:duration-700 motion-safe:ease-out"
+        />
+      )}
+      <div
+        aria-hidden
+        className="absolute inset-0 bg-linear-to-b/srgb from-transparent from-42% to-navy/82"
+      />
+      <div className="absolute right-[22px] bottom-4 left-[22px] z-1 text-ice">
+        <Heading
+          id={props.headingId}
+          title={title}
+          className="line-clamp-2 font-display text-[30px] leading-[1.02] font-normal text-balance"
+        >
+          {title}
+        </Heading>
+        <p className="mt-1 text-[13px] opacity-88">{headerLine(complex)}</p>
+      </div>
+      {status === "loaded" && (
+        <span className="pointer-events-none absolute top-[58px] right-3.5 z-1 text-[10.5px] text-ice opacity-80 [text-shadow:0_1px_2px_color-mix(in_srgb,var(--color-navy)_70%,transparent)]">
+          Aerial photo: USGS
+        </span>
+      )}
+      {props.onClose && (
+        <button
+          type="button"
+          aria-label="Close building details"
+          onClick={props.onClose}
+          className="absolute top-3.5 right-3.5 z-2 size-8 cursor-pointer rounded-full bg-white/72 text-[18px] leading-none text-deep backdrop-blur-[8px] hover:bg-white/85"
+        >
+          ×
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -282,7 +356,7 @@ function RepeatOffenderNote({
   listing: NonNullable<Complex["repeatOffender"]>;
 }) {
   return (
-    <div className="mt-4 flex gap-2.5 rounded-[18px] border border-coral/50 bg-coral/28 px-3.5 py-3 text-[13.5px] text-navy">
+    <div className="flex gap-2.5 rounded-[18px] border border-coral/50 bg-coral/28 px-3.5 py-3 text-[13.5px] text-navy">
       <span
         aria-hidden
         className="mt-1.5 size-[9px] flex-none rounded-full bg-coral ring-3 ring-coral/30"
@@ -321,7 +395,7 @@ function totalFor(complex: Complex, period: Period): number {
 function LeadFigure({ complex, period }: { complex: Complex; period: Period }) {
   const total = totalFor(complex, period);
   return (
-    <p className="mt-5 flex items-end gap-3.5">
+    <p className="mt-[18px] flex items-end gap-3.5">
       {total === 0 ? (
         <span className="font-display text-[60px] leading-none text-deep italic">
           None
@@ -497,9 +571,10 @@ function Requests311({ outcome }: { outcome: Outcome<RequestTypeCount[]> }) {
           </p>
         ) : (
           <ul className="text-[14px]">
-            {outcome.value.map(({ type, count }) => (
+            {/* The city can return one label for several types, such as two Unspecified rows. */}
+            {outcome.value.map(({ type, count }, index) => (
               <li
-                key={type}
+                key={`${index}-${type}`}
                 className={`grid grid-cols-[1fr_auto] gap-3 ${LIST_ROW}`}
               >
                 <span>{type}</span>

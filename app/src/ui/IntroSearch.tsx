@@ -8,7 +8,7 @@ import { Glass } from "./Glass";
 
 const PLACEHOLDER = "Search an Austin address";
 const NO_MATCH = "No Austin address starts with that.";
-const NO_COMPLEX_MATCH = "No apartment complex address starts with or contains that.";
+const NO_COMPLEX_MATCH = "No apartment complex name or address starts with or contains that.";
 const CITY_UNAVAILABLE = "Other Austin addresses could not be loaded right now.";
 const TYPING_PAUSE_MS = 250;
 
@@ -174,7 +174,14 @@ export function IntroSearch({
                 onClick={() => choose(match)}
                 className="flex cursor-pointer items-baseline justify-between gap-3 rounded-xl px-3 py-[9px] text-deep hover:bg-white/70 aria-selected:bg-white/70"
               >
-                <span>{match.label}</span>
+                {match.name ? (
+                  <span className="min-w-0">
+                    {match.name}
+                    <span className="block text-[13px] text-slate">{match.label}</span>
+                  </span>
+                ) : (
+                  <span>{match.label}</span>
+                )}
                 {match.complexId && <span className="flex-none text-[13px] text-slate">apartments</span>}
               </li>
             ))}
