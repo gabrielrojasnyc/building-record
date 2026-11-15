@@ -105,7 +105,7 @@ const section = (name: RegExp | string) =>
   within(screen.getByRole("region", { name }));
 
 describe("CategoryDetail", () => {
-  it("says what the category covers, then the city's own term for it", () => {
+  it("says what the category covers, then the term to look for in the city's records", () => {
     renderDetail();
     expect(
       screen.getByText(
@@ -113,8 +113,10 @@ describe("CategoryDetail", () => {
       ),
     ).toBeVisible();
     expect(
-      screen.getByText("The city calls this Structure Condition."),
+      screen.getByText("In the city's records, look for Structure Condition."),
     ).toBeVisible();
+    // The term, not the city's longer description, which ends in "Violation(s)".
+    expect(document.body.textContent).not.toContain("Violation(s)");
   });
 
   it("shows the category's complaints in each of the three periods, marking the one the panel leads with", () => {
@@ -193,7 +195,7 @@ describe("CategoryDetail", () => {
       const problems = section("Problems the city recorded here");
       expect(
         problems.getByText(
-          "Published by the city for Repeat Offender properties only.",
+          "Published by the city for Repeat Offender properties only. From the last 3 years.",
         ),
       ).toBeVisible();
       expect(
@@ -244,21 +246,74 @@ describe("CategoryDetail", () => {
       renderDetail();
       expect(listed().map((row) => row.textContent)).toEqual([
         "Nov 7, 2026No violation found",
-        "Oct 27, 2026Violation confirmed, still openSupervisor Reviewcity record",
+        "Oct 27, 2026Violation confirmed, still openSupervisor Reviewcity record 2026 048480-CV",
         "Sep 3, 2026Violation confirmed, closed Oct 26Closed due to Voluntary Compliance",
-        "Dec 30, 2025Violation confirmed, closed May 4, 2026city record",
+        "Dec 30, 2025Violation confirmed, closed May 4, 2026city record 2025 163636-CV",
       ]);
     });
 
-    it("links to the city's record for the case, in a new tab, named for its complaint", () => {
+    it("links to the city's record for the case, in a new tab, named for its case and its complaint", () => {
       renderDetail();
       const link = screen.getByRole("link", {
-        name: "City record for the complaint opened Oct 27, 2026",
+        name: "City record 2026 048480-CV, for the complaint opened Oct 27, 2026",
       });
       expect(link).toHaveAttribute("href", CASE_URL);
       expect(link).toHaveAttribute("target", "_blank");
       expect(link).toHaveAttribute("rel", "noopener");
-      expect(link).toHaveTextContent("city record");
+      expect(link).toHaveTextContent(/^city record 2026 048480-CV$/);
+    });
+
+    it("tells apart two linked complaints opened the same day, to the eye and to a screen reader", () => {
+      const sameDay = (number: string, folder: string) =>
+        complaint({
+          opened: "2024-09-09",
+          closed: "2024-10-01",
+          outcome: "violation",
+          cityOutcome: "Closed due to Voluntary Compliance",
+          violationCase: { number, url: `${CASE_URL}&folder=${folder}` },
+        });
+      renderDetail({
+        complaints: [
+          sameDay("2024 105432-CV", "1"),
+          sameDay("2024 105433-CV", "2"),
+        ],
+      });
+
+      const links = screen.getAllByRole("link", { name: /^City record / });
+      expect(links.map((link) => link.textContent)).toEqual([
+        "city record 2024 105432-CV",
+        "city record 2024 105433-CV",
+      ]);
+      expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
+        "City record 2024 105432-CV, for the complaint opened Sep 9, 2024",
+        "City record 2024 105433-CV, for the complaint opened Sep 9, 2024",
+      ]);
+    });
+
+    it("shows the city's phrase beside an outcome it contradicts, and leaves it out beside the one it repeats", () => {
+      // 9024 Northgate Blvd: the case number confirms a violation the city's phrase says was not found.
+      const phrase = "No Violation(s) Found/Inspection Performed";
+      renderDetail({
+        complaints: [
+          complaint({
+            opened: "2026-03-02",
+            closed: "2026-03-04",
+            outcome: "violation",
+            cityOutcome: phrase,
+            violationCase: { number: "2026 024695-CV", url: null },
+          }),
+          complaint({
+            opened: "2026-03-02",
+            closed: "2026-03-03",
+            outcome: "none",
+            cityOutcome: phrase,
+          }),
+        ],
+      });
+      expect(listed().map((row) => row.textContent)).toEqual([
+        `Mar 2, 2026Violation confirmed, closed Mar 4${phrase}`,
+        "Mar 2, 2026No violation found",
+      ]);
     });
 
     it("shows twelve, then all of them on request", async () => {
@@ -291,13 +346,14 @@ describe("CategoryDetail", () => {
       expect(screen.getAllByTestId("period-figure")).toHaveLength(3);
     });
 
-    it("says the complaints could not be loaded, and keeps the counts", () => {
+    it("says once, where the complaints would be, that the building's details could not be loaded, and keeps the counts", () => {
       renderDetail({ complaints: "failed" });
       expect(
         section("Complaints, newest first").getByText(
-          "These complaints could not be loaded right now.",
+          "This building's details could not be loaded right now.",
         ),
       ).toBeVisible();
+      expect(screen.getAllByText(/could not be loaded/)).toHaveLength(1);
       expect(screen.getAllByTestId("period-figure")[0]).toHaveTextContent("32");
     });
   });

@@ -874,15 +874,15 @@ describe("the categories", () => {
     await userEvent.keyboard("{Enter}");
     expect(building).toHaveAttribute("aria-expanded", "true");
     expect(building).toHaveFocus();
-    expect(screen.getByText("The city calls this Structure Condition.")).toBeVisible();
+    expect(screen.getByText("In the city's records, look for Structure Condition.")).toBeVisible();
 
     const signs = categoryButton("Signs, zoning and use");
     signs.focus();
     await userEvent.keyboard(" ");
     expect(signs).toHaveAttribute("aria-expanded", "true");
     expect(building).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByText("The city calls this Structure Condition.")).toBeNull();
-    expect(screen.getByText("The city calls this Land Use.")).toBeVisible();
+    expect(screen.queryByText("In the city's records, look for Structure Condition.")).toBeNull();
+    expect(screen.getByText("In the city's records, look for Land Use.")).toBeVisible();
 
     await userEvent.keyboard("{Enter}");
     expect(signs).toHaveAttribute("aria-expanded", "false");
@@ -961,7 +961,7 @@ describe("the categories", () => {
 
     const failing = { ...busy, id: "R039648" };
     rerender(panelFor(failing));
-    expect(await screen.findByText("These complaints could not be loaded right now.")).toBeVisible();
+    expect(await screen.findByText("This building's details could not be loaded right now.")).toBeVisible();
     expect(foundRows()[0]).toBe("Violation confirmed8");
   });
 });

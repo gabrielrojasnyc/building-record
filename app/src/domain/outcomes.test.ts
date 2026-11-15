@@ -3,7 +3,9 @@ import {
   KNOWN_CITY_OUTCOMES,
   OUTCOMES,
   OUTCOME_LABEL,
+  RESTATED_OUTCOME,
   classify,
+  restatesOutcome,
 } from "./outcomes";
 
 describe("classify", () => {
@@ -209,6 +211,38 @@ describe("KNOWN_CITY_OUTCOMES", () => {
       "CV Violation(s) Found/Inspection Performed",
       "City-Owned Property/Violation(s) Found",
     ]) {
+      expect(KNOWN_CITY_OUTCOMES).toContain(phrase);
+    }
+  });
+});
+
+describe("restatesOutcome", () => {
+  it("says a phrase only repeats the label beside the one outcome it restates", () => {
+    expect(restatesOutcome("No Violation(s) Found/Inspection Performed", "none")).toBe(true);
+    expect(restatesOutcome("CV Violation(s) Found/Inspection Performed", "violation")).toBe(true);
+    expect(restatesOutcome("Inspection Performed/Abated by Inspector", "fixed")).toBe(true);
+  });
+
+  it("keeps a phrase that contradicts its label, as when a case number confirms a violation the phrase says was not found", () => {
+    // 9024 Northgate Blvd, Building condition, opened 2026-03-02: case 2026 024695-CV, phrase "No Violation(s) Found".
+    expect(
+      classify({
+        cityOutcome: "No Violation(s) Found/Inspection Performed",
+        status: "Closed",
+        hasViolationCase: true,
+      }),
+    ).toBe("violation");
+    expect(restatesOutcome("No Violation(s) Found/Inspection Performed", "violation")).toBe(false);
+  });
+
+  it("keeps every phrase that adds something to its label", () => {
+    expect(restatesOutcome("Closed due to Voluntary Compliance", "violation")).toBe(false);
+    expect(restatesOutcome("Inspection Performed/Abated by Community Court", "fixed")).toBe(false);
+    expect(restatesOutcome("City-Owned Property/No Violation(s) Found", "none")).toBe(false);
+  });
+
+  it("names only phrases on the allow-list", () => {
+    for (const phrase of RESTATED_OUTCOME.keys()) {
       expect(KNOWN_CITY_OUTCOMES).toContain(phrase);
     }
   });

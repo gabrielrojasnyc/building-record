@@ -1,9 +1,6 @@
 import { formatCount } from "@/domain/format";
 import { OUTCOME_LABEL, OUTCOMES, type Outcome } from "@/domain/outcomes";
-
-/** The same rows as the panel's other lists: a hairline above each, counts in one column at the right. */
-const ROW =
-  "grid grid-cols-[1fr_auto] items-baseline gap-3 border-t border-deep/10 py-[9px]";
+import { COUNT_ROW } from "./panelParts";
 
 /**
  * How the city closed a set of complaints: one row per outcome that has any, in the city's order,
@@ -25,7 +22,7 @@ export function OutcomeSummary(props: {
       {found.length > 0 && (
         <ul className="text-[14px]">
           {found.map((outcome) => (
-            <li key={outcome} className={ROW}>
+            <li key={outcome} className={COUNT_ROW}>
               <span>
                 {OUTCOME_LABEL[outcome]}
                 {outcome === "violation" && stillOpen > 0 && (

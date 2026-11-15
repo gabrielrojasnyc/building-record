@@ -73,6 +73,21 @@ const KNOWN = new Set(KNOWN_CITY_OUTCOMES);
 /** True when the trimmed phrase is exactly one the city has been seen to use. */
 export const isKnownCityOutcome = (phrase: string): boolean => KNOWN.has(phrase.trim());
 
+/**
+ * Phrases that say no more than one outcome's label, each with that outcome. Beside it the phrase is left
+ * out as a repeat; beside any other it is shown, since it then says something the label does not, or the
+ * opposite: a case number confirms a violation even where the city's phrase says none was found.
+ */
+export const RESTATED_OUTCOME: ReadonlyMap<string, Outcome> = new Map<string, Outcome>([
+  ["No Violation(s) Found/Inspection Performed", "none"],
+  ["CV Violation(s) Found/Inspection Performed", "violation"],
+  ["Inspection Performed/Abated by Inspector", "fixed"],
+]);
+
+/** True when the city's phrase only repeats the label of the outcome it sits beside. */
+export const restatesOutcome = (phrase: string, outcome: Outcome): boolean =>
+  RESTATED_OUTCOME.get(phrase) === outcome;
+
 const DUPLICATE = "Closed/Duplicate Case";
 const FIXED_AT_INSPECTION = new Set([
   "Inspection Performed/Abated by Inspector",

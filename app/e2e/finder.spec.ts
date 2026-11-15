@@ -15,7 +15,7 @@ interface ComplexRecord {
 interface BuildingRecord {
   complaints: {
     category: string;
-    violationCase: { url: string | null } | null;
+    violationCase: { number: string; url: string | null } | null;
   }[];
   deficiencies: { category: string }[];
 }
@@ -1062,12 +1062,15 @@ test.describe("a building's complaint types", () => {
     const complaints = page.getByRole("region", { name: "Complaints, newest first" });
     const showAll = complaints.getByRole("button", { name: /^Show all/ });
     if ((await showAll.count()) > 0) await showAll.click();
-    const links = complaints.getByRole("link", { name: /^City record for the complaint opened / });
-    expect(await links.evaluateAll((elements) => elements.map((element) => element.getAttribute("href")))).toEqual(
-      listed.record.complaints
-        .filter(({ category, violationCase }) => category === "structure" && violationCase?.url)
-        .map(({ violationCase }) => violationCase?.url),
+    const links = complaints.getByRole("link", { name: /^City record \S+ \S+, for the complaint opened / });
+    const linked = listed.record.complaints.filter(
+      ({ category, violationCase }) => category === "structure" && violationCase?.url,
     );
+    expect(await links.evaluateAll((elements) => elements.map((element) => element.getAttribute("href")))).toEqual(
+      linked.map(({ violationCase }) => violationCase?.url),
+    );
+    // Each link names its own case, so links from the same day still read apart.
+    expect(await links.allInnerTexts()).toEqual(linked.map(({ violationCase }) => `city record ${violationCase?.number}`));
     await expect(links.first()).toHaveAttribute("target", "_blank");
   });
 

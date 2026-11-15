@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { formatCount, formatDate } from "@/domain/format";
 import { CATEGORY_MEANING, CITY_CATEGORY_TERM } from "@/domain/labels";
-import { OUTCOME_LABEL } from "@/domain/outcomes";
+import { OUTCOME_LABEL, restatesOutcome } from "@/domain/outcomes";
 import { PERIODS, PERIOD_LABEL, PERIOD_PHRASE } from "@/domain/periods";
 import {
   countFor,
@@ -13,23 +13,15 @@ import {
 } from "@/domain/query";
 import type { Category, Complaint, Complex, Deficiency } from "@/domain/types";
 import { OutcomeSummary } from "./OutcomeSummary";
+import { COUNT_ROW, MESSAGE, RULED_ROW } from "./panelParts";
 
 /** The complaints list holds this many until the person asks for the rest. */
 const FIRST_COMPLAINTS = 12;
 /** Kinds of recorded problem shown before the rest are summed up in words. */
 const FIRST_KINDS = 8;
 
-/** City phrases that only repeat the outcome label beside them, so they are not shown again. */
-const RESTATES_LABEL = new Set([
-  "No Violation(s) Found/Inspection Performed",
-  "CV Violation(s) Found/Inspection Performed",
-  "Inspection Performed/Abated by Inspector",
-]);
-
 const SUBHEADING =
   "mb-2 font-display text-[17px] leading-none font-normal text-deep";
-const MESSAGE = "text-[13.5px] text-slate";
-const ROW = "border-t border-deep/10 py-[9px]";
 
 const DAY: Intl.DateTimeFormatOptions = {
   month: "short",
@@ -78,7 +70,9 @@ export function CategoryDetail(props: {
     <div>
       <p className={MESSAGE}>
         <span>{CATEGORY_MEANING[category]}</span>{" "}
-        <span>The city calls this {CITY_CATEGORY_TERM[category]}.</span>
+        <span>
+          In the city&apos;s records, look for {CITY_CATEGORY_TERM[category]}.
+        </span>
       </p>
 
       <div className="mt-3 grid grid-cols-3 gap-2">
@@ -136,8 +130,9 @@ export function CategoryDetail(props: {
         {props.complaints === "loading" ? (
           <p className={MESSAGE}>Loading the complaints</p>
         ) : props.complaints === "failed" ? (
+          // Said once, for everything the building file holds (the complaints and the recorded problems alike).
           <p className={MESSAGE}>
-            These complaints could not be loaded right now.
+            This building&apos;s details could not be loaded right now.
           </p>
         ) : (
           <ComplaintList
@@ -180,16 +175,14 @@ function RecordedProblems({ kinds }: { kinds: Deficiency[] }) {
   return (
     <>
       <p className="mb-1.5 text-[12.5px] text-pretty text-steel">
-        Published by the city for Repeat Offender properties only.
+        Published by the city for Repeat Offender properties only. From the last
+        3 years.
       </p>
       <ul className="text-[14px]">
         {largestFirst
           .slice(0, FIRST_KINDS)
           .map(({ kind, count, notCleared }) => (
-            <li
-              key={kind}
-              className={`grid grid-cols-[1fr_auto] items-baseline gap-3 ${ROW}`}
-            >
+            <li key={kind} className={COUNT_ROW}>
               <span>
                 {kind}
                 <span className="ml-2 text-[12px] whitespace-nowrap text-steel tabular-nums">
@@ -239,19 +232,24 @@ function ComplaintList({ complaints }: { complaints: Complaint[] }) {
       >
         {shown.map((complaint, index) => {
           const opened = formatDate(complaint.opened, DAY);
+          // Left out only beside the outcome it repeats; beside any other it says something the label does not.
           const phrase =
             complaint.cityOutcome !== null &&
-            !RESTATES_LABEL.has(complaint.cityOutcome)
+            !restatesOutcome(complaint.cityOutcome, complaint.outcome)
               ? complaint.cityOutcome
               : null;
-          const url = complaint.violationCase?.url ?? null;
+          const { violationCase } = complaint;
+          const record =
+            violationCase !== null && violationCase.url !== null
+              ? { number: violationCase.number, url: violationCase.url }
+              : null;
           const state = caseState(complaint);
           return (
             <li
               key={`${index}-${complaint.opened}`}
-              className={`grid grid-cols-[84px_1fr] items-baseline gap-x-2.5 ${ROW}`}
+              className={`grid grid-cols-[84px_1fr] items-baseline gap-x-2.5 ${RULED_ROW}`}
             >
-              <span className="text-[13px] text-slate tabular-nums">
+              <span className="text-[13px] whitespace-nowrap text-slate tabular-nums">
                 {opened}
               </span>
               <span>
@@ -264,18 +262,19 @@ function ComplaintList({ complaints }: { complaints: Complaint[] }) {
                   )}
                 </span>
                 {/* The city's own words and its record share one quiet line under the outcome, so the outcome keeps the row's width. */}
-                {(phrase !== null || url !== null) && (
+                {(phrase !== null || record !== null) && (
                   <span className="flex flex-wrap items-baseline gap-x-2.5 text-[12px] leading-snug text-steel">
                     {phrase !== null && <span>{phrase}</span>}
-                    {url !== null && (
+                    {/* Named by its case, so links to complaints opened the same day read apart. */}
+                    {record !== null && (
                       <a
-                        href={url}
+                        href={record.url}
                         target="_blank"
                         rel="noopener"
-                        aria-label={`City record for the complaint opened ${opened}`}
+                        aria-label={`City record ${record.number}, for the complaint opened ${opened}`}
                         className="text-[12.5px] whitespace-nowrap text-deep underline"
                       >
-                        city record
+                        city record {record.number}
                       </a>
                     )}
                   </span>
