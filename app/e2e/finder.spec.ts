@@ -1224,6 +1224,18 @@ test.describe("a building's complaint types", () => {
 
     const close = page.getByRole("button", { name: "Close building details" });
     await expect(close).toBeInViewport({ ratio: 1 });
+
+    // Scrolled, the top of the record fades under the button, for someone who asked for less motion too; at the top it does not.
+    const mask = () =>
+      scroller.evaluate((element) => getComputedStyle(element).maskImage);
+    expect(await mask()).toContain("linear-gradient");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    expect(await mask()).toContain("linear-gradient");
+    await scroller.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await expect.poll(mask).toBe("none");
+
     await close.click();
     await expect(panel(page)).toHaveCount(0);
   });

@@ -159,6 +159,22 @@
     border-color: color-mix(in srgb, var(--color-ice) 30%, transparent);
   }
 
+  /*
+    Once the record is scrolled, the top of what scrolls fades out under the pinned close button, so no text sits
+    under or beside it. It follows the scroll (--scrolled runs from 0 at the top to 1 sixty pixels down), so it never
+    animates, and at the very top there is no mask at all.
+  */
+  .record-scroller[data-scrolled] {
+    /* Held near clear beside the button, down past its lower edge at 46 px, so no text there is legible, then eased in. */
+    mask-image: linear-gradient(
+      to bottom,
+      rgb(0 0 0 / calc(1 - var(--scrolled))) 0,
+      rgb(0 0 0 / calc(1 - 0.97 * var(--scrolled))) 42px,
+      rgb(0 0 0 / calc(1 - 0.55 * var(--scrolled))) 54px,
+      #000 66px
+    );
+  }
+
   /* On a phone the building panel is a bottom sheet over the tray, so it carries a denser frost to stay readable. */
   .building-sheet {
     @variant phone {

@@ -55,9 +55,29 @@ const LOADING = { status: "loading" } as const;
 */
 const MAP_PLACEMENT =
   "building-sheet fixed top-[76px] right-(--gutter) bottom-[277px] z-3 w-[372px] overflow-hidden rounded-[28px] motion-safe:animate-rise phone:top-auto phone:right-0 phone:bottom-0 phone:left-0 phone:z-4 phone:h-[60dvh] phone:w-auto phone:rounded-b-none";
-/* Contained, so a drag that reaches the top of the sheet never turns into the page's pull to refresh. */
+/*
+  Contained, so a drag that reaches the top of the sheet never turns into the page's pull to refresh.
+  `record-scroller` fades its top band once it is scrolled, from globals.css.
+*/
 const MAP_SCROLLER =
-  "h-full overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+  "record-scroller h-full overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+/** How far a scroll takes the fade under the close button to full strength, and how tall that faded band is. */
+const FADE_PX = 60;
+
+/**
+ * Fades the top of the record in step with the scroll: not at all at the top, fully from 60 px down. Set on the
+ * element itself, not through state, so scrolling never renders the record again.
+ */
+function fadeTopOnScroll(scroller: HTMLElement): void {
+  const strength = Math.min(scroller.scrollTop / FADE_PX, 1);
+  if (strength > 0) {
+    scroller.dataset.scrolled = "";
+    scroller.style.setProperty("--scrolled", String(strength));
+  } else {
+    delete scroller.dataset.scrolled;
+    scroller.style.removeProperty("--scrolled");
+  }
+}
 
 /** Loads `source` whenever it changes. A result that arrives after `source` has moved on is dropped. */
 function useLoad<S, T>(
@@ -145,7 +165,10 @@ export function BuildingPanel(props: BuildingPanelProps) {
 
   // A newly chosen building opens at its header, not wherever the last one was scrolled to.
   useEffect(() => {
-    if (scrollerRef.current) scrollerRef.current.scrollTop = 0;
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    scroller.scrollTop = 0;
+    fadeTopOnScroll(scroller);
   }, [complex.id]);
 
   // Over the map the panel is a new region of the screen, so keyboard and screen reader users start in it.
@@ -179,6 +202,11 @@ export function BuildingPanel(props: BuildingPanelProps) {
         <div
           ref={scrollerRef}
           className={props.place === "page" ? undefined : MAP_SCROLLER}
+          onScroll={
+            props.place === "page"
+              ? undefined
+              : (event) => fadeTopOnScroll(event.currentTarget)
+          }
         >
           <Header
             complex={complex}

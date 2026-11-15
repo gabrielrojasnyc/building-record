@@ -809,6 +809,40 @@ describe("over the map", () => {
     expect(tile).toHaveTextContent(/^1open now/);
   });
 
+  it("fades the top of the record under the pinned close button once it is scrolled, in step with the scroll, and not at the top", () => {
+    const { select } = renderOnMap(busy, {
+      [HISTORY]: pending,
+      "/data/buildings/R039648.json": pending,
+    });
+    const scroller = screen
+      .getByRole("heading", { level: 2 })
+      .closest<HTMLElement>(".overflow-y-auto");
+    if (!scroller) throw new Error("The record has no scroller");
+    const scrollTo = (top: number) => {
+      scroller.scrollTop = top;
+      fireEvent.scroll(scroller);
+    };
+    const fade = () =>
+      scroller.hasAttribute("data-scrolled")
+        ? scroller.style.getPropertyValue("--scrolled")
+        : "none";
+
+    expect(scroller).toHaveClass("record-scroller");
+    expect(fade()).toBe("none");
+    scrollTo(30);
+    expect(fade()).toBe("0.5");
+    scrollTo(400);
+    expect(fade()).toBe("1");
+    scrollTo(0);
+    expect(fade()).toBe("none");
+
+    // A newly chosen building opens at its top, with nothing faded.
+    scrollTo(400);
+    select(clean);
+    expect(scroller.scrollTop).toBe(0);
+    expect(fade()).toBe("none");
+  });
+
   it("closes from its button and from the Escape key", async () => {
     const { onClose } = renderOnMap(busy, { [HISTORY]: pending });
 
@@ -1138,7 +1172,9 @@ describe("the categories", () => {
     expect(foundRows()[0]).toBe("Violation confirmed8");
 
     const listed = within(
-      await screen.findByRole("region", { name: "Complaints in the last 3 years, newest first" }),
+      await screen.findByRole("region", {
+        name: "Complaints in the last 3 years, newest first",
+      }),
     );
     expect(
       listed
