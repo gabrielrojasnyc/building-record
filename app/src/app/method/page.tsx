@@ -18,11 +18,17 @@ import {
   OUTCOMES,
   type Outcome,
 } from "@/domain/outcomes";
-import { PERIOD_LABEL, PERIODS } from "@/domain/periods";
+import { PERIOD_LABEL, PERIOD_PHRASE, PERIODS } from "@/domain/periods";
+import { FAMILY_LABEL, PROBLEM_FAMILIES } from "@/domain/problems";
 import type { Category, Meta } from "@/domain/types";
 import { Glass } from "@/ui/Glass";
 import { formatPullDate, Notice } from "@/ui/Notice";
 import { readDataFile } from "../dataFiles";
+
+/** Every family of recorded problem but the catch-all, as they read in a sentence. */
+const PLAIN_FAMILIES = PROBLEM_FAMILIES.filter((family) => family !== "other")
+  .map((family) => FAMILY_LABEL[family].toLowerCase())
+  .join(", ");
 
 export const metadata: Metadata = {
   title: "Method and sources: Building Record",
@@ -508,6 +514,17 @@ export default async function MethodPage() {
               counts for most of these buildings, so a per-unit rate cannot be
               shown.
             </p>
+            <p>
+              Under a building&apos;s count, its record says how counts spread
+              across the complexes on this site in the same period: the share
+              with no complaints, and the count that 9 complexes in 10 are at or
+              under. {PERIOD_PHRASE.m12.replace(/^in/, "In")},{" "}
+              {Math.round(meta.spread.m12.noneShare * 100)}% of them had no
+              complaints and 9 in 10 had {formatCount(meta.spread.m12.nineInTen)}{" "}
+              or fewer. The line describes the city and does not place any
+              building in it. It is not adjusted for size: a larger complex has
+              more people who can complain.
+            </p>
           </Section>
 
           <Section title="How a building is labelled">
@@ -599,6 +616,28 @@ export default async function MethodPage() {
               A kind of problem is the title of the code section the city cited,
               shown as the city writes it, with the section number when the city
               gives one, such as Installation (§605.1).
+            </p>
+            <p>
+              A record first says which kinds were recorded most, in plain
+              words. Each kind belongs to one family, read from the number of
+              the code section it cites, or from its title where the city cites
+              no section: {PLAIN_FAMILIES}. A kind this site does not know is
+              counted under other, and never guessed at. Under each
+              family the record lists the city&apos;s own titles, so
+              Installation (§605.1) is found under electrical and lighting.
+            </p>
+            <p>
+              For a problem recorded under the code&apos;s pest sections, the
+              city also publishes its inspector&apos;s description. This site
+              reads that description for one thing: whether it names roaches,
+              rodents, bed bugs, wasps or bees, ants or other insects. Sentences
+              quoted from the code are set aside first, because they speak of
+              insects and rodents in general. The description is never shown or
+              kept, since it can hold a unit number or what a tenant said. The
+              reading is cautious: it would sooner miss a name than give a wrong
+              one, and a pest the description says was not found is not named.
+              When it reads no name, the record says the kind could not be
+              read.
             </p>
           </Section>
 

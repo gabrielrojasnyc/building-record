@@ -144,6 +144,45 @@ it("explains why counts are not shown per unit", async () => {
   ).toBeVisible();
 });
 
+it("says how the line under a building's count is worked out, with the figures from the data, and what it does not do", async () => {
+  await renderPage();
+
+  const section = sectionOf("Counts, not rates");
+  expect(section).toHaveTextContent(
+    "In the last 12 months, 52% of them had no complaints and 9 in 10 had 5 or fewer.",
+  );
+  expect(section).toHaveTextContent(
+    "The line describes the city and does not place any building in it. It is not adjusted for size: a larger complex has more people who can complain.",
+  );
+});
+
+it("says how recorded problems are grouped into plain families, and names every family", async () => {
+  await renderPage();
+
+  const section = sectionOf("Recorded problems at Repeat Offender properties");
+  expect(section).toHaveTextContent(
+    "Each kind belongs to one family, read from the number of the code section it cites, or from its title where the city cites no section: electrical and lighting, outside walls and roof, plumbing and water, stairs and railings, windows and doors, grounds and fences, trash and unsanitary conditions, inside walls and floors, heating and appliances, required signs, vents and ducts, pests, work without a permit, fire safety, unsafe structure.",
+  );
+  expect(section).toHaveTextContent(
+    "A kind this site does not know is counted under other, and never guessed at.",
+  );
+});
+
+it("says the inspector's description is read only to name a pest, and is never shown or kept", async () => {
+  await renderPage();
+
+  const section = sectionOf("Recorded problems at Repeat Offender properties");
+  expect(section).toHaveTextContent(
+    "This site reads that description for one thing: whether it names roaches, rodents, bed bugs, wasps or bees, ants or other insects.",
+  );
+  expect(section).toHaveTextContent(
+    "The description is never shown or kept, since it can hold a unit number or what a tenant said.",
+  );
+  expect(section).toHaveTextContent(
+    "The reading is cautious: it would sooner miss a name than give a wrong one, and a pest the description says was not found is not named. When it reads no name, the record says the kind could not be read.",
+  );
+});
+
 it("makes only the claims the data supports", async () => {
   await renderPage();
 
