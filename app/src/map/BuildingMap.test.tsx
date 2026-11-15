@@ -27,8 +27,8 @@ const { FakeMap, FakeMarker, FakePopup, maps, popups } = vi.hoisted(() => {
     /** Where the camera is; `getCenter` and the like read it. */
     camera = {
       lng: -97.7431,
-      lat: 30.285,
-      zoom: 11.6,
+      lat: 30.266,
+      zoom: 14.8,
       pitch: 52,
       bearing: -12,
     };
@@ -659,8 +659,8 @@ describe("BuildingMap spotlight", () => {
     expect(dataSent(map, "spot-shapes").at(-1)).toEqual(NO_SHAPES);
     expect(map.easeTo).toHaveBeenCalledWith(
       expect.objectContaining({
-        center: [-97.7431, 30.285],
-        zoom: 11.6,
+        center: [-97.7431, 30.266],
+        zoom: 14.8,
         pitch: 52,
         bearing: -12,
       }),
@@ -720,7 +720,7 @@ describe("BuildingMap spotlight", () => {
 
     expect(map.easeTo).toHaveBeenCalledOnce();
     expect(map.easeTo).toHaveBeenCalledWith(
-      expect.objectContaining({ center: [-97.7431, 30.285], zoom: 11.6 }),
+      expect.objectContaining({ center: [-97.7431, 30.266], zoom: 14.8 }),
       expect.anything(),
     );
   });
@@ -931,8 +931,8 @@ describe("BuildingMap spotlight", () => {
 
   describe("picking again while the camera eases back", () => {
     const BEFORE = {
-      center: [-97.7431, 30.285],
-      zoom: 11.6,
+      center: [-97.7431, 30.266],
+      zoom: 14.8,
       pitch: 52,
       bearing: -12,
     };
@@ -1107,7 +1107,7 @@ describe("BuildingMap spotlight", () => {
 
     spotlightOn(null);
     expect(map.easeTo).toHaveBeenCalledWith(
-      expect.objectContaining({ center: [-97.7431, 30.285], zoom: 11.6 }),
+      expect.objectContaining({ center: [-97.7431, 30.266], zoom: 14.8 }),
       expect.anything(),
     );
   });
@@ -1129,7 +1129,7 @@ describe("BuildingMap spotlight", () => {
 
     spotlightOn(null);
     expect(map.easeTo).toHaveBeenCalledWith(
-      expect.objectContaining({ center: [-97.7431, 30.285], zoom: 11.6 }),
+      expect.objectContaining({ center: [-97.7431, 30.266], zoom: 14.8 }),
       expect.anything(),
     );
   });
@@ -1254,7 +1254,7 @@ describe("BuildingMap spotlight", () => {
     spotlightOn(null);
     expect(map.easeTo).not.toHaveBeenCalled();
     expect(map.jumpTo).toHaveBeenLastCalledWith(
-      expect.objectContaining({ center: [-97.7431, 30.285], zoom: 11.6 }),
+      expect.objectContaining({ center: [-97.7431, 30.266], zoom: 14.8 }),
       expect.anything(),
     );
   });

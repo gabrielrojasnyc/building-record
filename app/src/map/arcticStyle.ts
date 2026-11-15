@@ -9,9 +9,10 @@ import type { Complex } from "@/domain/types";
 
 export const BASE_STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
 
+/** Downtown, close enough that its buildings stand up (they are drawn from zoom 13.5), so the site opens on a city and not on flat land. */
 export const START_VIEW = {
-  center: [-97.7431, 30.285] as [number, number],
-  zoom: 11.6,
+  center: [-97.7431, 30.266] as [number, number],
+  zoom: 14.8,
   pitch: 52,
   bearing: -12,
   minZoom: 9.5,
