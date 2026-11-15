@@ -1,16 +1,30 @@
-import { HISTORY_START, HISTORY_START_MONTH, austinCalendarDate } from '@/domain/history';
-import type { BuildingDetail, Category, Counts } from '@/domain/types';
-import { readAll } from './socrata';
+import {
+  HISTORY_START,
+  HISTORY_START_MONTH,
+  austinCalendarDate,
+} from "@/domain/history";
+import { classify, isKnownCityOutcome, type Outcome } from "@/domain/outcomes";
+import { PERIODS, periodStarts, type Period } from "@/domain/periods";
+import type {
+  BuildingDetail,
+  Category,
+  Complaint,
+  Counts,
+  Tally,
+} from "@/domain/types";
+import { readAll } from "./socrata";
 
-const CODE_CASES_DATASET = '6wtj-zbtb';
+const CODE_CASES_DATASET = "6wtj-zbtb";
 const LATEST_LIMIT = 8;
+/** A violation case link is published only when it points at the city's own permit site. */
+const CITY_RECORD_PREFIX = "https://abc.austintexas.gov/";
 
 /** First recognised phrase wins. Matching ignores case and the city's "(s)" suffixes. */
 const PHRASES: [string, Category][] = [
-  ['structure condition', 'structure'],
-  ['property abatement', 'property'],
-  ['land use', 'landuse'],
-  ['work without permit', 'permit'],
+  ["structure condition", "structure"],
+  ["property abatement", "property"],
+  ["land use", "landuse"],
+  ["work without permit", "permit"],
 ];
 
 export interface CaseSummary {
@@ -19,7 +33,13 @@ export interface CaseSummary {
   open: number;
   /** ISO date of the most recent categorized case. */
   lastCase: string | null;
-  detail: Omit<BuildingDetail, 'bbox' | 'outline'>;
+  /** Non-duplicate complaints by period, category and outcome. */
+  tally: Record<Period, Tally>;
+  /** Complaints the city closed as duplicates, by period. */
+  duplicates: Record<Period, number>;
+  /** Complaints in the 3 year period with a confirmed violation whose case is not closed. */
+  violationsOpen: number;
+  detail: Omit<BuildingDetail, "bbox" | "outline" | "deficiencies">;
 }
 
 export interface CaseIndex {
@@ -33,6 +53,8 @@ export interface CaseIndex {
   uncategorizedCases: number;
   /** Categorized rows opened after the pull date. Left out of every count and series, still in totalCases. */
   futureDatedCases: number;
+  /** Rows, whatever else is true of them, whose outcome phrase is not on the allow-list. */
+  unrecognizedOutcomes: number;
 }
 
 interface CaseRow {
@@ -41,6 +63,10 @@ interface CaseRow {
   status?: string;
   /** Floating timestamp with no timezone, for example 2026-11-14T00:00:00.000. */
   opened_date?: string;
+  closed_date?: string;
+  last_update?: string;
+  violationcasenumber?: string;
+  violationcaselink?: { url?: unknown } | null;
 }
 
 export function categoryOf(description: string): Category | null {
@@ -48,19 +74,14 @@ export function categoryOf(description: string): Category | null {
   return PHRASES.find(([phrase]) => text.includes(phrase))?.[1] ?? null;
 }
 
-const emptyCounts = (): Counts => ({ structure: 0, property: 0, landuse: 0, permit: 0 });
+const emptyCounts = (): Counts => ({
+  structure: 0,
+  property: 0,
+  landuse: 0,
+  permit: 0,
+});
 
-const pad = (n: number) => String(n).padStart(2, '0');
-
-const daysInMonth = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
-
-/** Same day of month, 12 months earlier, clamped for 29 February. */
-function twelveMonthsBefore(pulled: string): string {
-  const year = Number(pulled.slice(0, 4)) - 1;
-  const month = Number(pulled.slice(5, 7));
-  const day = Math.min(Number(pulled.slice(8, 10)), daysInMonth(year, month));
-  return `${year}-${pad(month)}-${pad(day)}`;
-}
+const pad = (n: number) => String(n).padStart(2, "0");
 
 /** Every month from 2023-11 through the pull month, as YYYY-MM. */
 function monthRange(pulled: string): string[] {
@@ -68,7 +89,11 @@ function monthRange(pulled: string): string[] {
   const months: string[] = [];
   let year = Number(HISTORY_START_MONTH.slice(0, 4));
   let month = Number(HISTORY_START_MONTH.slice(5, 7));
-  for (let key = `${year}-${pad(month)}`; key <= last; key = `${year}-${pad(month)}`) {
+  for (
+    let key = `${year}-${pad(month)}`;
+    key <= last;
+    key = `${year}-${pad(month)}`
+  ) {
     months.push(key);
     month += 1;
     if (month > 12) {
@@ -79,6 +104,21 @@ function monthRange(pulled: string): string[] {
   return months;
 }
 
+const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/** Newest first. Complaints opened the same day fall back on fields that tell them apart, so the order never depends on how the city returned them. */
+export function compareComplaints(a: Complaint, b: Complaint): number {
+  return (
+    compareText(b.opened, a.opened) ||
+    compareText(a.category, b.category) ||
+    compareText(a.violationCase?.number ?? "", b.violationCase?.number ?? "") ||
+    compareText(a.outcome, b.outcome) ||
+    compareText(a.closed ?? "", b.closed ?? "") ||
+    compareText(a.cityOutcome ?? "", b.cityOutcome ?? "") ||
+    compareText(a.violationCase?.url ?? "", b.violationCase?.url ?? "")
+  );
+}
+
 interface Accumulator {
   cases12: Counts;
   cases: Counts;
@@ -86,7 +126,17 @@ interface Accumulator {
   lastCase: string | null;
   monthly: Map<string, number>;
   recent: { opened: string; category: Category; status: string }[];
+  tally: Record<Period, Tally>;
+  duplicates: Record<Period, number>;
+  violationsOpen: number;
+  complaints: Complaint[];
 }
+
+const byPeriod = <T>(make: () => T): Record<Period, T> => ({
+  m12: make(),
+  y2: make(),
+  y3: make(),
+});
 
 const emptyAccumulator = (months: string[]): Accumulator => ({
   cases12: emptyCounts(),
@@ -95,16 +145,37 @@ const emptyAccumulator = (months: string[]): Accumulator => ({
   lastCase: null,
   monthly: new Map(months.map((month) => [month, 0])),
   recent: [],
+  tally: byPeriod(() => ({})),
+  duplicates: byPeriod(() => 0),
+  violationsOpen: 0,
+  complaints: [],
 });
 
-function summarise(id: string, acc: Accumulator, months: string[]): CaseSummary {
-  const latest = [...acc.recent].sort((a, b) => (a.opened < b.opened ? 1 : a.opened > b.opened ? -1 : 0)).slice(0, LATEST_LIMIT);
+function summarise(
+  id: string,
+  acc: Accumulator,
+  months: string[],
+): CaseSummary {
+  const latest = [...acc.recent]
+    .sort((a, b) => (a.opened < b.opened ? 1 : a.opened > b.opened ? -1 : 0))
+    .slice(0, LATEST_LIMIT);
   return {
     cases12: acc.cases12,
     cases: acc.cases,
     open: acc.open,
     lastCase: acc.lastCase,
-    detail: { id, monthly: months.map((month) => ({ month, count: acc.monthly.get(month) ?? 0 })), latest },
+    tally: acc.tally,
+    duplicates: acc.duplicates,
+    violationsOpen: acc.violationsOpen,
+    detail: {
+      id,
+      monthly: months.map((month) => ({
+        month,
+        count: acc.monthly.get(month) ?? 0,
+      })),
+      latest,
+      complaints: [...acc.complaints].sort(compareComplaints),
+    },
   };
 }
 
@@ -114,18 +185,40 @@ export function emptyCaseSummary(id: string, pulledAt: Date): CaseSummary {
   return summarise(id, emptyAccumulator(months), months);
 }
 
-/** Reads code complaint cases since 2023-11-01 and summarises them per parcel. */
-export async function loadCases(pulledAt: Date, fetchImpl: typeof fetch = fetch): Promise<CaseIndex> {
+/** The formal violation case a complaint led to, with its link only when it is on the city permit site. */
+function violationCaseOf(row: CaseRow): Complaint["violationCase"] {
+  const number = row.violationcasenumber?.trim();
+  if (!number) return null;
+  const link = row.violationcaselink?.url;
+  const url =
+    typeof link === "string" && link.startsWith(CITY_RECORD_PREFIX)
+      ? link
+      : null;
+  return { number, url };
+}
+
+function addToTally(tally: Tally, category: Category, outcome: Outcome): void {
+  const outcomes = (tally[category] ??= {});
+  outcomes[outcome] = (outcomes[outcome] ?? 0) + 1;
+}
+
+/** Reads code complaint cases for the 3 year period (and since 2023-11-01 for the older counts) and summarises them per parcel. */
+export async function loadCases(
+  pulledAt: Date,
+  fetchImpl: typeof fetch = fetch,
+): Promise<CaseIndex> {
   const pulled = austinCalendarDate(pulledAt);
-  const since12 = twelveMonthsBefore(pulled);
+  const starts = periodStarts(pulled);
   const months = monthRange(pulled);
+  const readFrom = starts.y3 < HISTORY_START ? starts.y3 : HISTORY_START;
 
   const rows = await readAll<CaseRow>(
     CODE_CASES_DATASET,
     {
-      select: 'parcelid,description,status,opened_date',
-      where: `opened_date >= '${HISTORY_START}'`,
-      order: 'case_id',
+      select:
+        "parcelid,description,status,opened_date,closed_date,last_update,violationcasenumber,violationcaselink",
+      where: `opened_date >= '${readFrom}'`,
+      order: "case_id",
     },
     fetchImpl,
   );
@@ -134,39 +227,82 @@ export async function loadCases(pulledAt: Date, fetchImpl: typeof fetch = fetch)
   let unmatchedCases = 0;
   let uncategorizedCases = 0;
   let futureDatedCases = 0;
+  let unrecognizedOutcomes = 0;
 
   for (const row of rows) {
+    const phrase = row.last_update?.trim() ?? "";
+    if (phrase && !isKnownCityOutcome(phrase)) unrecognizedOutcomes += 1;
+
     const parcelId = row.parcelid?.trim();
     if (!parcelId) {
       unmatchedCases += 1;
       continue;
     }
-    const category = categoryOf(row.description ?? '');
+    const category = categoryOf(row.description ?? "");
     if (!category) {
       uncategorizedCases += 1;
       continue;
     }
 
-    const opened = (row.opened_date ?? '').slice(0, 10);
+    const opened = (row.opened_date ?? "").slice(0, 10);
     if (opened > pulled) {
       futureDatedCases += 1;
       continue;
     }
-    const status = row.status ?? '';
+    const status = row.status ?? "";
     const acc = accumulators.get(parcelId) ?? emptyAccumulator(months);
     accumulators.set(parcelId, acc);
 
-    acc.cases[category] += 1;
-    if (opened >= since12) acc.cases12[category] += 1;
-    if (status !== 'Closed') acc.open += 1;
-    if (acc.lastCase === null || opened > acc.lastCase) acc.lastCase = opened;
-    const month = opened.slice(0, 7);
-    acc.monthly.set(month, (acc.monthly.get(month) ?? 0) + 1);
-    acc.recent.push({ opened, category, status });
+    // The older counts keep their fixed start, whatever the 3 year period reaches back to.
+    if (opened >= HISTORY_START) {
+      acc.cases[category] += 1;
+      if (opened >= starts.m12) acc.cases12[category] += 1;
+      if (status !== "Closed") acc.open += 1;
+      if (acc.lastCase === null || opened > acc.lastCase) acc.lastCase = opened;
+      const month = opened.slice(0, 7);
+      acc.monthly.set(month, (acc.monthly.get(month) ?? 0) + 1);
+      acc.recent.push({ opened, category, status });
+    }
+
+    if (opened < starts.y3) continue;
+    const violationCase = violationCaseOf(row);
+    const outcome = classify({
+      cityOutcome: phrase || null,
+      status,
+      hasViolationCase: violationCase !== null,
+    });
+    const periods = PERIODS.filter((period) => opened >= starts[period]);
+
+    if (outcome === "duplicate") {
+      for (const period of periods) acc.duplicates[period] += 1;
+      continue;
+    }
+    for (const period of periods)
+      addToTally(acc.tally[period], category, outcome);
+
+    const stillOpen = status !== "Closed";
+    if (outcome === "violation" && stillOpen) acc.violationsOpen += 1;
+    acc.complaints.push({
+      opened,
+      closed: stillOpen ? null : (row.closed_date ?? "").slice(0, 10) || null,
+      category,
+      outcome,
+      stillOpen,
+      cityOutcome: isKnownCityOutcome(phrase) ? phrase : null,
+      violationCase,
+    });
   }
 
   const byParcel = new Map<string, CaseSummary>();
-  for (const [id, acc] of accumulators) byParcel.set(id, summarise(id, acc, months));
+  for (const [id, acc] of accumulators)
+    byParcel.set(id, summarise(id, acc, months));
 
-  return { byParcel, totalCases: rows.length, unmatchedCases, uncategorizedCases, futureDatedCases };
+  return {
+    byParcel,
+    totalCases: rows.length,
+    unmatchedCases,
+    uncategorizedCases,
+    futureDatedCases,
+    unrecognizedOutcomes,
+  };
 }

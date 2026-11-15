@@ -16,6 +16,9 @@ function complex(id: string, address: string): Complex {
     cases12: counts,
     cases: counts,
     open: 0,
+    tally: { m12: {}, y2: {}, y3: {} },
+    duplicates: { m12: 0, y2: 0, y3: 0 },
+    violationsOpen: 0,
     lastCase: null,
     repeatOffender: null,
   };

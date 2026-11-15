@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { Category, Counts } from "@/domain/types";
+import type { Period } from "@/domain/periods";
+import type {
+  Category,
+  Complaint,
+  Counts,
+  Deficiency,
+  Tally,
+} from "@/domain/types";
 import type { CaseSummary } from "./cases";
 import type { RepeatOffenderRecord } from "./context";
 import {
@@ -27,11 +34,24 @@ interface SummaryInput {
   open?: number;
   /** Opened dates, each a structure case, in any order. */
   opened?: string[];
+  tally?: Partial<Record<Period, Tally>>;
+  duplicates?: Partial<Record<Period, number>>;
+  violationsOpen?: number;
+  complaints?: Complaint[];
 }
 
 function summary(
   id: string,
-  { cases = {}, cases12 = {}, open = 0, opened = [] }: SummaryInput = {},
+  {
+    cases = {},
+    cases12 = {},
+    open = 0,
+    opened = [],
+    tally = {},
+    duplicates = {},
+    violationsOpen = 0,
+    complaints = [],
+  }: SummaryInput = {},
 ): CaseSummary {
   const latest = [...opened]
     .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
@@ -46,6 +66,9 @@ function summary(
     cases12: counts(cases12),
     open,
     lastCase: latest[0]?.opened ?? null,
+    tally: { m12: {}, y2: {}, y3: {}, ...tally },
+    duplicates: { m12: 0, y2: 0, y3: 0, ...duplicates },
+    violationsOpen,
     detail: {
       id,
       monthly: MONTHS.map((month) => ({
@@ -53,6 +76,7 @@ function summary(
         count: opened.filter((date) => date.startsWith(month)).length,
       })),
       latest,
+      complaints,
     },
   };
 }
@@ -104,6 +128,7 @@ function parcel(
     ],
     summary: summary(id),
     offender: null,
+    deficiencies: [],
     ...overrides,
   };
 }
@@ -367,6 +392,136 @@ describe("combineParcels", () => {
       "0000000002",
       "0000000003",
     ]);
+  });
+});
+
+describe("combineParcels outcome fields", () => {
+  const complaint = (
+    opened: string,
+    overrides: Partial<Complaint> = {},
+  ): Complaint => ({
+    opened,
+    closed: null,
+    category: "structure",
+    outcome: "none",
+    stillOpen: false,
+    cityOutcome: null,
+    violationCase: null,
+    ...overrides,
+  });
+  const deficiency = (overrides: Partial<Deficiency> = {}): Deficiency => ({
+    category: "structure",
+    kind: "Roofs and Drainage",
+    cleared: 1,
+    notCleared: 0,
+    ...overrides,
+  });
+
+  it("combines tallies, complaints and deficiencies across a merged complex", () => {
+    const first = parcel("0204040107", {
+      deficiencies: [
+        deficiency({ cleared: 2, notCleared: 1 }),
+        deficiency({
+          category: "property",
+          kind: "Trash",
+          cleared: 1,
+          notCleared: 0,
+        }),
+      ],
+      summary: summary("0204040107", {
+        cases: { structure: 3 },
+        tally: {
+          m12: { structure: { none: 1 } },
+          y3: { structure: { none: 2, violation: 1 }, property: { fixed: 1 } },
+        },
+        duplicates: { m12: 1, y2: 1, y3: 2 },
+        violationsOpen: 1,
+        complaints: [
+          complaint("2026-11-02"),
+          complaint("2026-10-01", { outcome: "violation", stillOpen: true }),
+        ],
+      }),
+    });
+    const second = parcel("0203020605", {
+      metresNorth: 20,
+      deficiencies: [deficiency({ cleared: 0, notCleared: 4 })],
+      summary: summary("0203020605", {
+        cases: { structure: 1 },
+        tally: {
+          m12: { structure: { none: 2 }, landuse: { open: 1 } },
+          y3: { structure: { none: 1, other: 1 } },
+        },
+        duplicates: { m12: 0, y2: 3, y3: 3 },
+        violationsOpen: 2,
+        complaints: [complaint("2026-11-12"), complaint("2026-09-30")],
+      }),
+    });
+
+    const [{ complex, detail }] = combineParcels([first, second]);
+
+    expect(complex.tally).toEqual({
+      m12: { structure: { none: 3 }, landuse: { open: 1 } },
+      y2: {},
+      y3: {
+        structure: { none: 3, violation: 1, other: 1 },
+        property: { fixed: 1 },
+      },
+    });
+    expect(complex.duplicates).toEqual({ m12: 1, y2: 4, y3: 5 });
+    expect(complex.violationsOpen).toBe(3);
+    expect(detail.complaints.map(({ opened }) => opened)).toEqual([
+      "2026-11-12",
+      "2026-11-02",
+      "2026-10-01",
+      "2026-09-30",
+    ]);
+    expect(detail.deficiencies).toEqual([
+      {
+        category: "structure",
+        kind: "Roofs and Drainage",
+        cleared: 2,
+        notCleared: 5,
+      },
+      { category: "property", kind: "Trash", cleared: 1, notCleared: 0 },
+    ]);
+  });
+
+  it("does not let the order members are given in change the order of complaints opened the same day", () => {
+    const a = complaint("2026-05-01", { category: "landuse" });
+    const b = complaint("2026-05-01", { category: "structure" });
+    const merged = (members: [Complaint[], Complaint[]]) =>
+      combineParcels([
+        parcel("0000000001", {
+          summary: summary("0000000001", { complaints: members[0] }),
+        }),
+        parcel("0000000002", {
+          metresNorth: 20,
+          summary: summary("0000000002", { complaints: members[1] }),
+        }),
+      ])[0].detail.complaints;
+    expect(merged([[b], [a]])).toEqual(merged([[a], [b]]));
+    expect(merged([[b], [a]]).map(({ category }) => category)).toEqual([
+      "landuse",
+      "structure",
+    ]);
+  });
+
+  it("gives a complex of one parcel that parcel's own figures", () => {
+    const only = parcel("0100000001", {
+      deficiencies: [deficiency()],
+      summary: summary("0100000001", {
+        tally: { y3: { permit: { open: 1 } } },
+        duplicates: { y3: 1 },
+        complaints: [
+          complaint("2026-05-01", { category: "permit", outcome: "open" }),
+        ],
+      }),
+    });
+    const [{ complex, detail }] = combineParcels([only]);
+    expect(complex.tally.y3).toEqual({ permit: { open: 1 } });
+    expect(complex.duplicates.y3).toBe(1);
+    expect(detail.complaints).toHaveLength(1);
+    expect(detail.deficiencies).toEqual([deficiency()]);
   });
 });
 

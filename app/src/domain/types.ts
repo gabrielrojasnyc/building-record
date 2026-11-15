@@ -1,7 +1,33 @@
-import type { HISTORY_START } from './history';
+import type { HISTORY_START } from "./history";
+import type { Outcome } from "./outcomes";
+import type { Period } from "./periods";
 
-export type Category = 'structure' | 'property' | 'landuse' | 'permit';
+export type Category = "structure" | "property" | "landuse" | "permit";
 export type Counts = Record<Category, number>;
+/** Complaints per category and outcome. Zeros are omitted. Duplicates are never in a tally. */
+export type Tally = Partial<Record<Category, Partial<Record<Outcome, number>>>>;
+
+export interface Complaint {
+  /** YYYY-MM-DD */
+  opened: string;
+  closed: string | null;
+  category: Category;
+  outcome: Outcome;
+  /** The case is not closed. */
+  stillOpen: boolean;
+  /** The city's outcome phrase when it is on the allow-list, else null. */
+  cityOutcome: string | null;
+  /** The formal violation case, with a link to the city's record when it is on the city permit site. */
+  violationCase: { number: string; url: string | null } | null;
+}
+
+/** One kind of problem the city recorded at a Repeat Offender property, with the section reference removed. */
+export interface Deficiency {
+  category: Category;
+  kind: string;
+  cleared: number;
+  notCleared: number;
+}
 
 export type Ring = [lon: number, lat: number][];
 /** Polygons, each a list of rings with the outer ring first. Coordinates rounded to 6 decimals. */
@@ -9,7 +35,7 @@ export type Outline = Ring[][];
 
 export interface ComplexName {
   text: string;
-  source: 'openstreetmap' | 'city';
+  source: "openstreetmap" | "city";
 }
 
 export interface RepeatOffender {
@@ -38,6 +64,12 @@ export interface Complex {
   /** ISO date of the most recent case. */
   lastCase: string | null;
   repeatOffender: RepeatOffender | null;
+  /** Complaints by period, category and outcome, duplicates left out. */
+  tally: Record<Period, Tally>;
+  /** Complaints the city closed as duplicates of another, by period. Not in any tally. */
+  duplicates: Record<Period, number>;
+  /** Complaints in the 3 year period with a confirmed violation whose case is not closed. */
+  violationsOpen: number;
 }
 
 export interface BuildingDetail {
@@ -46,6 +78,10 @@ export interface BuildingDetail {
   monthly: { month: string; count: number }[];
   /** Newest first, at most 8. */
   latest: { opened: string; category: Category; status: string }[];
+  /** Every complaint in the 3 year period, duplicates left out, newest first. */
+  complaints: Complaint[];
+  /** Problems the city recorded in the 3 year period. Empty unless the property is on the Repeat Offender list. */
+  deficiencies: Deficiency[];
   /** Every member parcel's polygons, in member order. */
   outline: Outline;
   /** [west, south, east, north] */
@@ -71,4 +107,12 @@ export interface Meta {
   namedComplexes: number;
   /** Date the OpenStreetMap names snapshot was fetched, YYYY-MM-DD; null when no snapshot was readable. */
   namesAsOf: string | null;
+  /** First day of each period, YYYY-MM-DD. */
+  periodStarts: Record<Period, string>;
+  /** Duplicate complaints in the 3 year period at published complexes, left out of every tally. */
+  duplicateCases: number;
+  /** Complaints whose city outcome phrase is not on the allow-list. Never published as text. */
+  unrecognizedOutcomes: number;
+  /** Deficiency rows left out: a category this site does not recognize, or no kind. */
+  skippedDeficiencies: number;
 }
