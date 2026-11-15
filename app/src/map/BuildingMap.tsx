@@ -129,6 +129,8 @@ export function BuildingMap(props: BuildingMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const spotlightRef = useRef<Spotlight | null>(null);
+  /** The pin's tooltip. MapLibre ends a hover only on the next mouse event, which a tap never sends. */
+  const tooltipRef = useRef<maplibregl.Popup | null>(null);
   const [ready, setReady] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
 
@@ -216,6 +218,7 @@ export function BuildingMap(props: BuildingMapProps) {
         offset: 16,
         className: "pin-tooltip",
       });
+      tooltipRef.current = tooltip;
       let hoverReported: string | null = null;
       const reportViewArea = () => {
         if (!map) return;
@@ -274,7 +277,9 @@ export function BuildingMap(props: BuildingMapProps) {
         });
         map.on("click", "core", (event: MapLayerMouseEvent) => {
           const id = event.features?.[0]?.properties.id;
-          if (id !== undefined) latest.current.onSelect(String(id));
+          if (id === undefined) return;
+          tooltip.remove();
+          latest.current.onSelect(String(id));
         });
         map.on("moveend", reportViewArea);
 
@@ -291,6 +296,7 @@ export function BuildingMap(props: BuildingMapProps) {
       clearTimeout(loadTimer);
       spotlightRef.current?.dispose();
       spotlightRef.current = null;
+      tooltipRef.current = null;
       map?.remove();
       mapRef.current = null;
       markedSelected.current = null;
@@ -380,7 +386,10 @@ export function BuildingMap(props: BuildingMapProps) {
     const spotlight = spotlightRef.current;
     if (!ready || !spotlight) return;
     const { spotlight: target, flyTo: requestedFly } = latest.current;
-    if (target) return spotlight.show(target);
+    if (target) {
+      tooltipRef.current?.remove();
+      return spotlight.show(target);
+    }
     const flewNow =
       requestedFly !== null && requestedFly !== flyToBefore.current;
     spotlight.clear({ returnCamera: !flewNow });

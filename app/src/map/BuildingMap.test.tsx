@@ -14,10 +14,15 @@ type EventData = Record<string, unknown>;
 type Handler = (event: EventData) => void;
 
 /** A stand-in for MapLibre's Map: it records what the component asks of it and fires events on demand. */
-const { FakeMap, FakeMarker, maps } = vi.hoisted(() => {
+const { FakeMap, FakeMarker, FakePopup, maps, popups } = vi.hoisted(() => {
   const maps: InstanceType<typeof FakeMap>[] = [];
+  const popups: InstanceType<typeof FakePopup>[] = [];
   class FakeMap {
     private readonly handlers = new Map<string, Handler[]>();
+    /** Handlers for events on one layer, such as a click on the pins, keyed by event and layer. */
+    private readonly layerHandlers = new Map<string, Handler[]>();
+    /** The element MapLibre listens to keys on, which holds the canvas. */
+    readonly canvasContainer = new EventTarget();
     readonly sources = new Map<string, { setData: ReturnType<typeof vi.fn> }>();
     /** Where the camera is; `getCenter` and the like read it. */
     camera = {
@@ -119,15 +124,28 @@ const { FakeMap, FakeMarker, maps } = vi.hoisted(() => {
     getBearing() {
       return this.camera.bearing;
     }
+    getCanvasContainer() {
+      return this.canvasContainer;
+    }
     on(event: string, layerOrHandler: string | Handler, handler?: Handler) {
-      // Layer events (mousemove on the pins and the like) are not exercised here.
       if (typeof layerOrHandler === "function" && handler === undefined) {
         this.handlers.set(event, [
           ...(this.handlers.get(event) ?? []),
           layerOrHandler,
         ]);
+      } else if (typeof layerOrHandler === "string" && handler) {
+        const key = `${event}:${layerOrHandler}`;
+        this.layerHandlers.set(key, [
+          ...(this.layerHandlers.get(key) ?? []),
+          handler,
+        ]);
       }
       return this;
+    }
+    /** Fires an event on one layer, as MapLibre does for a pointer over or on its features. */
+    fireOnLayer(event: string, layer: string, data: Record<string, unknown>) {
+      for (const handler of this.layerHandlers.get(`${event}:${layer}`) ?? [])
+        handler({ type: event, ...data });
     }
     off(event: string, handler: Handler) {
       this.handlers.set(
@@ -181,14 +199,35 @@ const { FakeMap, FakeMarker, maps } = vi.hoisted(() => {
       return this;
     }
   }
-  return { FakeMap, FakeMarker, maps };
+  /** A tooltip that records whether it is on the map. */
+  class FakePopup {
+    shown = false;
+    constructor() {
+      popups.push(this);
+    }
+    setLngLat() {
+      return this;
+    }
+    setText() {
+      return this;
+    }
+    addTo() {
+      this.shown = true;
+      return this;
+    }
+    readonly remove = vi.fn(() => {
+      this.shown = false;
+      return this;
+    });
+  }
+  return { FakeMap, FakeMarker, FakePopup, maps, popups };
 });
 
 vi.mock("maplibre-gl", () => ({
   Map: FakeMap,
   Marker: FakeMarker,
   NavigationControl: class {},
-  Popup: class {},
+  Popup: FakePopup,
   GeoJSONSource: class {},
   setWorkerUrl: vi.fn(),
 }));
@@ -252,6 +291,7 @@ let reducedMotion = false;
 beforeEach(() => {
   vi.useFakeTimers();
   maps.length = 0;
+  popups.length = 0;
   styleSignal = undefined;
   reducedMotion = false;
   vi.mocked(loadFootprints).mockReset();
@@ -1158,10 +1198,48 @@ describe("BuildingMap spotlight", () => {
 });
 
 describe("a pin's tooltip", () => {
+  async function hoveredPin() {
+    stubStyle("now");
+    const rendered = renderMap();
+    await wait(0);
+    await act(async () => maps[0].fire("load"));
+    const map = maps[0];
+    const pin = {
+      features: [{ properties: { id: ARRAY.id, v: 3 } }],
+      lngLat: { lng: ARRAY.lon, lat: ARRAY.lat },
+    };
+    map.fireOnLayer("mousemove", "core", pin);
+    const [tooltip] = popups;
+    expect(tooltip.shown).toBe(true);
+    return { ...rendered, map, pin, tooltip };
+  }
+
+  it("goes when the pin under it is picked, since a tap sends no mouse leave after it", async () => {
+    const { map, pin, tooltip, props } = await hoveredPin();
+    map.fireOnLayer("click", "core", pin);
+    expect(tooltip.shown).toBe(false);
+    expect(props.onSelect).toHaveBeenCalledWith(ARRAY.id);
+  });
+
+  it("goes when a building stands forward, however it was picked", async () => {
+    vi.mocked(loadFootprints).mockReturnValue(new Promise(() => {}));
+    const { tooltip, spotlightOn } = await hoveredPin();
+    spotlightOn(ARRAY);
+    expect(tooltip.shown).toBe(false);
+  });
+
   it("names the address and its complaints, in the singular for one and in words for none", () => {
-    expect(describeComplaints("2000 Burton Dr", 201)).toBe("2000 Burton Dr: 201 complaints");
-    expect(describeComplaints("2000 Burton Dr", 1)).toBe("2000 Burton Dr: 1 complaint");
-    expect(describeComplaints("2000 Burton Dr", 0)).toBe("2000 Burton Dr: no complaints");
-    expect(describeComplaints("2000 Burton Dr", 1234)).toBe("2000 Burton Dr: 1,234 complaints");
+    expect(describeComplaints("2000 Burton Dr", 201)).toBe(
+      "2000 Burton Dr: 201 complaints",
+    );
+    expect(describeComplaints("2000 Burton Dr", 1)).toBe(
+      "2000 Burton Dr: 1 complaint",
+    );
+    expect(describeComplaints("2000 Burton Dr", 0)).toBe(
+      "2000 Burton Dr: no complaints",
+    );
+    expect(describeComplaints("2000 Burton Dr", 1234)).toBe(
+      "2000 Burton Dr: 1,234 complaints",
+    );
   });
 });
