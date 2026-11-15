@@ -140,7 +140,10 @@ export function CategoryDetail(props: {
         </Part>
       )}
 
-      <Part heading={Heading} title="Complaints, newest first">
+      <Part
+        heading={Heading}
+        title="Complaints in the last 3 years, newest first"
+      >
         {props.complaints === "loading" ? (
           <p className={MESSAGE}>Loading the complaints</p>
         ) : props.complaints === "failed" ? (

@@ -1093,7 +1093,7 @@ test.describe("a building's complaint types", () => {
     await expect(panel(page).getByText(BUILDING_CONDITION)).toBeVisible();
     await expect(
       panel(page)
-        .getByRole("region", { name: "Complaints, newest first" })
+        .getByRole("region", { name: "Complaints in the last 3 years, newest first" })
         .getByRole("listitem")
         .first(),
     ).toBeVisible();
@@ -1135,7 +1135,7 @@ test.describe("a building's complaint types", () => {
     ).toBeVisible();
 
     const complaints = page.getByRole("region", {
-      name: "Complaints, newest first",
+      name: "Complaints in the last 3 years, newest first",
     });
     const showAll = complaints.getByRole("button", { name: /^Show all/ });
     if ((await showAll.count()) > 0) await showAll.click();
@@ -1182,7 +1182,7 @@ test.describe("a building's complaint types", () => {
     await pickFromSearch(page, longest.address, longest);
     await typeRow(page, "Building condition").click();
     const complaints = panel(page).getByRole("region", {
-      name: "Complaints, newest first",
+      name: "Complaints in the last 3 years, newest first",
     });
     await complaints.getByRole("button", { name: /^Show all/ }).click();
 

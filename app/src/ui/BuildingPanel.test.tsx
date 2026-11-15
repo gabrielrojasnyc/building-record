@@ -1138,7 +1138,7 @@ describe("the categories", () => {
     expect(foundRows()[0]).toBe("Violation confirmed8");
 
     const listed = within(
-      await screen.findByRole("region", { name: "Complaints, newest first" }),
+      await screen.findByRole("region", { name: "Complaints in the last 3 years, newest first" }),
     );
     expect(
       listed

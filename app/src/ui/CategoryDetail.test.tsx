@@ -257,9 +257,9 @@ describe("CategoryDetail", () => {
     });
   });
 
-  describe("the complaints, newest first", () => {
+  describe("the complaints in the last 3 years, newest first", () => {
     const listed = () =>
-      section("Complaints, newest first").getAllByRole("listitem");
+      section("Complaints in the last 3 years, newest first").getAllByRole("listitem");
 
     it("lists the category's complaints from all three years with their dates and outcomes", () => {
       renderDetail();
@@ -360,7 +360,7 @@ describe("CategoryDetail", () => {
     it("holds the list's place in one line while the building file loads", () => {
       renderDetail({ complaints: "loading" });
       expect(
-        section("Complaints, newest first").getByText("Loading the complaints"),
+        section("Complaints in the last 3 years, newest first").getByText("Loading the complaints"),
       ).toBeVisible();
       expect(screen.getAllByTestId("period-figure")).toHaveLength(3);
     });
@@ -368,7 +368,7 @@ describe("CategoryDetail", () => {
     it("says once, where the complaints would be, that the building's details could not be loaded, and keeps the counts", () => {
       renderDetail({ complaints: "failed" });
       expect(
-        section("Complaints, newest first").getByText(
+        section("Complaints in the last 3 years, newest first").getByText(
           "This building's details could not be loaded right now.",
         ),
       ).toBeVisible();
