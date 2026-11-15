@@ -1,8 +1,13 @@
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type Ref } from "react";
 import { formatAcres, formatCount } from "@/domain/format";
 import { CATEGORY_LABEL, OUTCOME_CARD_PHRASE, titleOf } from "@/domain/labels";
 import { OUTCOMES, OUTCOME_LABEL, type Outcome } from "@/domain/outcomes";
-import { countFor, outcomeSplit, viewToSearchParams, type View } from "@/domain/query";
+import {
+  countFor,
+  outcomeSplit,
+  viewToSearchParams,
+  type View,
+} from "@/domain/query";
 import type { Complex } from "@/domain/types";
 import { Glass } from "./Glass";
 
@@ -35,30 +40,51 @@ interface TrayProps {
   view: View;
   selectedId: string | null;
   hoveredId: string | null;
+  /** The count line that heads the tray, which takes focus when a closed building has no card here. */
+  countRef?: Ref<HTMLParagraphElement>;
   onSelect(id: string): void;
   onHover(id: string | null): void;
   onToggleOrder(): void;
   onJump(area: Area): void;
 }
 
-const complaintsWord = (count: number) => (count === 1 ? "complaint" : "complaints");
+const complaintsWord = (count: number) =>
+  count === 1 ? "complaint" : "complaints";
 
 /** An outcome's full label after a count, in lower case. Only a confirmed violation changes with number. */
 function outcomeInFull(outcome: Outcome, count: number): string {
-  return outcome === "violation" && count !== 1 ? "violations confirmed" : OUTCOME_LABEL[outcome].toLowerCase();
+  return outcome === "violation" && count !== 1
+    ? "violations confirmed"
+    : OUTCOME_LABEL[outcome].toLowerCase();
 }
 
 /**
  * The two largest outcomes of a card's complaints, largest first, ties in display order, zeros never shown:
  * in the card's short words for the line itself, and in full for its title.
  */
-function outcomeLine(split: Record<Outcome, number>): { text: string; title: string } {
+function outcomeLine(split: Record<Outcome, number>): {
+  text: string;
+  title: string;
+} {
   const largest = OUTCOMES.filter((outcome) => split[outcome] > 0)
-    .sort((a, b) => split[b] - split[a] || OUTCOMES.indexOf(a) - OUTCOMES.indexOf(b))
+    .sort(
+      (a, b) =>
+        split[b] - split[a] || OUTCOMES.indexOf(a) - OUTCOMES.indexOf(b),
+    )
     .slice(0, 2);
   return {
-    text: largest.map((outcome) => `${formatCount(split[outcome])} ${OUTCOME_CARD_PHRASE[outcome]}`).join(", "),
-    title: largest.map((outcome) => `${formatCount(split[outcome])} ${outcomeInFull(outcome, split[outcome])}`).join(", "),
+    text: largest
+      .map(
+        (outcome) =>
+          `${formatCount(split[outcome])} ${OUTCOME_CARD_PHRASE[outcome]}`,
+      )
+      .join(", "),
+    title: largest
+      .map(
+        (outcome) =>
+          `${formatCount(split[outcome])} ${outcomeInFull(outcome, split[outcome])}`,
+      )
+      .join(", "),
   };
 }
 
@@ -66,7 +92,11 @@ function outcomeLine(split: Record<Outcome, number>): { text: string; title: str
  * The caption under a card's figure and the line under its address, both speaking to the same filter as the figure.
  * A card with complaints under All has no line under its address: its outcome line says what they came to.
  */
-function cardCopy(complex: Complex, view: View, count: number): { caption: string; detail: string | null } {
+function cardCopy(
+  complex: Complex,
+  view: View,
+  count: number,
+): { caption: string; detail: string | null } {
   const acres = formatAcres(complex.acres);
 
   if (view.category === "all") {
@@ -75,13 +105,17 @@ function cardCopy(complex: Complex, view: View, count: number): { caption: strin
   }
 
   const label = CATEGORY_LABEL[view.category];
-  if (count > 0) return { caption: complaintsWord(count), detail: `${label} only` };
+  if (count > 0)
+    return { caption: complaintsWord(count), detail: `${label} only` };
 
   // The selected type has none here, so every complaint in the period belongs to another type.
   const others = countFor(complex, { ...view, category: "all" });
   return {
     caption: `no ${label.toLowerCase()} complaints`,
-    detail: others === 0 ? acres : `${formatCount(others)} other ${complaintsWord(others)}`,
+    detail:
+      others === 0
+        ? acres
+        : `${formatCount(others)} other ${complaintsWord(others)}`,
   };
 }
 
@@ -175,7 +209,7 @@ function TrayNote({ children }: { children: string }) {
 }
 
 export function Tray(props: TrayProps) {
-  const { complexes, view, selectedId, hoveredId } = props;
+  const { complexes, view, selectedId, hoveredId, countRef } = props;
   const countId = useId();
   const cardsRef = useRef<HTMLDivElement>(null);
   const citywide = props.citywide === true;
@@ -186,7 +220,9 @@ export function Tray(props: TrayProps) {
   const viewKey = viewToSearchParams(view).toString();
   const [revealed, setRevealed] = useState({ viewKey, pages: 1 });
   const pages = revealed.viewKey === viewKey ? revealed.pages : 1;
-  const shown = citywide ? Math.min(total, CARD_LIMIT * pages) : Math.min(total, CARD_LIMIT);
+  const shown = citywide
+    ? Math.min(total, CARD_LIMIT * pages)
+    : Math.min(total, CARD_LIMIT);
   const hidden = total - shown;
 
   const toggleOrder = () => {
@@ -195,15 +231,24 @@ export function Tray(props: TrayProps) {
   };
 
   return (
-    <section aria-labelledby={countId} className={citywide ? "flex min-h-0 flex-1 flex-col" : undefined}>
+    <section
+      aria-labelledby={countId}
+      className={citywide ? "flex min-h-0 flex-1 flex-col" : undefined}
+    >
       <div className="flex items-center gap-2.5 px-(--gutter) pb-2.5">
         <Glass className="flex h-[42px] flex-none items-center gap-2 rounded-full pr-1.5 pl-[18px]">
-          <p id={countId} className="flex items-center gap-2">
+          <p
+            id={countId}
+            ref={countRef}
+            tabIndex={-1}
+            className="flex items-center gap-2 focus-visible:outline-none"
+          >
             <strong className="font-display text-2xl leading-none font-normal text-deep tabular-nums">
               {total.toLocaleString("en-US")}
             </strong>{" "}
             <span className="text-sm text-slate">
-              {total === 1 ? "complex" : "complexes"} {countsAustin ? "in Austin" : "in view"}
+              {total === 1 ? "complex" : "complexes"}{" "}
+              {countsAustin ? "in Austin" : "in view"}
             </span>
           </p>
           <button

@@ -43,7 +43,9 @@ vi.mock("next/dynamic", async () => {
         useLayoutEffect(() => {
           if (!mapScript.escapeOnStage || !props.spotlight) return;
           mapScript.escapeOnStage = false;
-          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+          document.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "Escape" }),
+          );
         });
         return <div data-testid="map" />;
       },
@@ -150,13 +152,18 @@ function serveBuildingFiles({ failing = {}, heldBack = [] }: FileOptions = {}) {
     "fetch",
     vi.fn<typeof fetch>(async (input) => {
       const url = String(input);
-      if (url.startsWith("https://data.austintexas.gov/resource/9s7j-tygf.json")) return Response.json([]);
+      if (
+        url.startsWith("https://data.austintexas.gov/resource/9s7j-tygf.json")
+      )
+        return Response.json([]);
       if (url.startsWith("https://")) return new Promise<Response>(() => {});
       const id = /\/data\/buildings\/(.+)\.json$/.exec(url)?.[1];
       const found = everything.find((candidate) => candidate.id === id);
       if (!found) throw new Error(`Unexpected fetch: ${url}`);
       if (heldBack.includes(found.id)) {
-        return new Promise<Response>((resolve) => waiting.set(found.id, resolve));
+        return new Promise<Response>((resolve) =>
+          waiting.set(found.id, resolve),
+        );
       }
       if (failing[found.id])
         return new Response("", { status: failing[found.id] });
@@ -169,8 +176,10 @@ function serveBuildingFiles({ failing = {}, heldBack = [] }: FileOptions = {}) {
     await act(async () => resolve(response()));
   };
   return {
-    release: (target: Complex) => answer(target.id, () => Response.json(detailFor(target))),
-    fail: (target: Complex) => answer(target.id, () => new Response("", { status: 503 })),
+    release: (target: Complex) =>
+      answer(target.id, () => Response.json(detailFor(target))),
+    fail: (target: Complex) =>
+      answer(target.id, () => new Response("", { status: 503 })),
   };
 }
 
@@ -215,7 +224,9 @@ function lastMap(): BuildingMapProps {
 const reportView = (area: ViewArea) =>
   act(() => lastMap().onViewAreaChange(area));
 const cardOf = (target: Complex) =>
-  screen.getAllByTestId("card").find((card) => card.dataset.complexId === target.id);
+  screen
+    .getAllByTestId("card")
+    .find((card) => card.dataset.complexId === target.id);
 const cardIds = () =>
   screen.getAllByTestId("card").map((card) => card.dataset.complexId);
 
@@ -296,14 +307,24 @@ it("on a phone, frames the model above a record sheet 60% of the screen tall, as
   openFinder();
   await pick(array);
   await staged(array);
-  expect(lastMap().padding).toEqual({ top: 90, right: 30, bottom: 507, left: 30 });
+  expect(lastMap().padding).toEqual({
+    top: 90,
+    right: 30,
+    bottom: 507,
+    left: 30,
+  });
 
   // Turned to landscape, or a window made shorter: the map frames the model again in the new strip.
   vi.stubGlobal("innerHeight", 700);
   act(() => {
     window.dispatchEvent(new Event("resize"));
   });
-  expect(lastMap().padding).toEqual({ top: 90, right: 30, bottom: 440, left: 30 });
+  expect(lastMap().padding).toEqual({
+    top: 90,
+    right: 30,
+    bottom: 440,
+    left: 30,
+  });
 });
 
 it("keeps the tray on the ground it was counting while a building is open, and until the camera is back from it", async () => {
@@ -385,7 +406,9 @@ it("clears the model and restores the padding in one render when the building cl
 
   const before = mapRenders.length;
   await userEvent.keyboard("{Escape}");
-  const cleared = mapRenders.slice(before).find((props) => props.spotlight === null);
+  const cleared = mapRenders
+    .slice(before)
+    .find((props) => props.spotlight === null);
   expect(cleared?.padding).toEqual(NORMAL_PADDING);
   expect(document.querySelector(".fog")).not.toHaveClass("fog-spotlight");
   expect(screen.queryByRole("complementary")).toBeNull();
@@ -437,8 +460,14 @@ it("asks for the fallback fly in the same render as an earlier model leaves, so 
 
   await pick(crest);
   await waitFor(() => expect(lastMap().spotlight).toBeNull());
-  const leaving = mapRenders.slice(before).find((props) => props.spotlight === null);
-  expect(leaving?.flyTo).toEqual({ lon: crest.lon, lat: crest.lat, zoom: 14.6 });
+  const leaving = mapRenders
+    .slice(before)
+    .find((props) => props.spotlight === null);
+  expect(leaving?.flyTo).toEqual({
+    lon: crest.lon,
+    lat: crest.lat,
+    zoom: 14.6,
+  });
 });
 
 it("leaves for an area in one render, with the fly, and the tray follows the map from there", async () => {
@@ -448,7 +477,9 @@ it("leaves for an area in one render, with the fly, and the tray follows the map
   const before = mapRenders.length;
 
   await userEvent.click(screen.getByRole("button", { name: "Downtown" }));
-  const leaving = mapRenders.slice(before).find((props) => props.spotlight === null);
+  const leaving = mapRenders
+    .slice(before)
+    .find((props) => props.spotlight === null);
   expect(leaving?.flyTo).toEqual({ lon: -97.7431, lat: 30.268, zoom: 13.9 });
   expect(leaving?.selectedId).toBeNull();
   expect(screen.queryByRole("complementary")).toBeNull();
@@ -504,14 +535,18 @@ it("asks the city for a picked building's 311 requests from the first day of the
 
 it("a pick made before the map has reported holds the list it was picked from, all of Austin, and its card", async () => {
   render(<Finder complexes={everything} meta={meta} />);
-  expect(screen.getByRole("region", { name: "3 complexes in Austin" })).toBeVisible();
+  expect(
+    screen.getByRole("region", { name: "3 complexes in Austin" }),
+  ).toBeVisible();
   await pick(domain);
   await staged(domain);
 
   // The map's first report shows ground without that building; the list stays the one it was picked from.
   reportView(RIVERSIDE);
   reportView(NORTH);
-  expect(screen.getByRole("region", { name: "3 complexes in Austin" })).toBeVisible();
+  expect(
+    screen.getByRole("region", { name: "3 complexes in Austin" }),
+  ).toBeVisible();
 
   await userEvent.keyboard("{Escape}");
   expect(cardOf(domain)).toHaveFocus();
@@ -541,10 +576,22 @@ it("drops a model whose map gave up after it was staged: no model, no selection 
   expect(lastMap().spotlight).toBeNull();
   expect(lastMap().padding).toEqual(NORMAL_PADDING);
   expect(document.querySelector(".fog")).not.toHaveClass("fog-spotlight");
-  expect(screen.getByRole("heading", { level: 2, name: "Array Apartments" })).toBeVisible();
+  expect(
+    screen.getByRole("heading", { level: 2, name: "Array Apartments" }),
+  ).toBeVisible();
 });
 
-it("returns focus to the search when the closed building has no card in the tray", async () => {
+/** The tray's count line, which heads the tray. */
+function trayCountLine(): HTMLElement {
+  const tray = screen.getByRole("region", { name: /complex(es)? in / });
+  const line = document.getElementById(
+    tray.getAttribute("aria-labelledby") ?? "",
+  );
+  if (!line) throw new Error("The tray has no count line");
+  return line;
+}
+
+it("returns focus to the search when the closed building has no card in the tray and was picked through the search", async () => {
   openFinder();
   expect(cardIds()).not.toContain(domain.id);
   await pickFromSearch("11800", domain);
@@ -552,6 +599,31 @@ it("returns focus to the search when the closed building has no card in the tray
 
   await userEvent.keyboard("{Escape}");
   expect(screen.getByRole("combobox")).toHaveFocus();
+});
+
+it("hands focus to the tray's count line, never an input, when a building picked on the map has no card in the tray", async () => {
+  openFinder();
+  expect(cardIds()).not.toContain(domain.id);
+  act(() => lastMap().onSelect(domain.id));
+  await staged(domain);
+
+  await userEvent.click(
+    screen.getByRole("button", { name: "Close building details" }),
+  );
+  expect(trayCountLine()).toHaveFocus();
+  expect(trayCountLine()).toHaveAttribute("tabindex", "-1");
+  expect(document.activeElement?.tagName).not.toBe("INPUT");
+});
+
+it("goes by the latest pick: a search pick replaced by a pick on the map hands focus to the count line", async () => {
+  openFinder();
+  await pickFromSearch("2000 Burton", array);
+  await staged(array);
+  act(() => lastMap().onSelect(domain.id));
+  await staged(domain);
+
+  await userEvent.keyboard("{Escape}");
+  expect(trayCountLine()).toHaveFocus();
 });
 
 describe("a building file that settles after the pick has moved on", () => {
@@ -562,7 +634,9 @@ describe("a building file that settles after the pick has moved on", () => {
     await userEvent.keyboard("{Escape}");
 
     await files.release(array);
-    expect(mapRenders.every((props) => !props.spotlight && props.flyTo === null)).toBe(true);
+    expect(
+      mapRenders.every((props) => !props.spotlight && props.flyTo === null),
+    ).toBe(true);
     expect(document.querySelector(".fog")).not.toHaveClass("fog-spotlight");
   });
 
@@ -573,7 +647,9 @@ describe("a building file that settles after the pick has moved on", () => {
     await userEvent.keyboard("{Escape}");
 
     await files.fail(array);
-    expect(mapRenders.every((props) => !props.spotlight && props.flyTo === null)).toBe(true);
+    expect(
+      mapRenders.every((props) => !props.spotlight && props.flyTo === null),
+    ).toBe(true);
   });
 
   it("shows only the second building when the first's file arrives after it", async () => {
@@ -585,7 +661,9 @@ describe("a building file that settles after the pick has moved on", () => {
 
     await files.release(array);
     expect(lastMap().spotlight?.id).toBe(crest.id);
-    expect(mapRenders.some((props) => props.spotlight?.id === array.id)).toBe(false);
+    expect(mapRenders.some((props) => props.spotlight?.id === array.id)).toBe(
+      false,
+    );
   });
 });
 
@@ -610,13 +688,28 @@ describe("on a phone", () => {
 
     expect(controls()).toHaveAttribute("inert");
     expect(screen.getByRole("complementary")).toHaveFocus();
-    expect(controls()).not.toContainElement(document.activeElement as HTMLElement);
+    expect(controls()).not.toContainElement(
+      document.activeElement as HTMLElement,
+    );
 
     // That building has no card in the tray, so closing hands focus back to the search, which is back by then.
     await staged(domain);
     await userEvent.keyboard("{Escape}");
     expect(controls()).not.toHaveAttribute("inert");
     expect(screen.getByRole("combobox")).toHaveFocus();
+  });
+
+  it("closing a building picked from a pin, with no card for it, puts focus on the count line so no keyboard opens", async () => {
+    openFinder();
+    act(() => lastMap().onSelect(domain.id));
+    await staged(domain);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Close building details" }),
+    );
+    expect(controls()).not.toHaveAttribute("inert");
+    expect(trayCountLine()).toHaveFocus();
+    expect(screen.getByRole("combobox")).not.toHaveFocus();
   });
 
   it("keeps the search and filters where they are without a map", async () => {

@@ -7,8 +7,19 @@ import { loadBuildingDetail } from "@/city/buildingDetail";
 import { load311Summary, type RequestTypeCount } from "@/city/requests311";
 import { formatAcres, formatCount, formatDate } from "@/domain/format";
 import { NO_CASES_CAUTION, titleOf } from "@/domain/labels";
-import { PERIODS, PERIOD_LABEL, PERIOD_PHRASE, type Period } from "@/domain/periods";
-import { countFor, DEFAULT_VIEW, outcomeSplit, type CategoryFilter, type View } from "@/domain/query";
+import {
+  PERIODS,
+  PERIOD_LABEL,
+  PERIOD_PHRASE,
+  type Period,
+} from "@/domain/periods";
+import {
+  countFor,
+  DEFAULT_VIEW,
+  outcomeSplit,
+  type CategoryFilter,
+  type View,
+} from "@/domain/query";
 import type { BuildingDetail, Complaint, Complex, Meta } from "@/domain/types";
 import { Categories } from "./Categories";
 import { Glass } from "./Glass";
@@ -40,8 +51,9 @@ const LOADING = { status: "loading" } as const;
 */
 const MAP_PLACEMENT =
   "building-sheet fixed top-[76px] right-(--gutter) bottom-[277px] z-3 w-[372px] overflow-hidden rounded-[28px] motion-safe:animate-rise phone:top-auto phone:right-0 phone:bottom-0 phone:left-0 phone:z-4 phone:h-[60dvh] phone:w-auto phone:rounded-b-none";
+/* Contained, so a drag that reaches the top of the sheet never turns into the page's pull to refresh. */
 const MAP_SCROLLER =
-  "h-full overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+  "h-full overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
 
 /** Loads `source` whenever it changes. A result that arrives after `source` has moved on is dropped. */
 function useLoad<S, T>(
@@ -78,7 +90,8 @@ function useLoad<S, T>(
 const formatMonth = (yearMonth: string) =>
   formatDate(yearMonth, { month: "short", year: "numeric" });
 
-const complaintsWord = (count: number) => (count === 1 ? "complaint" : "complaints");
+const complaintsWord = (count: number) =>
+  count === 1 ? "complaint" : "complaints";
 
 export function BuildingPanel(props: BuildingPanelProps) {
   const { complex, view, fetchImpl = fetch } = props;
@@ -93,7 +106,8 @@ export function BuildingPanel(props: BuildingPanelProps) {
   );
   const requestsSince = props.periodStarts.y3;
   const fetch311 = useCallback(
-    (bbox: BuildingDetail["bbox"]) => load311Summary(bbox, requestsSince, fetchImpl),
+    (bbox: BuildingDetail["bbox"]) =>
+      load311Summary(bbox, requestsSince, fetchImpl),
     [requestsSince, fetchImpl],
   );
 
@@ -108,10 +122,13 @@ export function BuildingPanel(props: BuildingPanelProps) {
     fetch311,
   );
 
-  const complaints = detail.status === "ready" ? detail.value.complaints : detail.status;
+  const complaints =
+    detail.status === "ready" ? detail.value.complaints : detail.status;
   const periodStart = props.periodStarts[view.period];
   const stillOpenIn = (category: CategoryFilter) =>
-    Array.isArray(complaints) ? violationsStillOpen(complaints, periodStart, category) : null;
+    Array.isArray(complaints)
+      ? violationsStillOpen(complaints, periodStart, category)
+      : null;
 
   useEffect(() => {
     if (!onClose) return;
@@ -143,80 +160,103 @@ export function BuildingPanel(props: BuildingPanelProps) {
       aria-labelledby={headingId}
       className={props.place === "page" ? "rounded-[28px]" : MAP_PLACEMENT}
     >
+      {/* On the panel, not in what scrolls, so it stays in reach however far down the record a person has read. */}
+      {onClose && (
+        <button
+          type="button"
+          aria-label="Close building details"
+          onClick={onClose}
+          className="absolute top-3.5 right-3.5 z-2 size-8 cursor-pointer rounded-full bg-white/72 text-[18px] leading-none text-deep backdrop-blur-[8px] hover:bg-white/85"
+        >
+          ×
+        </button>
+      )}
       <SectionLevel value={props.place === "page" ? "h2" : "h3"}>
-      <div ref={scrollerRef} className={props.place === "page" ? undefined : MAP_SCROLLER}>
-        <Header
-          complex={complex}
-          heading={Heading}
-          headingId={headingId}
-          photo={detail.status === "ready" ? detail.value.bbox : null}
-          onClose={onClose}
-        />
-        <div className="px-[22px] pt-4 pb-[22px]">
-          {complex.repeatOffender && (
-            <RepeatOffenderNote listing={complex.repeatOffender} />
-          )}
-          <LeadFigure complex={complex} period={view.period} />
-          <Figures complex={complex} period={view.period} />
-          <CityFound complex={complex} period={view.period} violationsOpen={stillOpenIn("all")} />
-          {totalFor(complex, "y3") > 0 && (
-            // Keyed by building, so a newly chosen one opens with the filtered type's row, not the last one's.
-            <Categories
-              key={complex.id}
+        <div
+          ref={scrollerRef}
+          className={props.place === "page" ? undefined : MAP_SCROLLER}
+        >
+          <Header
+            complex={complex}
+            heading={Heading}
+            headingId={headingId}
+            photo={detail.status === "ready" ? detail.value.bbox : null}
+            underClose={onClose !== null}
+          />
+          <div className="px-[22px] pt-4 pb-[22px]">
+            {complex.repeatOffender && (
+              <RepeatOffenderNote listing={complex.repeatOffender} />
+            )}
+            <LeadFigure complex={complex} period={view.period} />
+            <Figures complex={complex} period={view.period} />
+            <CityFound
               complex={complex}
-              view={view}
-              complaints={complaints}
-              deficiencies={detail.status === "ready" ? detail.value.deficiencies : []}
-              stillOpenIn={stillOpenIn}
+              period={view.period}
+              violationsOpen={stillOpenIn("all")}
             />
-          )}
+            {totalFor(complex, "y3") > 0 && (
+              // Keyed by building, so a newly chosen one opens with the filtered type's row, not the last one's.
+              <Categories
+                key={complex.id}
+                complex={complex}
+                view={view}
+                complaints={complaints}
+                deficiencies={
+                  detail.status === "ready" ? detail.value.deficiencies : []
+                }
+                stillOpenIn={stillOpenIn}
+              />
+            )}
 
-          {detail.status === "failed" ? (
-            <Section title="Month by month">
-              <p className={MESSAGE}>
-                This building&apos;s history could not be loaded. The counts above
-                are still current.
-              </p>
-            </Section>
-          ) : (
-            detail.status === "ready" && (
-              <MonthChart monthly={detail.value.monthly} since={props.periodStarts.y3} />
-            )
-          )}
-          {detail.status !== "failed" && <Requests311 outcome={requests} />}
+            {detail.status === "failed" ? (
+              <Section title="Month by month">
+                <p className={MESSAGE}>
+                  This building&apos;s history could not be loaded. The counts
+                  above are still current.
+                </p>
+              </Section>
+            ) : (
+              detail.status === "ready" && (
+                <MonthChart
+                  monthly={detail.value.monthly}
+                  since={props.periodStarts.y3}
+                />
+              )
+            )}
+            {detail.status !== "failed" && <Requests311 outcome={requests} />}
 
-          <p className="mt-[18px] text-[12.5px] leading-normal text-slate">
-            From{" "}
-            <a
-              href="https://data.austintexas.gov/d/6wtj-zbtb"
-              target="_blank"
-              rel="noreferrer"
-              className="text-deep underline"
-            >
-              Austin Code Complaint Cases
-            </a>{" "}
-            and{" "}
-            <a
-              href="https://data.austintexas.gov/d/xwdj-i9he"
-              target="_blank"
-              rel="noreferrer"
-              className="text-deep underline"
-            >
-              Austin 311
-            </a>
-            , City of Austin. {NO_CASES_CAUTION}
-          </p>
+            <p className="mt-[18px] text-[12.5px] leading-normal text-slate">
+              From{" "}
+              <a
+                href="https://data.austintexas.gov/d/6wtj-zbtb"
+                target="_blank"
+                rel="noreferrer"
+                className="text-deep underline"
+              >
+                Austin Code Complaint Cases
+              </a>{" "}
+              and{" "}
+              <a
+                href="https://data.austintexas.gov/d/xwdj-i9he"
+                target="_blank"
+                rel="noreferrer"
+                className="text-deep underline"
+              >
+                Austin 311
+              </a>
+              , City of Austin. {NO_CASES_CAUTION}
+            </p>
 
-          {onClose && (
-            <Link
-              href={`/building/${complex.id}`}
-              className="mt-4 inline-flex h-[30px] items-center rounded-full bg-white/55 px-3 text-[13px] font-normal text-deep hover:bg-white/85"
-            >
-              Open this building&apos;s page
-            </Link>
-          )}
+            {onClose && (
+              <Link
+                href={`/building/${complex.id}`}
+                className="mt-4 inline-flex h-[30px] items-center rounded-full bg-white/55 px-3 text-[13px] font-normal text-deep hover:bg-white/85"
+              >
+                Open this building&apos;s page
+              </Link>
+            )}
+          </div>
         </div>
-      </div>
       </SectionLevel>
     </Glass>
   );
@@ -251,14 +291,19 @@ function Header(props: {
   headingId: string;
   /** The parcel's box, once the building file has arrived. */
   photo: BuildingDetail["bbox"] | null;
-  onClose: (() => void) | null;
+  /** Over the map the panel's close button stands in the header's top corner. */
+  underClose: boolean;
 }) {
   const { complex, heading: Heading } = props;
   const title = titleOf(complex);
   const src = props.photo ? aerialPhotoUrl(props.photo, 744, 400) : null;
 
-  const [settled, setSettled] = useState<{ src: string; status: PhotoStatus } | null>(null);
-  const status: PhotoStatus = settled !== null && settled.src === src ? settled.status : "loading";
+  const [settled, setSettled] = useState<{
+    src: string;
+    status: PhotoStatus;
+  } | null>(null);
+  const status: PhotoStatus =
+    settled !== null && settled.src === src ? settled.status : "loading";
 
   // A photo can finish before the page is hydrated and listening for it, so the element is asked where it got to.
   const readFinishedPhoto = useCallback(
@@ -302,20 +347,10 @@ function Header(props: {
       {status === "loaded" && (
         // Under the close button over the map; in the corner on the building's own page, which has none.
         <span
-          className={`pointer-events-none absolute ${props.onClose ? "top-[58px]" : "top-3.5"} right-3.5 z-1 text-[10.5px] text-ice opacity-80 ${PHOTO_TEXT_SHADOW}`}
+          className={`pointer-events-none absolute ${props.underClose ? "top-[58px]" : "top-3.5"} right-3.5 z-1 text-[10.5px] text-ice opacity-80 ${PHOTO_TEXT_SHADOW}`}
         >
           Aerial photo: USGS
         </span>
-      )}
-      {props.onClose && (
-        <button
-          type="button"
-          aria-label="Close building details"
-          onClick={props.onClose}
-          className="absolute top-3.5 right-3.5 z-2 size-8 cursor-pointer rounded-full bg-white/72 text-[18px] leading-none text-deep backdrop-blur-[8px] hover:bg-white/85"
-        >
-          ×
-        </button>
       )}
     </div>
   );
@@ -367,7 +402,11 @@ function totalFor(complex: Complex, period: Period): number {
  * Confirmed violations whose case is not closed, opened on or after `since`, of one type or every type.
  * Counted from the building's complaints, since the complex carries this for the 3 years only.
  */
-function violationsStillOpen(complaints: Complaint[], since: string, category: CategoryFilter): number {
+function violationsStillOpen(
+  complaints: Complaint[],
+  since: string,
+  category: CategoryFilter,
+): number {
   return complaints.filter(
     (complaint) =>
       complaint.outcome === "violation" &&
@@ -429,7 +468,11 @@ function Figures({ complex, period }: { complex: Complex; period: Period }) {
  * The active period's complaints of every type by how the city closed them, and the duplicates left out.
  * With no complaints in the period there is no list to head, so only the duplicates are said, if any.
  */
-function CityFound(props: { complex: Complex; period: Period; violationsOpen: number | null }) {
+function CityFound(props: {
+  complex: Complex;
+  period: Period;
+  violationsOpen: number | null;
+}) {
   const { complex, period } = props;
   const duplicates = complex.duplicates[period] ?? 0;
   const summary = (
@@ -439,11 +482,18 @@ function CityFound(props: { complex: Complex; period: Period; violationsOpen: nu
       duplicates={duplicates}
     />
   );
-  if (totalFor(complex, period) > 0) return <Section title="What the city found">{summary}</Section>;
+  if (totalFor(complex, period) > 0)
+    return <Section title="What the city found">{summary}</Section>;
   return duplicates > 0 ? <div className="mt-3">{summary}</div> : null;
 }
 
-function MonthChart({ monthly, since }: { monthly: BuildingDetail["monthly"]; since: string }) {
+function MonthChart({
+  monthly,
+  since,
+}: {
+  monthly: BuildingDetail["monthly"];
+  since: string;
+}) {
   const peak = Math.max(0, ...monthly.map(({ count }) => count));
   if (peak === 0) {
     return (
@@ -456,7 +506,9 @@ function MonthChart({ monthly, since }: { monthly: BuildingDetail["monthly"]; si
   const first = formatMonth(monthly[0].month);
   const last = formatMonth(monthly[monthly.length - 1].month);
   // On a tie, the most recent of the busiest months.
-  const busiest = formatMonth(monthly.findLast(({ count }) => count === peak)?.month ?? monthly[0].month);
+  const busiest = formatMonth(
+    monthly.findLast(({ count }) => count === peak)?.month ?? monthly[0].month,
+  );
   const peakComplaints = `${peak} ${complaintsWord(peak)}`;
   const summary = `Complaints opened each month, ${first} to ${last}. Busiest month: ${busiest}, with ${peakComplaints}.`;
 
@@ -464,7 +516,8 @@ function MonthChart({ monthly, since }: { monthly: BuildingDetail["monthly"]; si
     <Section title="Month by month">
       {/* The window rolls, so its first and last months are partial; the start date says so. */}
       <p className={`${MESSAGE} mb-2`}>
-        Complaints opened since {formatDate(since, { month: "long", day: "numeric", year: "numeric" })}.
+        Complaints opened since{" "}
+        {formatDate(since, { month: "long", day: "numeric", year: "numeric" })}.
         Duplicate reports are not counted.
       </p>
       <div

@@ -54,15 +54,30 @@ const ADDRESS_ZOOM = 15;
   together stand 41 px taller than the mockup's tray on desktop and 79 px taller on a phone.
 */
 const PHONE_QUERY = "(max-width: 760px)";
-const DESKTOP_PADDING: CameraPadding = { top: 80, right: 0, bottom: 261, left: 0 };
-const PHONE_PADDING: CameraPadding = { top: 170, right: 0, bottom: 279, left: 0 };
+const DESKTOP_PADDING: CameraPadding = {
+  top: 80,
+  right: 0,
+  bottom: 261,
+  left: 0,
+};
+const PHONE_PADDING: CameraPadding = {
+  top: 170,
+  right: 0,
+  bottom: 279,
+  left: 0,
+};
 
 /*
   While a building stands forward, the camera frames it clear of the record panel on the right, or
   above the phone's record sheet. On a phone the title block and filters step aside meanwhile, so the
   frame reaches near the top of the screen.
 */
-const DESKTOP_SPOTLIGHT_PADDING: CameraPadding = { top: 110, right: 440, bottom: 268, left: 70 };
+const DESKTOP_SPOTLIGHT_PADDING: CameraPadding = {
+  top: 110,
+  right: 440,
+  bottom: 268,
+  left: 70,
+};
 const PHONE_SHEET_SHARE = 0.6;
 
 function phoneSpotlightPadding(viewportHeight: number): CameraPadding {
@@ -92,7 +107,8 @@ interface Hold {
 const HOLD_AFTER_CLOSE_MS = 1500;
 
 /* On a phone the title block and filters step out of the way while a building is open, fading under motion-safe only. */
-const CONTROLS_PRESENT = "motion-safe:*:transition-opacity motion-safe:*:duration-250";
+const CONTROLS_PRESENT =
+  "motion-safe:*:transition-opacity motion-safe:*:duration-250";
 // Visibility switches when the fade ends, so the controls stay seen while they fade and leave the tab order and the accessibility tree with it.
 const CONTROLS_ASIDE =
   "*:invisible *:opacity-0 motion-safe:*:transition-[opacity,visibility] motion-safe:*:duration-250";
@@ -254,7 +270,10 @@ export function Finder({
     setViewArea(area);
     // After a building closes the camera eases back to where it was, and the tray lets go once it is there.
     setHold((current) =>
-      current !== null && current.area !== null && selectedId === null && sameGround(area, current.area)
+      current !== null &&
+      current.area !== null &&
+      selectedId === null &&
+      sameGround(area, current.area)
         ? null
         : current,
     );
@@ -274,8 +293,11 @@ export function Finder({
 
   const selected = selectedId === null ? undefined : byId.get(selectedId);
   const controlsRef = useRef<HTMLDivElement>(null);
+  const trayCountRef = useRef<HTMLParagraphElement>(null);
   const openId = useRef<string | null>(null);
   const handFocusBack = useRef(false);
+  /** Whether the building open now was picked through the search, the one place focus may go back to an input. */
+  const pickedThroughSearch = useRef(false);
 
   /*
     Reads no render's values, so the panel's Escape listener can never hold a stale copy. The hold is
@@ -288,21 +310,30 @@ export function Finder({
     setStage(null);
   }, []);
 
-  // Closing hands focus back to the card for the building that was open, or to the search when the tray has no card for it.
-  // After the render, so on a phone the search is back and can take it.
+  /*
+    Closing hands focus back to the card for the building that was open. With no card for it in the tray, focus goes
+    back to the search only when the pick was made there; otherwise to the tray's count line, since focus in the
+    search would open a phone's keyboard. After the render, so on a phone the search is back and can take it.
+  */
   useEffect(() => {
     const closed = openId.current;
     openId.current = selectedId;
-    if (selectedId !== null || closed === null || !handFocusBack.current) return;
+    if (selectedId !== null || closed === null || !handFocusBack.current)
+      return;
     handFocusBack.current = false;
     const card = document.querySelector<HTMLElement>(
       `[data-testid="card"][data-complex-id="${CSS.escape(closed)}"]`,
     );
-    (card ?? controlsRef.current?.querySelector<HTMLElement>('[role="combobox"]'))?.focus();
+    const search =
+      controlsRef.current?.querySelector<HTMLElement>('[role="combobox"]');
+    (
+      card ?? (pickedThroughSearch.current ? search : trayCountRef.current)
+    )?.focus();
   }, [selectedId]);
 
-  const select = (id: string) => {
+  const select = (id: string, throughSearch = false) => {
     if (!byId.has(id)) return;
+    pickedThroughSearch.current = throughSearch;
     setSelectedId(id);
     setHold((current) => current ?? { area: viewArea });
   };
@@ -320,7 +351,7 @@ export function Finder({
   };
 
   const goToAddress = (match: AddressMatch) => {
-    if (match.complexId) return select(match.complexId);
+    if (match.complexId) return select(match.complexId, true);
     leaveFor({ lon: match.lon, lat: match.lat, zoom: ADDRESS_ZOOM });
   };
 
@@ -337,7 +368,11 @@ export function Finder({
         inert={controlsAside}
         className={controlsAside ? CONTROLS_ASIDE : CONTROLS_PRESENT}
       >
-        <IntroSearch complexes={complexes} onChoose={goToAddress} complexesOnly={mapUnavailable} />
+        <IntroSearch
+          complexes={complexes}
+          onChoose={goToAddress}
+          complexesOnly={mapUnavailable}
+        />
         <Filters view={view} onChange={changeView} />
       </div>
       {/* After the title block and filters and before the tray, so Tab reaches the map between them. It is positioned, so its place in the markup moves nothing. */}
@@ -356,7 +391,7 @@ export function Finder({
           padding={padding}
           spotlight={spotlight}
           onViewAreaChange={reportViewArea}
-          onSelect={select}
+          onSelect={(id) => select(id)}
           onHover={setHoveredId}
           onUnavailable={() => setMapUnavailable(true)}
         />
@@ -377,8 +412,12 @@ export function Finder({
       >
         {mapUnavailable && (
           <div className="px-(--gutter)">
-            <Glass as="p" className="w-fit max-w-full rounded-2xl px-4 py-2.5 text-deep">
-              The map could not load on this device. You can still browse the list below.
+            <Glass
+              as="p"
+              className="w-fit max-w-full rounded-2xl px-4 py-2.5 text-deep"
+            >
+              The map could not load on this device. You can still browse the
+              list below.
             </Glass>
           </div>
         )}
@@ -389,7 +428,8 @@ export function Finder({
           view={view}
           selectedId={selectedId}
           hoveredId={hoveredId}
-          onSelect={select}
+          countRef={trayCountRef}
+          onSelect={(id) => select(id)}
           onHover={setHoveredId}
           onToggleOrder={() =>
             changeView({

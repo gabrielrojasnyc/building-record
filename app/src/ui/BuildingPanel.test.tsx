@@ -278,7 +278,9 @@ describe("the header", () => {
 
   /** The line under the header's title. */
   function subline(title: string) {
-    const line = screen.getByRole("heading", { name: title }).nextElementSibling;
+    const line = screen.getByRole("heading", {
+      name: title,
+    }).nextElementSibling;
     if (!line) throw new Error(`Nothing under ${title}`);
     return line;
   }
@@ -304,7 +306,9 @@ describe("the header", () => {
 
   it("says a sliver parcel is under a tenth of an acre", () => {
     renderPage({ ...clean, acres: 0 }, cleanDetail);
-    expect(subline("9805 Copper Creek Dr")).toHaveTextContent(/^under 0\.1 acres$/);
+    expect(subline("9805 Copper Creek Dr")).toHaveTextContent(
+      /^under 0\.1 acres$/,
+    );
   });
 
   it("says how many parcels a complex covers when parcels sharing an address are shown as one, named or not", () => {
@@ -324,10 +328,9 @@ describe("the header", () => {
   it("keeps the full title in its title attribute, since a long one is cut at two lines", () => {
     const label = "Parcel 0229230206, near 2104 E Anderson Ln SVRD WB";
     renderPage({ ...clean, address: label }, cleanDetail);
-    expect(screen.getByRole("heading", { level: 1, name: label })).toHaveAttribute(
-      "title",
-      label,
-    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: label }),
+    ).toHaveAttribute("title", label);
   });
 
   it("fades in the aerial photo of the parcel once it has loaded, and credits it then", async () => {
@@ -336,7 +339,10 @@ describe("the header", () => {
     const photo = screen.getByRole("img", {
       name: "Aerial photo of Royal Crest Apartments",
     });
-    expect(photo).toHaveAttribute("src", aerialPhotoUrl(busyDetail.bbox, 744, 400));
+    expect(photo).toHaveAttribute(
+      "src",
+      aerialPhotoUrl(busyDetail.bbox, 744, 400),
+    );
     expect(photo).toHaveAttribute("decoding", "async");
     expect(photo).not.toHaveAttribute("loading", "lazy");
     expect(photo).toHaveAttribute("data-loaded", "false");
@@ -351,7 +357,9 @@ describe("the header", () => {
     renderPage(named, busyDetail);
 
     fireEvent.error(
-      screen.getByRole("img", { name: "Aerial photo of Royal Crest Apartments" }),
+      screen.getByRole("img", {
+        name: "Aerial photo of Royal Crest Apartments",
+      }),
     );
     expect(screen.queryByRole("img", { name: /^Aerial photo/ })).toBeNull();
     expect(screen.queryByText("Aerial photo: USGS")).toBeNull();
@@ -369,7 +377,9 @@ describe("the header", () => {
       .mockReturnValue(744);
     renderPage(named, busyDetail);
     expect(
-      screen.getByRole("img", { name: "Aerial photo of Royal Crest Apartments" }),
+      screen.getByRole("img", {
+        name: "Aerial photo of Royal Crest Apartments",
+      }),
     ).toHaveAttribute("data-loaded", "true");
 
     cleanup();
@@ -382,9 +392,9 @@ describe("the header", () => {
 it("notes a listing on the city's Repeat Offender list with its published figures", () => {
   renderPage(busy, busyDetail);
 
-  const note = screen.getByText(
-    "On the city's Repeat Offender list",
-  ).closest("p");
+  const note = screen
+    .getByText("On the city's Repeat Offender list")
+    .closest("p");
   expect(note).toHaveTextContent(
     "On the city's Repeat Offender list Mia Riverside, 562 units. 0 active of 166 total violations.",
   );
@@ -394,13 +404,20 @@ it("counts a single registered unit in the singular", () => {
   renderPage(
     {
       ...busy,
-      repeatOffender: { name: null, units: 1, activeViolations: 1, totalViolations: 1 },
+      repeatOffender: {
+        name: null,
+        units: 1,
+        activeViolations: 1,
+        totalViolations: 1,
+      },
     },
     busyDetail,
   );
   expect(
     screen.getByText("On the city's Repeat Offender list").closest("p"),
-  ).toHaveTextContent("Registered property, 1 unit. 1 active of 1 total violations.");
+  ).toHaveTextContent(
+    "Registered property, 1 unit. 1 active of 1 total violations.",
+  );
 });
 
 it("keeps the full record whatever complaint type the map is filtered to", () => {
@@ -411,10 +428,18 @@ it("keeps the full record whatever complaint type the map is filtered to", () =>
   expect(leadFigure()).toHaveTextContent("12 complaints in the last 12 months");
   expect(smallFigures()[1]).toBe("284last 3 years");
   expect(foundRows()).toEqual(["Violation confirmed8", "No violation found4"]);
-  expect(barRow("Building condition")).toHaveTextContent(/^Building condition11$/);
-  expect(barRow("Trash and grounds")).toHaveTextContent(/^Trash and grounds24 in 3 years$/);
-  expect(barRow("Signs, zoning and use")).toHaveTextContent(/^Signs, zoning and use1$/);
-  expect(barRow("Work without a permit")).toHaveTextContent(/^Work without a permit1 in 3 years$/);
+  expect(barRow("Building condition")).toHaveTextContent(
+    /^Building condition11$/,
+  );
+  expect(barRow("Trash and grounds")).toHaveTextContent(
+    /^Trash and grounds24 in 3 years$/,
+  );
+  expect(barRow("Signs, zoning and use")).toHaveTextContent(
+    /^Signs, zoning and use1$/,
+  );
+  expect(barRow("Work without a permit")).toHaveTextContent(
+    /^Work without a permit1 in 3 years$/,
+  );
 });
 
 it("renders one bar per month", () => {
@@ -422,7 +447,9 @@ it("renders one bar per month", () => {
   expect(screen.getAllByTestId("month-bar")).toHaveLength(
     busyDetail.monthly.length,
   );
-  expect(screen.getByText("Busiest month: Sep 2025, 75 complaints")).toBeVisible();
+  expect(
+    screen.getByText("Busiest month: Sep 2025, 75 complaints"),
+  ).toBeVisible();
 });
 
 it("describes the month chart in words, naming the busiest month and its count", () => {
@@ -443,7 +470,9 @@ it("names the most recent of tied busiest months, in the caption and the text al
       { month: "2025-10", count: 0 },
     ],
   });
-  expect(screen.getByText("Busiest month: Sep 2025, 1 complaint")).toBeVisible();
+  expect(
+    screen.getByText("Busiest month: Sep 2025, 1 complaint"),
+  ).toBeVisible();
   expect(
     screen.getByRole("img", {
       name: "Complaints opened each month, Aug 2025 to Oct 2025. Busiest month: Sep 2025, with 1 complaint.",
@@ -514,7 +543,9 @@ it("lists 311 rows that share a label, such as two Unspecified types, without mi
   });
 
   const rows = within(
-    await screen.findByRole("region", { name: "311 requests around this parcel" }),
+    await screen.findByRole("region", {
+      name: "311 requests around this parcel",
+    }),
   );
   await rows.findAllByText("Unspecified");
   expect(rows.getAllByRole("listitem").map((row) => row.textContent)).toEqual([
@@ -527,7 +558,9 @@ it("lists 311 rows that share a label, such as two Unspecified types, without mi
 it("says when the city has no 311 requests in the area", async () => {
   renderPage(clean, cleanDetail, { city: ok([]) });
   expect(
-    await screen.findByText("No 311 requests in this area in the last 3 years."),
+    await screen.findByText(
+      "No 311 requests in this area in the last 3 years.",
+    ),
   ).toBeVisible();
 });
 
@@ -556,7 +589,10 @@ it("links the Repeat Offender note to the city's list, so its figures can be tra
 it("puts its section headings one level under the page's h1", () => {
   renderPage(busy, busyDetail);
   expect(
-    screen.getByRole("heading", { level: 2, name: "What the complaints were about" }),
+    screen.getByRole("heading", {
+      level: 2,
+      name: "What the complaints were about",
+    }),
   ).toBeVisible();
   expect(screen.queryAllByRole("heading", { level: 3 })).toHaveLength(0);
 });
@@ -635,7 +671,10 @@ describe("over the map", () => {
 
   it("heads the panel with the title over the gradient from the first moment, and adds the photo once the building file arrives", async () => {
     const { select } = renderOnMap(
-      { ...busy, name: { text: "Royal Crest Apartments", source: "openstreetmap" } },
+      {
+        ...busy,
+        name: { text: "Royal Crest Apartments", source: "openstreetmap" },
+      },
       { [HISTORY]: ok(busyDetail), "/data/buildings/R039648.json": pending },
     );
     expect(
@@ -646,7 +685,9 @@ describe("over the map", () => {
     ).toBeVisible();
 
     expect(
-      await screen.findByRole("img", { name: "Aerial photo of Royal Crest Apartments" }),
+      await screen.findByRole("img", {
+        name: "Aerial photo of Royal Crest Apartments",
+      }),
     ).toHaveAttribute("src", aerialPhotoUrl(busyDetail.bbox, 744, 400));
 
     select(clean);
@@ -705,7 +746,27 @@ describe("over the map", () => {
       "9805 Copper Creek Dr",
     );
     expect(screen.queryAllByTestId("month-bar")).toHaveLength(0);
-    expect(screen.getByText("No complaints in the last 3 years.")).toBeVisible();
+    expect(
+      screen.getByText("No complaints in the last 3 years."),
+    ).toBeVisible();
+  });
+
+  it("keeps its close button on the panel itself, outside the part that scrolls, and first in the Tab order", () => {
+    renderOnMap(busy, { [HISTORY]: pending });
+    const panel = screen.getByRole("complementary");
+    const close = screen.getByRole("button", {
+      name: "Close building details",
+    });
+    const scroller = screen
+      .getByRole("heading", { level: 2 })
+      .closest<HTMLElement>(".overflow-y-auto");
+
+    expect(scroller).not.toBeNull();
+    expect(panel).toContainElement(scroller);
+    expect(scroller).not.toContainElement(close);
+    expect(close.parentElement).toBe(panel);
+    expect(scroller).toHaveClass("overscroll-contain");
+    expect(within(panel).getAllByRole("button")[0]).toBe(close);
   });
 
   it("closes from its button and from the Escape key", async () => {
@@ -734,7 +795,10 @@ describe("over the map", () => {
   it("puts its section headings one level under its own h2", () => {
     renderOnMap(busy, { [HISTORY]: pending });
     expect(
-      screen.getByRole("heading", { level: 3, name: "What the complaints were about" }),
+      screen.getByRole("heading", {
+        level: 3,
+        name: "What the complaints were about",
+      }),
     ).toBeVisible();
     expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(1);
   });
@@ -796,35 +860,63 @@ describe("what the city found", () => {
 
     cleanup();
     renderPage(busy, withOpenViolations, { view: FILTERED_TO_BUILDING });
-    const building = within(screen.getByRole("region", { name: "What the city found in the last 12 months" }));
-    expect(building.getAllByRole("listitem")[0]).toHaveTextContent(/^Violation confirmed1 still open8$/);
+    const building = within(
+      screen.getByRole("region", {
+        name: "What the city found in the last 12 months",
+      }),
+    );
+    expect(building.getAllByRole("listitem")[0]).toHaveTextContent(
+      /^Violation confirmed1 still open8$/,
+    );
   });
 
   it("for a building with no complaints in three years, shows no outcome list and no category rows", () => {
     renderPage(clean, cleanDetail, { view: THREE_YEARS });
-    expect(leadFigure()).toHaveTextContent("None no complaints in the last 3 years");
-    expect(screen.queryByRole("region", { name: "What the city found" })).toBeNull();
-    expect(screen.queryByRole("region", { name: "What the complaints were about" })).toBeNull();
+    expect(leadFigure()).toHaveTextContent(
+      "None no complaints in the last 3 years",
+    );
+    expect(
+      screen.queryByRole("region", { name: "What the city found" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("region", { name: "What the complaints were about" }),
+    ).toBeNull();
     expect(screen.queryByText(/duplicate/)).toBeNull();
   });
 
   it("for a building whose complaints were all duplicates, shows None and how many were left out", () => {
     renderPage({ ...clean, duplicates: { m12: 2, y2: 4, y3: 5 } }, cleanDetail);
-    expect(leadFigure()).toHaveTextContent("None no complaints in the last 12 months");
+    expect(leadFigure()).toHaveTextContent(
+      "None no complaints in the last 12 months",
+    );
     expect(screen.getByText("2 duplicate reports not counted")).toBeVisible();
-    expect(screen.queryByRole("region", { name: "What the city found" })).toBeNull();
+    expect(
+      screen.queryByRole("region", { name: "What the city found" }),
+    ).toBeNull();
     expect(screen.queryByRole("list")).toBeNull();
     expect(document.body.innerHTML).not.toMatch(/NaN|Infinity|undefined/);
   });
 
   it("for a building with nothing but duplicates in the period, shows None, the duplicates, and every type by its three-year count", () => {
-    const quiet: Complex = { ...busy, tally: { ...busy.tally, m12: {} }, duplicates: { m12: 1, y2: 41, y3: 43 } };
+    const quiet: Complex = {
+      ...busy,
+      tally: { ...busy.tally, m12: {} },
+      duplicates: { m12: 1, y2: 41, y3: 43 },
+    };
     renderPage(quiet, busyDetail);
-    expect(leadFigure()).toHaveTextContent("None no complaints in the last 12 months");
+    expect(leadFigure()).toHaveTextContent(
+      "None no complaints in the last 12 months",
+    );
     expect(screen.getByText("1 duplicate report not counted")).toBeVisible();
-    expect(screen.queryByRole("region", { name: "What the city found" })).toBeNull();
-    expect(barRow("Building condition")).toHaveTextContent(/^Building condition254 in 3 years$/);
-    expect(barRow("Work without a permit")).toHaveTextContent(/^Work without a permit1 in 3 years$/);
+    expect(
+      screen.queryByRole("region", { name: "What the city found" }),
+    ).toBeNull();
+    expect(barRow("Building condition")).toHaveTextContent(
+      /^Building condition254 in 3 years$/,
+    );
+    expect(barRow("Work without a permit")).toHaveTextContent(
+      /^Work without a permit1 in 3 years$/,
+    );
     expect(document.body.innerHTML).not.toMatch(/NaN|Infinity|undefined/);
   });
 });
@@ -832,14 +924,22 @@ describe("what the city found", () => {
 describe("the categories", () => {
   it("opens no category while every type is shown", () => {
     renderPage(busy, busyDetail);
-    for (const label of ["Building condition", "Trash and grounds", "Signs, zoning and use", "Work without a permit"]) {
+    for (const label of [
+      "Building condition",
+      "Trash and grounds",
+      "Signs, zoning and use",
+      "Work without a permit",
+    ]) {
       expect(categoryButton(label)).toHaveAttribute("aria-expanded", "false");
     }
   });
 
   it("opens the category the map is filtered to, so the card's number is the first thing found", () => {
     renderPage(busy, busyDetail, { view: FILTERED_TO_BUILDING });
-    expect(categoryButton("Building condition")).toHaveAttribute("aria-expanded", "true");
+    expect(categoryButton("Building condition")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
     expect(screen.getByText(CATEGORY_MEANING.structure)).toBeVisible();
   });
 
@@ -859,12 +959,24 @@ describe("the categories", () => {
     await userEvent.click(categoryButton("Trash and grounds"));
 
     rerender(panelFor(busy, FILTERED_TO_BUILDING));
-    expect(categoryButton("Trash and grounds")).toHaveAttribute("aria-expanded", "true");
-    expect(categoryButton("Building condition")).toHaveAttribute("aria-expanded", "false");
+    expect(categoryButton("Trash and grounds")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(categoryButton("Building condition")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
 
     rerender(panelFor({ ...busy, id: "0304070702" }, FILTERED_TO_BUILDING));
-    expect(categoryButton("Building condition")).toHaveAttribute("aria-expanded", "true");
-    expect(categoryButton("Trash and grounds")).toHaveAttribute("aria-expanded", "false");
+    expect(categoryButton("Building condition")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(categoryButton("Trash and grounds")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
   });
 
   it("opens one category at a time, with Enter or Space, and keeps focus on its row", async () => {
@@ -874,15 +986,23 @@ describe("the categories", () => {
     await userEvent.keyboard("{Enter}");
     expect(building).toHaveAttribute("aria-expanded", "true");
     expect(building).toHaveFocus();
-    expect(screen.getByText("In the city's records, look for Structure Condition.")).toBeVisible();
+    expect(
+      screen.getByText("In the city's records, look for Structure Condition."),
+    ).toBeVisible();
 
     const signs = categoryButton("Signs, zoning and use");
     signs.focus();
     await userEvent.keyboard(" ");
     expect(signs).toHaveAttribute("aria-expanded", "true");
     expect(building).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByText("In the city's records, look for Structure Condition.")).toBeNull();
-    expect(screen.getByText("In the city's records, look for Land Use.")).toBeVisible();
+    expect(
+      screen.queryByText(
+        "In the city's records, look for Structure Condition.",
+      ),
+    ).toBeNull();
+    expect(
+      screen.getByText("In the city's records, look for Land Use."),
+    ).toBeVisible();
 
     await userEvent.keyboard("{Enter}");
     expect(signs).toHaveAttribute("aria-expanded", "false");
@@ -893,7 +1013,9 @@ describe("the categories", () => {
     renderPage(busy, busyDetail);
     const building = categoryButton("Building condition");
     await userEvent.click(building);
-    const controlled = document.getElementById(building.getAttribute("aria-controls") ?? "");
+    const controlled = document.getElementById(
+      building.getAttribute("aria-controls") ?? "",
+    );
     expect(controlled).toHaveTextContent(CATEGORY_MEANING.structure);
   });
 
@@ -902,20 +1024,32 @@ describe("the categories", () => {
       ...busy,
       tally: {
         ...busy.tally,
-        y3: { structure: { violation: 150, none: 100, other: 4 }, property: { none: 24 }, landuse: { none: 5 } },
+        y3: {
+          structure: { violation: 150, none: 100, other: 4 },
+          property: { none: 24 },
+          landuse: { none: 5 },
+        },
       },
     };
     renderPage(noPermits, busyDetail);
-    expect(screen.queryByRole("button", { name: /^Work without a permit/ })).toBeNull();
-    expect(barRow("Work without a permit")).toHaveTextContent(/^Work without a permit0$/);
+    expect(
+      screen.queryByRole("button", { name: /^Work without a permit/ }),
+    ).toBeNull();
+    expect(barRow("Work without a permit")).toHaveTextContent(
+      /^Work without a permit0$/,
+    );
   });
 
   it("shows a type with no complaints in the period by its three-year count, and opens it", async () => {
     renderPage(busy, busyDetail);
-    expect(barRow("Trash and grounds")).toHaveTextContent(/^Trash and grounds24 in 3 years$/);
+    expect(barRow("Trash and grounds")).toHaveTextContent(
+      /^Trash and grounds24 in 3 years$/,
+    );
     await userEvent.click(categoryButton("Trash and grounds"));
     expect(screen.getByText(CATEGORY_MEANING.property)).toBeVisible();
-    expect(screen.getByText("No complaints of this type in the last 12 months.")).toBeVisible();
+    expect(
+      screen.getByText("No complaints of this type in the last 12 months."),
+    ).toBeVisible();
   });
 
   it("shows the problems the city recorded only in a category where a Repeat Offender property has some", async () => {
@@ -923,21 +1057,31 @@ describe("the categories", () => {
       busy,
       {
         ...busyDetail,
-        deficiencies: [{ category: "property", kind: "Unsanitary Conditions", cleared: 9, notCleared: 0 }],
+        deficiencies: [
+          {
+            category: "property",
+            kind: "Unsanitary Conditions",
+            cleared: 9,
+            notCleared: 0,
+          },
+        ],
       },
       { view: FILTERED_TO_BUILDING },
     );
     expect(screen.queryByText("Problems the city recorded here")).toBeNull();
 
     await userEvent.click(categoryButton("Trash and grounds"));
-    expect(screen.getByRole("region", { name: "Problems the city recorded here" })).toHaveTextContent(
-      "Unsanitary Conditionsall cleared9",
-    );
+    expect(
+      screen.getByRole("region", { name: "Problems the city recorded here" }),
+    ).toHaveTextContent("Unsanitary Conditionsall cleared9");
   });
 
   it("lists a category's complaints once the building file arrives, and says so when it cannot", async () => {
     const fetchImpl = fakeFetch({
-      files: { "/data/buildings/0304070701.json": ok(withOpenViolations), "/data/buildings/R039648.json": status(404) },
+      files: {
+        "/data/buildings/0304070701.json": ok(withOpenViolations),
+        "/data/buildings/R039648.json": status(404),
+      },
     });
     const panelFor = (complex: Complex) => (
       <BuildingPanel
@@ -953,15 +1097,25 @@ describe("the categories", () => {
     expect(screen.getByText("Loading the complaints")).toBeVisible();
     expect(foundRows()[0]).toBe("Violation confirmed8");
 
-    const listed = within(await screen.findByRole("region", { name: "Complaints, newest first" }));
+    const listed = within(
+      await screen.findByRole("region", { name: "Complaints, newest first" }),
+    );
     expect(
-      listed.getAllByRole("listitem").filter((row) => row.textContent?.endsWith("Violation confirmed, still open")),
+      listed
+        .getAllByRole("listitem")
+        .filter((row) =>
+          row.textContent?.endsWith("Violation confirmed, still open"),
+        ),
     ).toHaveLength(2);
     expect(foundRows()[0]).toBe("Violation confirmed2 still open8");
 
     const failing = { ...busy, id: "R039648" };
     rerender(panelFor(failing));
-    expect(await screen.findByText("This building's details could not be loaded right now.")).toBeVisible();
+    expect(
+      await screen.findByText(
+        "This building's details could not be loaded right now.",
+      ),
+    ).toBeVisible();
     expect(foundRows()[0]).toBe("Violation confirmed8");
   });
 });
@@ -970,6 +1124,8 @@ it("says under the month chart's title where its rolling window starts, and that
   renderPage(busy, busyDetail);
   const months = within(screen.getByRole("region", { name: "Month by month" }));
   expect(
-    months.getByText("Complaints opened since November 14, 2023. Duplicate reports are not counted."),
+    months.getByText(
+      "Complaints opened since November 14, 2023. Duplicate reports are not counted.",
+    ),
   ).toBeVisible();
 });

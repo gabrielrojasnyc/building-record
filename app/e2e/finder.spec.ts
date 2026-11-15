@@ -77,7 +77,11 @@ const complaintsOfType = (
   complex: ComplexRecord,
   period: keyof ComplexRecord["tally"],
   category: string,
-) => Object.values(complex.tally[period][category] ?? {}).reduce((sum, count) => sum + count, 0);
+) =>
+  Object.values(complex.tally[period][category] ?? {}).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
 const formatAcres = (acres: number) =>
   acres < 0.1
     ? "under 0.1 acres"
@@ -338,12 +342,23 @@ test("hands focus back to its card even when Escape lands in the commit that sta
   // React has run its effects, which is where a busy machine can deliver a keypress.
   await page.addInitScript(() => {
     const observer = new MutationObserver((records) => {
-      if (!records.some((record) => (record.target as Element).hasAttribute("data-spotlight"))) return;
+      if (
+        !records.some((record) =>
+          (record.target as Element).hasAttribute("data-spotlight"),
+        )
+      )
+        return;
       observer.disconnect();
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
     });
     document.addEventListener("DOMContentLoaded", () =>
-      observer.observe(document.body, { attributes: true, attributeFilter: ["data-spotlight"], subtree: true }),
+      observer.observe(document.body, {
+        attributes: true,
+        attributeFilter: ["data-spotlight"],
+        subtree: true,
+      }),
     );
   });
   await page.goto("/");
@@ -352,7 +367,9 @@ test("hands focus back to its card even when Escape lands in the commit that sta
   const id = await cards(page).first().getAttribute("data-complex-id");
   await cards(page).first().click();
   await expect(panel(page)).toBeHidden();
-  await expect(page.locator(`[data-testid="card"][data-complex-id="${id}"]`)).toBeFocused();
+  await expect(
+    page.locator(`[data-testid="card"][data-complex-id="${id}"]`),
+  ).toBeFocused();
 });
 
 test("with suggestions open, the first Escape closes only the suggestions", async ({
@@ -828,7 +845,7 @@ test.describe("a picked building", () => {
     }
   });
 
-  test("hands focus back to the search on closing, when the tray has no card for the building", async ({
+  test("hands focus back to the search on closing, when it was picked there and the tray has no card for it", async ({
     page,
   }) => {
     if (!NAMED) return;
@@ -841,6 +858,30 @@ test.describe("a picked building", () => {
     await expect(panel(page)).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(search(page)).toBeFocused();
+  });
+
+  test("hands focus to the tray's count line, never an input, when it was picked from a card that has since left the tray", async ({
+    page,
+  }) => {
+    test.skip(
+      onPhone(),
+      "On a phone the record sheet covers the tray, so its order cannot change while a building is open.",
+    );
+    await page.goto("/");
+    await waitForMap(page);
+    const id = await openFirstCard(page);
+    // The fewest first card is not among the most first, so the tray no longer has a card for the open building.
+    await page.getByRole("button", { name: "Fewest first" }).click();
+    expect(await cardIds(page)).not.toContain(id);
+
+    await page.keyboard.press("Escape");
+    await expect(panel(page)).toHaveCount(0);
+    await expect(
+      page.locator('p[tabindex="-1"]').filter({ hasText: /complex(es)? in / }),
+    ).toBeFocused();
+    expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe(
+      "INPUT",
+    );
   });
 
   test("on a phone steps the search and filters aside while it is open, and on a desktop leaves them", async ({
@@ -1014,16 +1055,27 @@ test.describe("a building's complaint types", () => {
   const typeRow = (page: Page, label: string) =>
     panel(page).getByRole("button", { name: new RegExp(`^${label}`) });
 
-  test("open in place, one at a time, from the keyboard, with what each covers and its complaints", async ({ page }) => {
+  test("open in place, one at a time, from the keyboard, with what each covers and its complaints", async ({
+    page,
+  }) => {
     const busiest = complexes
-      .filter((complex) => complaintsOfType(complex, "y3", "structure") > 0 && complaintsOfType(complex, "y3", "property") > 0)
+      .filter(
+        (complex) =>
+          complaintsOfType(complex, "y3", "structure") > 0 &&
+          complaintsOfType(complex, "y3", "property") > 0,
+      )
       .sort((a, b) => complaintsIn(b, "y3") - complaintsIn(a, "y3"))[0];
-    expect(busiest, "the data has a complex with both building and grounds complaints").toBeDefined();
+    expect(
+      busiest,
+      "the data has a complex with both building and grounds complaints",
+    ).toBeDefined();
 
     // Without the map the list holds every complex in Austin, so the busiest one is in it.
     await withoutMap(page);
     await page.goto("/?period=3y&order=most");
-    await page.locator(`[data-testid="card"][data-complex-id="${busiest.id}"]`).click();
+    await page
+      .locator(`[data-testid="card"][data-complex-id="${busiest.id}"]`)
+      .click();
 
     const building = typeRow(page, "Building condition");
     await expect(building).toHaveAttribute("aria-expanded", "false");
@@ -1033,7 +1085,10 @@ test.describe("a building's complaint types", () => {
     await expect(building).toBeFocused();
     await expect(panel(page).getByText(BUILDING_CONDITION)).toBeVisible();
     await expect(
-      panel(page).getByRole("region", { name: "Complaints, newest first" }).getByRole("listitem").first(),
+      panel(page)
+        .getByRole("region", { name: "Complaints, newest first" })
+        .getByRole("listitem")
+        .first(),
     ).toBeVisible();
 
     await typeRow(page, "Trash and grounds").click();
@@ -1046,35 +1101,105 @@ test.describe("a building's complaint types", () => {
   }) => {
     const listed = complexes
       .filter((complex) => complex.repeatOffender !== null)
-      .map((complex) => ({ complex, record: readData<BuildingRecord>(`buildings/${complex.id}.json`) }))
+      .map((complex) => ({
+        complex,
+        record: readData<BuildingRecord>(`buildings/${complex.id}.json`),
+      }))
       .find(
         ({ record }) =>
-          record.deficiencies.some(({ category }) => category === "structure") &&
-          record.complaints.some(({ category, violationCase }) => category === "structure" && violationCase?.url),
+          record.deficiencies.some(
+            ({ category }) => category === "structure",
+          ) &&
+          record.complaints.some(
+            ({ category, violationCase }) =>
+              category === "structure" && violationCase?.url,
+          ),
       );
-    expect(listed, "the data has a Repeat Offender property with building problems and a linked case").toBeDefined();
+    expect(
+      listed,
+      "the data has a Repeat Offender property with building problems and a linked case",
+    ).toBeDefined();
     if (!listed) return;
 
     await page.goto(`/building/${listed.complex.id}`);
     await page.getByRole("button", { name: /^Building condition/ }).click();
-    await expect(page.getByRole("region", { name: "Problems the city recorded here" })).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Problems the city recorded here" }),
+    ).toBeVisible();
 
-    const complaints = page.getByRole("region", { name: "Complaints, newest first" });
+    const complaints = page.getByRole("region", {
+      name: "Complaints, newest first",
+    });
     const showAll = complaints.getByRole("button", { name: /^Show all/ });
     if ((await showAll.count()) > 0) await showAll.click();
-    const links = complaints.getByRole("link", { name: /^City record \S+ \S+, for the complaint opened / });
+    const links = complaints.getByRole("link", {
+      name: /^City record \S+ \S+, for the complaint opened /,
+    });
     const linked = listed.record.complaints.filter(
-      ({ category, violationCase }) => category === "structure" && violationCase?.url,
+      ({ category, violationCase }) =>
+        category === "structure" && violationCase?.url,
     );
-    expect(await links.evaluateAll((elements) => elements.map((element) => element.getAttribute("href")))).toEqual(
-      linked.map(({ violationCase }) => violationCase?.url),
-    );
+    expect(
+      await links.evaluateAll((elements) =>
+        elements.map((element) => element.getAttribute("href")),
+      ),
+    ).toEqual(linked.map(({ violationCase }) => violationCase?.url));
     // Each link names its own case, so links from the same day still read apart.
-    expect(await links.allInnerTexts()).toEqual(linked.map(({ violationCase }) => `city record ${violationCase?.number}`));
+    expect(await links.allInnerTexts()).toEqual(
+      linked.map(({ violationCase }) => `city record ${violationCase?.number}`),
+    );
     await expect(links.first()).toHaveAttribute("target", "_blank");
   });
 
-  test("with a type filter on, the panel opens at that type", async ({ page }) => {
+  test("on a phone, the close button stays in reach at the end of a long record, and closes it", async ({
+    page,
+  }) => {
+    test.skip(
+      !onPhone(),
+      "The phone's record sheet is the one a long record scrolls out from under.",
+    );
+    const longest = complexes
+      .filter((complex) => complex.parcelIds.length === 1)
+      .sort(
+        (a, b) =>
+          complaintsOfType(b, "y3", "structure") -
+          complaintsOfType(a, "y3", "structure"),
+      )[0];
+    expect(
+      complaintsOfType(longest, "y3", "structure"),
+      "the data has a long list of building complaints",
+    ).toBeGreaterThan(12);
+
+    await page.goto("/");
+    await waitForMap(page);
+    await pickFromSearch(page, longest.address, longest);
+    await typeRow(page, "Building condition").click();
+    const complaints = panel(page).getByRole("region", {
+      name: "Complaints, newest first",
+    });
+    await complaints.getByRole("button", { name: /^Show all/ }).click();
+
+    const scroller = panel(page).locator(".overflow-y-auto");
+    await scroller.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    // The record's last line, under the complaints, the months and the 311 requests.
+    await expect(
+      panel(page).getByRole("link", { name: "Open this building's page" }),
+    ).toBeInViewport();
+    await expect(
+      panel(page).getByRole("heading", { level: 2 }),
+    ).not.toBeInViewport();
+
+    const close = page.getByRole("button", { name: "Close building details" });
+    await expect(close).toBeInViewport({ ratio: 1 });
+    await close.click();
+    await expect(panel(page)).toHaveCount(0);
+  });
+
+  test("with a type filter on, the panel opens at that type", async ({
+    page,
+  }) => {
     await withoutMap(page);
     for (const [category, label] of [
       ["permit", "Work without a permit"],
@@ -1082,7 +1207,10 @@ test.describe("a building's complaint types", () => {
     ]) {
       await page.goto(`/?period=3y&category=${category}&order=most`);
       await cards(page).first().click();
-      await expect(typeRow(page, label), category).toHaveAttribute("aria-expanded", "true");
+      await expect(typeRow(page, label), category).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      );
     }
   });
 });
