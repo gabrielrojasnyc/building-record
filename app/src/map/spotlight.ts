@@ -41,6 +41,10 @@ const CLOSER_BY = 0.25;
 const PITCH = 60;
 const TURN_DEGREES = 60;
 const TURN_MS = 21_000;
+/** The turn ends by itself once it has come all the way round, so a tab left open does not turn forever. */
+const FULL_TURN = 360;
+/** Less than this left of the revolution is rounding, not a turn. */
+const LAST_DEGREE = 0.5;
 const RESTORE_MS = 1000;
 const INPUTS_THAT_TAKE_OVER = ["mousedown", "touchstart", "wheel"] as const;
 
@@ -145,8 +149,8 @@ export interface Spotlight {
   show(target: SpotlightTarget): void;
   /**
    * Applies the screen's padding, as the spotlight's own movement so it is not taken for someone moving the
-   * camera, and frames a target that is showing inside it again, then turns as on entering. A resize of the map
-   * frames it again by itself.
+   * camera, and frames a target that is showing inside it again, then turns as on entering unless a person has
+   * stopped the turn for it. A resize of the map frames it again by itself.
    */
   setPadding(padding: PaddingOptions): void;
   /**
@@ -184,10 +188,14 @@ interface SpotlightEventData {
   spotlight: number;
 }
 
+/** Degrees turned from one bearing to the next, going the way the turn goes. */
+const degreesTurned = (from: number, to: number) =>
+  (((to - from) % FULL_TURN) + FULL_TURN) % FULL_TURN;
+
 /**
  * - `flying`: the camera is on its way in, and turns once it arrives.
  * - `turning`: it is turning, or about to start the next 60 degrees.
- * - `still`: it stays where it is, because motion is reduced or someone else took the camera.
+ * - `still`: it stays where it is, because motion is reduced, someone else took the camera, or it has come all the way round.
  */
 type Motion = "flying" | "turning" | "still";
 
@@ -222,6 +230,12 @@ export function createSpotlight(
   let latestMovement = 0;
   /** The canvas size the target was last framed on. */
   let framedOn: Size | null = null;
+  /** A person stopped the turn for the target showing, so framing it again leaves it still. A new target turns. */
+  let stoppedByPerson = false;
+  /** Degrees turned for the target showing, counting a turn a re-frame cut short. */
+  let turned = 0;
+  /** The bearing the turn under way started from, until its progress is counted. */
+  let turnStartedAt: number | null = null;
 
   const ours = (): SpotlightEventData => ({ spotlight: ++latestMovement });
   const isOwn = (event: object) => "spotlight" in event;
@@ -270,13 +284,24 @@ export function createSpotlight(
     turnFrame = null;
   };
 
+  /** The next part of the revolution, at the same speed whatever is left of it, or nothing once it is complete. */
   const turnOnce = () => {
     turnFrame = null;
     if (!current || motion === "still") return;
+    const bearing = map.getBearing();
+    if (turnStartedAt !== null) turned += degreesTurned(turnStartedAt, bearing);
+    turnStartedAt = null;
+    const left = FULL_TURN - turned;
+    if (left < LAST_DEGREE) {
+      motion = "still";
+      return;
+    }
+    const step = Math.min(TURN_DEGREES, left);
+    turnStartedAt = bearing;
     motion = "turning";
     map.rotateTo(
-      map.getBearing() + TURN_DEGREES,
-      { duration: TURN_MS, easing: (t) => t },
+      bearing + step,
+      { duration: (TURN_MS * step) / TURN_DEGREES, easing: (t) => t },
       ours(),
     );
   };
@@ -320,16 +345,24 @@ export function createSpotlight(
     turnFrame = null;
   };
 
-  /** Someone else has the camera: the turn stops, and once the spotlight has gone, so does the way back. */
+  /**
+   * Someone else has the camera: the turn stops, and once the spotlight has gone, so does the way back. A movement
+   * a person made, through the map's own controls or keys, carries the event that made it.
+   */
   const onMoveStart = (event: object) => {
     if (isOwn(event)) return;
     holdStill();
+    // How far an interrupted turn got is no longer the turn's to know.
+    turnStartedAt = null;
+    if (current && "originalEvent" in event) stoppedByPerson = true;
     if (!current) forgetCameraBefore();
   };
 
+  /** A press, a touch, the wheel or a key on the map: the person has the camera, for as long as this target shows. */
   const onInput = () => {
     const wasTurning = motion === "turning";
     holdStill();
+    if (current) stoppedByPerson = true;
     if (wasTurning) map.stop();
   };
 
@@ -345,14 +378,20 @@ export function createSpotlight(
   map.on("resize", onResize);
   map.on("render", drawTileShapesOnceLoaded);
   for (const input of INPUTS_THAT_TAKE_OVER) map.on(input, onInput);
+  // MapLibre listens for keys on the canvas container; capturing there stops the turn before a key moves the camera.
+  const keys = map.getCanvasContainer();
+  keys.addEventListener("keydown", onInput, { capture: true });
 
-  /** Frames the target on the canvas as it is now, flying in (or jumping, under reduced motion) and turning once there. */
+  /**
+   * Frames the target on the canvas as it is now, flying in (or jumping, under reduced motion) and turning once there,
+   * unless a person has stopped the turn for this target.
+   */
   const frameAfresh = (target: SpotlightTarget): boolean => {
     // Still first, so the end of any movement this stops starts no turn.
     holdStill();
     catchUpWithResize();
     const reducedMotion = deps.prefersReducedMotion();
-    motion = reducedMotion ? "still" : "flying";
+    motion = reducedMotion || stoppedByPerson ? "still" : "flying";
     arrived = false;
     framedOn = canvasSize();
     frame(target, reducedMotion);
@@ -442,6 +481,9 @@ export function createSpotlight(
         showCity(false);
       }
       current = target;
+      stoppedByPerson = false;
+      turned = 0;
+      turnStartedAt = null;
 
       setData(SHAPES_SOURCE, NO_SHAPES);
       setHeight(0);
@@ -490,6 +532,7 @@ export function createSpotlight(
       map.off("resize", onResize);
       map.off("render", drawTileShapesOnceLoaded);
       for (const input of INPUTS_THAT_TAKE_OVER) map.off(input, onInput);
+      keys.removeEventListener("keydown", onInput, { capture: true });
     },
   };
 }

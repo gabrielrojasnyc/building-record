@@ -826,6 +826,101 @@ describe("BuildingMap spotlight", () => {
     return loaded;
   }
 
+  it("stops turning on a key pressed while the map has focus, as on a press", async () => {
+    const { map } = await turning(ARRAY);
+
+    map.canvasContainer.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowLeft" }),
+    );
+    expect(map.stop).toHaveBeenCalledOnce();
+    map.arrive();
+    await wait(21_000);
+    expect(map.rotateTo).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["a press", (map: InstanceType<typeof FakeMap>) => map.fire("mousedown")],
+    [
+      "a key",
+      (map: InstanceType<typeof FakeMap>) =>
+        map.canvasContainer.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Tab" }),
+        ),
+    ],
+    [
+      "a map control",
+      (map: InstanceType<typeof FakeMap>) =>
+        map.easeTo({ bearing: 0 }, { originalEvent: { type: "click" } }),
+    ],
+  ])(
+    "once a person has stopped the turn with %s, frames the building again on new padding or a resize and leaves it still, and a new building turns",
+    async (_how, stopTheTurn) => {
+      const { map, update, spotlightOn } = await turning(ARRAY);
+      stopTheTurn(map);
+      map.arrive();
+
+      update({ padding: SELECTION_PADDING });
+      expect(map.flyTo).toHaveBeenCalledTimes(2);
+      map.arrive();
+      await wait(21_000);
+      map.windowResizedTo(900, 700);
+      map.resize();
+      expect(map.flyTo).toHaveBeenCalledTimes(3);
+      map.arrive();
+      await wait(21_000);
+      expect(map.rotateTo).toHaveBeenCalledOnce();
+
+      spotlightOn(ELSEWHERE);
+      map.arrive();
+      await wait(20);
+      expect(map.rotateTo).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  /** Lets each turn arrive where it was headed, as the camera would. */
+  async function finishTurn(map: InstanceType<typeof FakeMap>) {
+    map.camera.bearing =
+      map.rotateTo.mock.calls.at(-1)?.[0] ?? map.camera.bearing;
+    map.arrive();
+    await wait(20);
+  }
+
+  it("stops by itself after one full revolution, back where it began", async () => {
+    const { map } = await turning(ARRAY);
+    for (let turn = 1; turn < 6; turn += 1) await finishTurn(map);
+    expect(map.rotateTo).toHaveBeenCalledTimes(6);
+    expect(map.rotateTo.mock.calls.at(-1)?.[0]).toBe(-12 + 360);
+
+    await finishTurn(map);
+    await wait(21_000);
+    expect(map.rotateTo).toHaveBeenCalledTimes(6);
+
+    // Framed again after the revolution, it stays still.
+    map.windowResizedTo(900, 700);
+    map.resize();
+    map.arrive();
+    await wait(21_000);
+    expect(map.rotateTo).toHaveBeenCalledTimes(6);
+  });
+
+  it("counts a turn a re-frame cut short, so the revolution still ends where it began, at the same speed", async () => {
+    const { map, update } = await turning(ARRAY);
+    // Halfway through the first turn, new padding frames the building again.
+    map.camera.bearing = 18;
+    update({ padding: SELECTION_PADDING });
+    map.arrive();
+    await wait(20);
+    expect(map.rotateTo).toHaveBeenCalledTimes(2);
+    expect(map.rotateTo.mock.calls[1][0]).toBe(78);
+
+    for (let turn = 0; turn < 5; turn += 1) await finishTurn(map);
+    const [bearing, options] = map.rotateTo.mock.calls.at(-1) ?? [];
+    expect(bearing).toBe(348);
+    expect(options).toMatchObject({ duration: 10_500 });
+    await finishTurn(map);
+    expect(map.rotateTo).toHaveBeenCalledTimes(7);
+  });
+
   it("starts no turn after leaving while it turns", async () => {
     const { map, spotlightOn } = await turning(ARRAY);
 
