@@ -24,11 +24,15 @@ import {
   type CategoryFilter,
   type View,
 } from "@/domain/query";
+import { spreadSentence, summarize } from "@/domain/summary";
 import type { BuildingDetail, Complaint, Complex, Meta } from "@/domain/types";
 import { Categories } from "./Categories";
+import { ComplaintList } from "./CategoryDetail";
 import { Glass } from "./Glass";
+import { ListedBlock } from "./ListedBlock";
 import { OutcomeSummary } from "./OutcomeSummary";
-import { MESSAGE, RULED_ROW, Section, SectionLevel } from "./panelParts";
+import { MESSAGE, RecordHeadingLevel, RULED_ROW } from "./panelParts";
+import { SummaryRow } from "./SummaryRow";
 
 type Placement =
   /** Over the map screen: loads the building's history itself, can close, and links to the building's own page. */
@@ -41,6 +45,8 @@ export type BuildingPanelProps = Placement & {
   view: View;
   /** From the data's meta: the first day of each period, for the still-open counts, the month chart and the 311 summary. */
   periodStarts: Meta["periodStarts"];
+  /** From the data's meta: how complaint counts spread across the city, for the line under the lead figure. */
+  spread: Meta["spread"];
   fetchImpl?: typeof fetch;
 };
 
@@ -146,14 +152,6 @@ export function BuildingPanel(props: BuildingPanelProps) {
     fetch311,
   );
 
-  const complaints =
-    detail.status === "ready" ? detail.value.complaints : detail.status;
-  const periodStart = props.periodStarts[view.period];
-  const stillOpenIn = (category: CategoryFilter) =>
-    Array.isArray(complaints)
-      ? violationsStillOpen(complaints, periodStart, category)
-      : null;
-
   useEffect(() => {
     if (!onClose) return;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -198,7 +196,7 @@ export function BuildingPanel(props: BuildingPanelProps) {
           ×
         </button>
       )}
-      <SectionLevel value={props.place === "page" ? "h2" : "h3"}>
+      <RecordHeadingLevel value={props.place === "page" ? "h2" : "h3"}>
         <div
           ref={scrollerRef}
           className={props.place === "page" ? undefined : MAP_SCROLLER}
@@ -217,45 +215,29 @@ export function BuildingPanel(props: BuildingPanelProps) {
           />
           <div className="px-[22px] pt-4 pb-[22px]">
             {complex.repeatOffender && (
-              <RepeatOffenderNote listing={complex.repeatOffender} />
-            )}
-            <LeadFigure complex={complex} period={view.period} />
-            <Figures complex={complex} period={view.period} />
-            <CityFound
-              complex={complex}
-              period={view.period}
-              violationsOpen={stillOpenIn("all")}
-            />
-            {totalFor(complex, "y3") > 0 && (
-              // Keyed by building, so a newly chosen one opens with the filtered type's row, not the last one's.
-              <Categories
-                key={complex.id}
-                complex={complex}
-                view={view}
-                complaints={complaints}
+              // Keyed by building, as the sentences are, so a newly chosen one opens with every line closed.
+              <ListedBlock
+                key={`listing-${complex.id}`}
+                listing={complex.repeatOffender}
                 deficiencies={
-                  detail.status === "ready" ? detail.value.deficiencies : []
+                  detail.status === "ready"
+                    ? detail.value.deficiencies
+                    : detail.status
                 }
-                stillOpenIn={stillOpenIn}
               />
             )}
-
-            {detail.status === "failed" ? (
-              <Section title="Month by month">
-                <p className={MESSAGE}>
-                  This building&apos;s history could not be loaded. The counts
-                  above are still current.
-                </p>
-              </Section>
-            ) : (
-              detail.status === "ready" && (
-                <MonthChart
-                  monthly={detail.value.monthly}
-                  since={props.periodStarts.y3}
-                />
-              )
-            )}
-            {detail.status !== "failed" && <Requests311 outcome={requests} />}
+            <LeadFigure complex={complex} period={view.period} />
+            <p className="mt-3 text-[12.5px] leading-normal text-pretty text-steel">
+              {spreadSentence(props.spread[view.period], view.period)}
+            </p>
+            <Sentences
+              key={`sentences-${complex.id}`}
+              complex={complex}
+              view={view}
+              periodStarts={props.periodStarts}
+              detail={detail}
+              requests={requests}
+            />
 
             <p className="mt-[18px] text-[12.5px] leading-normal text-slate">
               From{" "}
@@ -293,7 +275,7 @@ export function BuildingPanel(props: BuildingPanelProps) {
             )}
           </div>
         </div>
-      </SectionLevel>
+      </RecordHeadingLevel>
     </Glass>
   );
 }
@@ -392,43 +374,6 @@ function Header(props: {
   );
 }
 
-function RepeatOffenderNote({
-  listing,
-}: {
-  listing: NonNullable<Complex["repeatOffender"]>;
-}) {
-  return (
-    <div className="flex gap-2.5 rounded-[18px] border border-coral/50 bg-coral/28 px-3.5 py-3 text-[13.5px] text-navy">
-      <span
-        aria-hidden
-        className="mt-1.5 size-[9px] flex-none rounded-full bg-coral ring-3 ring-coral/30"
-      />
-      <p>
-        <strong className="block font-medium">
-          <a
-            href="https://data.austintexas.gov/d/86z9-i27i"
-            target="_blank"
-            rel="noreferrer"
-            className="underline"
-          >
-            On the city&apos;s Repeat Offender list
-          </a>
-        </strong>{" "}
-        {listing.name ?? "Registered property"}, {formatCount(listing.units)}{" "}
-        {listing.units === 1 ? "unit" : "units"}.{" "}
-        <span className="tabular-nums">
-          {formatCount(listing.activeViolations)}
-        </span>{" "}
-        active of{" "}
-        <span className="tabular-nums">
-          {formatCount(listing.totalViolations)}
-        </span>{" "}
-        total violations.
-      </p>
-    </div>
-  );
-}
-
 /** Every category counts here: the panel is the building's full record, whatever type the map is filtered to. */
 function totalFor(complex: Complex, period: Period): number {
   return countFor(complex, { ...DEFAULT_VIEW, period });
@@ -475,62 +420,177 @@ function LeadFigure({ complex, period }: { complex: Complex; period: Period }) {
   );
 }
 
-/** What "open now" counts, which its caption is too short to say: not the active period, and every outcome. */
-const OPEN_NOW_SCOPE =
-  "Complaints from the last 3 years that the city has not closed";
-
-/** The two periods the lead figure is not showing, shortest first, then the complaints still open. */
-function Figures({ complex, period }: { complex: Complex; period: Period }) {
-  const figures: { value: string; label: string; scope?: string }[] = [
-    ...PERIODS.filter((other) => other !== period).map((other) => ({
-      value: formatCount(totalFor(complex, other)),
-      label: `last ${PERIOD_LABEL[other]}`,
-    })),
-    {
-      value: formatCount(complex.open),
-      label: "open now",
-      scope: OPEN_NOW_SCOPE,
-    },
-  ];
+/**
+ * The record said in sentences, each opening to the figures behind it: where the count stands against the
+ * time around it, what the city found, what is still open, what the complaints were about, and the 311
+ * requests nearby. A sentence with nothing behind it stands alone.
+ */
+function Sentences(props: {
+  complex: Complex;
+  view: View;
+  periodStarts: Meta["periodStarts"];
+  detail: LoadState<BuildingDetail>;
+  requests: LoadState<RequestTypeCount[]>;
+}) {
+  const { complex, view, detail } = props;
+  const { period } = view;
+  const summary = summarize(complex, period);
+  const complaints =
+    detail.status === "ready" ? detail.value.complaints : detail.status;
+  const periodStart = props.periodStarts[period];
+  const stillOpenIn = (category: CategoryFilter) =>
+    Array.isArray(complaints)
+      ? violationsStillOpen(complaints, periodStart, category)
+      : null;
+  // A type the map is filtered to opens with its row, so the number on the map is the first thing found.
+  const filteredType =
+    view.category !== "all" &&
+    countFor(complex, { ...view, period: "y3" }) > 0;
 
   return (
-    <div className="mt-[18px] grid grid-cols-3 gap-2">
-      {figures.map(({ value, label, scope }) => (
-        <div
-          key={label}
-          title={scope}
-          className="rounded-[18px] border border-white/60 bg-white/42 p-3"
+    <ul
+      aria-label="What the record shows"
+      className="mt-[18px] border-b border-deep/10"
+    >
+      {summary.trend && (
+        <SummaryRow
+          detail={
+            totalFor(complex, "y3") > 0 ? (
+              <History
+                complex={complex}
+                period={period}
+                detail={detail}
+                since={props.periodStarts.y3}
+              />
+            ) : undefined
+          }
         >
-          <p className="text-[20px] text-deep tabular-nums">{value}</p>
-          <p className="text-[12px] text-steel">{label}</p>
-          {scope && <p className="sr-only">{scope}</p>}
-        </div>
-      ))}
-    </div>
+          {summary.trend}
+        </SummaryRow>
+      )}
+      {summary.found && (
+        <SummaryRow
+          detail={
+            summary.total > 0 ? (
+              <OutcomeSummary
+                split={outcomeSplit(complex, { ...DEFAULT_VIEW, period })}
+                violationsOpen={stillOpenIn("all")}
+                duplicates={complex.duplicates[period] ?? 0}
+              />
+            ) : undefined
+          }
+        >
+          {summary.found}
+        </SummaryRow>
+      )}
+      {summary.stillOpen && (
+        <SummaryRow
+          detail={
+            complex.violationsOpen > 0 ? (
+              <OpenViolations complaints={complaints} />
+            ) : undefined
+          }
+        >
+          {summary.stillOpen}
+        </SummaryRow>
+      )}
+      {summary.about && (
+        <SummaryRow
+          startOpen={filteredType}
+          detail={
+            <Categories
+              complex={complex}
+              view={view}
+              complaints={complaints}
+              stillOpenIn={stillOpenIn}
+            />
+          }
+        >
+          {summary.about}
+        </SummaryRow>
+      )}
+      {detail.status !== "failed" && (
+        <SummaryRow
+          kind="label"
+          detail={<Requests311 outcome={props.requests} />}
+        >
+          311 requests around this parcel
+        </SummaryRow>
+      )}
+    </ul>
   );
 }
 
-/**
- * The active period's complaints of every type by how the city closed them, and the duplicates left out.
- * With no complaints in the period there is no list to head, so only the duplicates are said, if any.
- */
-function CityFound(props: {
+/** The three periods side by side, the active one marked, then the months. */
+function History(props: {
   complex: Complex;
   period: Period;
-  violationsOpen: number | null;
+  detail: LoadState<BuildingDetail>;
+  since: string;
 }) {
-  const { complex, period } = props;
-  const duplicates = complex.duplicates[period] ?? 0;
-  const summary = (
-    <OutcomeSummary
-      split={outcomeSplit(complex, { ...DEFAULT_VIEW, period })}
-      violationsOpen={props.violationsOpen}
-      duplicates={duplicates}
+  const { detail } = props;
+  return (
+    <>
+      <div className="grid grid-cols-3 gap-2">
+        {PERIODS.map((period) => {
+          const active = period === props.period;
+          return (
+            <div
+              key={period}
+              data-testid="period-figure"
+              aria-current={active ? "true" : undefined}
+              className={`rounded-[14px] border px-3 py-2 ${active ? "border-white/90 bg-white/70" : "border-white/50 bg-white/28"}`}
+            >
+              <p
+                className={`text-[17px] text-deep tabular-nums ${active ? "font-normal" : ""}`}
+              >
+                {formatCount(totalFor(props.complex, period))}
+              </p>
+              <p className="text-[12px] text-steel">{PERIOD_LABEL[period]}</p>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3.5">
+        {detail.status === "loading" && (
+          <p className={MESSAGE}>Loading the months</p>
+        )}
+        {detail.status === "failed" && (
+          <p className={MESSAGE}>
+            This building&apos;s history could not be loaded. The counts above
+            are still current.
+          </p>
+        )}
+        {detail.status === "ready" && (
+          <MonthChart monthly={detail.value.monthly} since={props.since} />
+        )}
+      </div>
+    </>
+  );
+}
+
+/** The confirmed violations the city has not closed, newest first, each with its type and its city record. */
+function OpenViolations({
+  complaints,
+}: {
+  complaints: Complaint[] | "loading" | "failed";
+}) {
+  if (complaints === "loading")
+    return <p className={MESSAGE}>Loading the complaints</p>;
+  if (complaints === "failed")
+    return (
+      <p className={MESSAGE}>
+        This building&apos;s details could not be loaded right now.
+      </p>
+    );
+  return (
+    <ComplaintList
+      lead="type"
+      complaints={complaints.filter(
+        ({ outcome, stillOpen }) => outcome === "violation" && stillOpen,
+      )}
     />
   );
-  if (totalFor(complex, period) > 0)
-    return <Section title="What the city found">{summary}</Section>;
-  return duplicates > 0 ? <div className="mt-3">{summary}</div> : null;
 }
 
 function MonthChart({
@@ -541,13 +601,8 @@ function MonthChart({
   since: string;
 }) {
   const peak = Math.max(0, ...monthly.map(({ count }) => count));
-  if (peak === 0) {
-    return (
-      <Section title="Month by month">
-        <p className={MESSAGE}>No complaints {PERIOD_PHRASE.y3}.</p>
-      </Section>
-    );
-  }
+  if (peak === 0)
+    return <p className={MESSAGE}>No complaints {PERIOD_PHRASE.y3}.</p>;
 
   const first = formatMonth(monthly[0].month);
   const last = formatMonth(monthly[monthly.length - 1].month);
@@ -559,7 +614,7 @@ function MonthChart({
   const summary = `Complaints opened each month, ${first} to ${last}. Busiest month: ${busiest}, with ${peakComplaints}.`;
 
   return (
-    <Section title="Month by month">
+    <>
       {/* The window rolls, so its first and last months are partial; the start date says so. */}
       <p className={`${MESSAGE} mb-2`}>
         Complaints opened since{" "}
@@ -581,20 +636,21 @@ function MonthChart({
           />
         ))}
       </div>
+      {/* The first and last months under the ends of the chart, and the busiest on a line of its own: the three do not fit in one. */}
       <p className="mt-1.5 flex justify-between text-[12px] text-steel">
         <span>{first}</span>
-        <span>
-          Busiest month: {busiest}, {peakComplaints}
-        </span>
         <span>{last}</span>
       </p>
-    </Section>
+      <p className="text-[12px] text-steel">
+        Busiest month: {busiest}, {peakComplaints}
+      </p>
+    </>
   );
 }
 
 function Requests311({ outcome }: { outcome: LoadState<RequestTypeCount[]> }) {
   return (
-    <Section title="311 requests around this parcel">
+    <>
       <p className={`${MESSAGE} mb-2`}>
         Counted inside the rectangle around the parcel {PERIOD_PHRASE.y3}, so
         some may belong to neighbors.
@@ -628,6 +684,6 @@ function Requests311({ outcome }: { outcome: LoadState<RequestTypeCount[]> }) {
             ))}
           </ul>
         ))}
-    </Section>
+    </>
   );
 }

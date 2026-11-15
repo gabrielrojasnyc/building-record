@@ -402,6 +402,7 @@ export function Finder({
           complex={selected}
           view={view}
           periodStarts={meta.periodStarts}
+          spread={meta.spread}
           onClose={clearSelection}
         />
       )}

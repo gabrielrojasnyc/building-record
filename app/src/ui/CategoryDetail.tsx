@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { formatCount, formatDate } from "@/domain/format";
-import { CATEGORY_MEANING, CITY_CATEGORY_TERM } from "@/domain/labels";
+import {
+  CATEGORY_LABEL,
+  CATEGORY_MEANING,
+  CITY_CATEGORY_TERM,
+} from "@/domain/labels";
 import { OUTCOME_LABEL, restatesOutcome } from "@/domain/outcomes";
 import { PERIODS, PERIOD_LABEL, PERIOD_PHRASE } from "@/domain/periods";
 import {
@@ -11,28 +15,12 @@ import {
   outcomeSplit,
   type View,
 } from "@/domain/query";
-import type { Category, Complaint, Complex, Deficiency } from "@/domain/types";
+import type { Category, Complaint, Complex } from "@/domain/types";
 import { OutcomeSummary } from "./OutcomeSummary";
-import { COUNT_ROW, MESSAGE, RULED_ROW } from "./panelParts";
+import { MESSAGE, RULED_ROW, SHOW_ALL, useShowAll } from "./panelParts";
 
 /** The complaints list holds this many until the person asks for the rest. */
 const FIRST_COMPLAINTS = 12;
-/** Kinds of recorded problem shown until the person asks for the rest. */
-const FIRST_KINDS = 8;
-
-/** The button that opens the rest of a list in place. */
-const SHOW_ALL =
-  "mt-2.5 inline-flex h-[30px] cursor-pointer items-center rounded-full bg-white/55 px-3 text-[13px] font-normal text-deep hover:bg-white/85";
-
-/** Whether a list shows all of itself yet, and the list to move focus to once it does, since the button that asked goes. */
-function useShowAll() {
-  const [showAll, setShowAll] = useState(false);
-  const listRef = useRef<HTMLUListElement>(null);
-  useEffect(() => {
-    if (showAll) listRef.current?.focus({ preventScroll: true });
-  }, [showAll]);
-  return { showAll, listRef, reveal: () => setShowAll(true) };
-}
 
 const SUBHEADING =
   "mb-2 font-display text-[17px] leading-none font-normal text-deep";
@@ -53,32 +41,24 @@ function caseState({ opened, closed, outcome, stillOpen }: Complaint): string {
 }
 
 /**
- * One complaint category opened in place: what it covers, its complaints in each period,
- * what the city found, the problems the city recorded (Repeat Offender properties only) and
- * the complaints themselves. It loads nothing; the panel hands it what it has.
+ * One complaint category opened in place: what it covers, its complaints in each period, what the
+ * city found and the complaints themselves. It loads nothing; the panel hands it what it has.
  */
 export function CategoryDetail(props: {
   category: Category;
   complex: Complex;
   /** This building's complaints of every type, or where the building file has got to. */
   complaints: Complaint[] | "loading" | "failed";
-  deficiencies: Deficiency[];
   view: View;
-  isRepeatOffender: boolean;
   /** Confirmed violations of this type still open in the active period, or null while the building file is not in. */
   violationsOpen: number | null;
-  /** One level under the panel's section headings. */
-  heading?: "h3" | "h4";
+  /** One level under the building's title. */
+  heading?: "h2" | "h3";
 }) {
   const { category, complex, view } = props;
-  const Heading = props.heading ?? "h4";
+  const Heading = props.heading ?? "h3";
   const inView = { ...DEFAULT_VIEW, period: view.period, category };
   const counted = countFor(complex, inView);
-  const kinds = props.isRepeatOffender
-    ? props.deficiencies.filter(
-        (deficiency) => deficiency.category === category,
-      )
-    : [];
 
   return (
     <div>
@@ -134,12 +114,6 @@ export function CategoryDetail(props: {
         )}
       </Part>
 
-      {kinds.length > 0 && (
-        <Part heading={Heading} title="Problems the city recorded here">
-          <RecordedProblems kinds={kinds} />
-        </Part>
-      )}
-
       <Part
         heading={Heading}
         title="Complaints in the last 3 years, newest first"
@@ -147,7 +121,6 @@ export function CategoryDetail(props: {
         {props.complaints === "loading" ? (
           <p className={MESSAGE}>Loading the complaints</p>
         ) : props.complaints === "failed" ? (
-          // Said once, for everything the building file holds (the complaints and the recorded problems alike).
           <p className={MESSAGE}>
             This building&apos;s details could not be loaded right now.
           </p>
@@ -164,7 +137,7 @@ export function CategoryDetail(props: {
 }
 
 function Part(props: {
-  heading: "h3" | "h4";
+  heading: "h2" | "h3";
   title: ReactNode;
   children: ReactNode;
 }) {
@@ -180,53 +153,17 @@ function Part(props: {
   );
 }
 
-function RecordedProblems({ kinds }: { kinds: Deficiency[] }) {
-  const { showAll, listRef, reveal } = useShowAll();
-  const largestFirst = kinds
-    .map((kind) => ({ ...kind, count: kind.cleared + kind.notCleared }))
-    .sort(
-      (a, b) =>
-        b.count - a.count || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0),
-    );
-  const shown = showAll ? largestFirst : largestFirst.slice(0, FIRST_KINDS);
-
-  return (
-    <>
-      <p className="mb-1.5 text-[12.5px] text-pretty text-steel">
-        Published by the city for Repeat Offender properties only. From the last
-        3 years.
-      </p>
-      <ul
-        ref={listRef}
-        tabIndex={-1}
-        className="text-[14px] focus-visible:outline-none"
-      >
-        {shown.map(({ kind, count, notCleared }) => (
-          <li key={kind} className={COUNT_ROW}>
-            <span>
-              {kind}
-              <span className="ml-2 text-[12px] whitespace-nowrap text-steel tabular-nums">
-                {notCleared > 0
-                  ? `${formatCount(notCleared)} not cleared`
-                  : "all cleared"}
-              </span>
-            </span>
-            <span className="text-right tabular-nums">
-              {formatCount(count)}
-            </span>
-          </li>
-        ))}
-      </ul>
-      {!showAll && largestFirst.length > FIRST_KINDS && (
-        <button type="button" onClick={reveal} className={SHOW_ALL}>
-          Show all {formatCount(largestFirst.length)} kinds
-        </button>
-      )}
-    </>
-  );
-}
-
-function ComplaintList({ complaints }: { complaints: Complaint[] }) {
+/**
+ * Complaints, newest first, the first twelve until the person asks for the rest. Inside one category a row
+ * leads with how the complaint ended; in a list of several types it leads with the type.
+ */
+export function ComplaintList({
+  complaints,
+  lead = "outcome",
+}: {
+  complaints: Complaint[];
+  lead?: "outcome" | "type";
+}) {
   const { showAll, listRef, reveal } = useShowAll();
 
   if (complaints.length === 0) {
@@ -268,10 +205,16 @@ function ComplaintList({ complaints }: { complaints: Complaint[] }) {
               </span>
               <span>
                 <span className="block">
-                  {OUTCOME_LABEL[complaint.outcome]}
-                  {state !== "" && (
+                  {lead === "type" ? (
+                    CATEGORY_LABEL[complaint.category]
+                  ) : (
                     <>
-                      , <span className="whitespace-nowrap">{state}</span>
+                      {OUTCOME_LABEL[complaint.outcome]}
+                      {state !== "" && (
+                        <>
+                          , <span className="whitespace-nowrap">{state}</span>
+                        </>
+                      )}
                     </>
                   )}
                 </span>

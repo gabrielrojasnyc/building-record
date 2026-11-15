@@ -85,6 +85,7 @@ export default async function BuildingPage({
           detail={detail}
           view={FULL_RECORD}
           periodStarts={meta.periodStarts}
+          spread={meta.spread}
         />
       </div>
       {/* Outside the reading column, so the notice keeps to one line wherever the screen allows. */}

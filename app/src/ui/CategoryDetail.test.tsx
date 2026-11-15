@@ -2,8 +2,8 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_VIEW, type View } from "@/domain/query";
-import type { Category, Complaint, Complex, Deficiency } from "@/domain/types";
-import { CategoryDetail } from "./CategoryDetail";
+import type { Category, Complaint, Complex } from "@/domain/types";
+import { CategoryDetail, ComplaintList } from "./CategoryDetail";
 
 const THREE_YEARS: View = { ...DEFAULT_VIEW, period: "y3" };
 
@@ -81,9 +81,7 @@ function renderDetail(
     category: Category;
     complex: Complex;
     complaints: Complaint[] | "loading" | "failed";
-    deficiencies: Deficiency[];
     view: View;
-    isRepeatOffender: boolean;
     violationsOpen: number | null;
   }> = {},
 ) {
@@ -92,9 +90,7 @@ function renderDetail(
       category="structure"
       complex={complex}
       complaints={complaints}
-      deficiencies={[]}
       view={DEFAULT_VIEW}
-      isRepeatOffender={false}
       violationsOpen={null}
       {...props}
     />,
@@ -160,101 +156,6 @@ describe("CategoryDetail", () => {
         .getAllByTestId("period-figure")
         .map((figure) => figure.textContent),
     ).toEqual(["012 months", "02 years", "73 years"]);
-  });
-
-  describe("problems the city recorded", () => {
-    const deficiencies: Deficiency[] = [
-      {
-        category: "structure",
-        kind: "Roofs and Drainage",
-        cleared: 21,
-        notCleared: 0,
-      },
-      {
-        category: "structure",
-        kind: "Electrical installation",
-        cleared: 36,
-        notCleared: 2,
-      },
-      {
-        category: "property",
-        kind: "Unsanitary Conditions",
-        cleared: 9,
-        notCleared: 0,
-      },
-      {
-        category: "structure",
-        kind: "Stairways and balconies",
-        cleared: 11,
-        notCleared: 1,
-      },
-    ];
-
-    it("lists each kind at a Repeat Offender property, largest first, with how many are not cleared", () => {
-      renderDetail({ deficiencies, isRepeatOffender: true });
-      const problems = section("Problems the city recorded here");
-      expect(
-        problems.getByText(
-          "Published by the city for Repeat Offender properties only. From the last 3 years.",
-        ),
-      ).toBeVisible();
-      expect(
-        problems.getAllByRole("listitem").map((row) => row.textContent),
-      ).toEqual([
-        "Electrical installation2 not cleared38",
-        "Roofs and Drainageall cleared21",
-        "Stairways and balconies1 not cleared12",
-      ]);
-    });
-
-    it("shows eight kinds, then all of them in place on request, with focus on the list it opened", async () => {
-      const many = Array.from({ length: 10 }, (_, index) => ({
-        category: "structure" as const,
-        kind: `Kind ${index + 1} (§30${index}.1)`,
-        cleared: 20 - index,
-        notCleared: 0,
-      }));
-      renderDetail({ deficiencies: many, isRepeatOffender: true });
-      const problems = section("Problems the city recorded here");
-      expect(problems.getAllByRole("listitem")).toHaveLength(8);
-      expect(screen.queryByText(/more kinds?$/)).toBeNull();
-
-      await userEvent.click(
-        problems.getByRole("button", { name: "Show all 10 kinds" }),
-      );
-      const rows = problems.getAllByRole("listitem");
-      expect(rows).toHaveLength(10);
-      expect(rows[9]).toHaveTextContent("Kind 10 (§309.1)");
-      expect(problems.getByRole("list")).toHaveFocus();
-      expect(problems.queryByRole("button", { name: /^Show all/ })).toBeNull();
-    });
-
-    it("needs no button for eight kinds or fewer", () => {
-      const eight = Array.from({ length: 8 }, (_, index) => ({
-        category: "structure" as const,
-        kind: `Kind ${index + 1}`,
-        cleared: 1,
-        notCleared: 0,
-      }));
-      renderDetail({ deficiencies: eight, isRepeatOffender: true });
-      const problems = section("Problems the city recorded here");
-      expect(problems.getAllByRole("listitem")).toHaveLength(8);
-      expect(problems.queryByRole("button")).toBeNull();
-    });
-
-    it("shows nothing in their place for a Repeat Offender property with none recorded in this category", () => {
-      renderDetail({
-        category: "landuse",
-        deficiencies,
-        isRepeatOffender: true,
-      });
-      expect(screen.queryByText("Problems the city recorded here")).toBeNull();
-    });
-
-    it("shows nothing in their place for any other property", () => {
-      renderDetail({ deficiencies, isRepeatOffender: false });
-      expect(screen.queryByText("Problems the city recorded here")).toBeNull();
-    });
   });
 
   describe("the complaints in the last 3 years, newest first", () => {
@@ -375,5 +276,47 @@ describe("CategoryDetail", () => {
       expect(screen.getAllByText(/could not be loaded/)).toHaveLength(1);
       expect(screen.getAllByTestId("period-figure")[0]).toHaveTextContent("32");
     });
+  });
+});
+
+describe("ComplaintList leading with the type", () => {
+  it("names each complaint by its type where the list holds several, and keeps its city record", () => {
+    render(
+      <ComplaintList
+        lead="type"
+        complaints={[
+          complaint({
+            opened: "2026-10-27",
+            closed: null,
+            outcome: "violation",
+            stillOpen: true,
+            cityOutcome: "Supervisor Review",
+            violationCase: { number: "2026 048480-CV", url: CASE_URL },
+          }),
+          complaint({
+            opened: "2026-10-01",
+            closed: null,
+            category: "property",
+            outcome: "violation",
+            stillOpen: true,
+            cityOutcome: "Send CV Notice",
+            violationCase: { number: "2026 139972-CV", url: null },
+          }),
+        ]}
+      />,
+    );
+
+    const rows = screen.getAllByRole("listitem");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "Oct 27, 2026Building conditionSupervisor Reviewcity record 2026 048480-CV",
+      "Oct 1, 2026Trash and groundsSend CV Notice",
+    ]);
+    expect(
+      screen.getByRole("link", {
+        name: "City record 2026 048480-CV, for the complaint opened Oct 27, 2026",
+      }),
+    ).toHaveAttribute("href", CASE_URL);
+    // The outcome is the same for every row of such a list, so it is not repeated on each.
+    expect(document.body.textContent).not.toContain("Violation confirmed");
   });
 });

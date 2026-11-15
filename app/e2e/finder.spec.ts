@@ -8,7 +8,11 @@ interface ComplexRecord {
   address: string;
   name: { text: string } | null;
   acres: number;
-  repeatOffender: object | null;
+  repeatOffender: {
+    recorded: {
+      families: { family: string; count: number; notCleared: number }[];
+    } | null;
+  } | null;
   tally: Record<"m12" | "y2" | "y3", Record<string, Record<string, number>>>;
 }
 
@@ -300,7 +304,9 @@ test("pick an area, open a building from its pin, see its record", async ({
   await expect(page.getByText(/complexes in view/)).toBeVisible();
 
   const said = await pickFromMap(page);
-  await expect(page.getByText("What the complaints were about")).toBeVisible();
+  await expect(
+    panel(page).getByRole("list", { name: "What the record shows" }),
+  ).toBeVisible();
   // The tooltip names the pin's address, and the record gives it under its title.
   await expect(panel(page)).toContainText(said.slice(0, said.lastIndexOf(":")));
   await expect(page.locator("body")).not.toContainText(/code case/i);
@@ -419,7 +425,9 @@ test("a building page is reachable directly", async ({ page }) => {
   await expect(
     page.getByRole("link", { name: "Back to the map" }),
   ).toHaveAttribute("href", "/");
-  await expect(page.getByText("What the complaints were about")).toBeVisible();
+  await expect(
+    page.getByRole("list", { name: "What the record shows" }),
+  ).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/code case/i);
   // The page is the building's full record, so it leads with the 3 years.
   await expect(
@@ -427,7 +435,12 @@ test("a building page is reachable directly", async ({ page }) => {
       .getByText("in the last 3 years", { exact: true })
       .locator("xpath=../.."),
   ).toContainText(complaintsIn(complex, "y3").toLocaleString("en-US"));
-  await expect(page.getByText("last 12 months", { exact: true })).toBeVisible();
+  // Under the figure, how the whole city's counts spread over the same 3 years.
+  await expect(
+    page.getByText(
+      /^Across Austin, \d+% of apartment complexes had no complaints in the last 3 years, and 9 in 10 had \d+ or fewer\.$/,
+    ),
+  ).toBeVisible();
 
   // The stubbed photo answers at once, often before the page is hydrated, and must still be taken.
   const photo = page.getByRole("img", { name: /^Aerial photo of / });
@@ -793,7 +806,7 @@ test.describe("when the map cannot start", () => {
 
   test("a filtered view survives a reload", async ({ page }) => {
     await page.goto("/?period=3y&order=most");
-    await expect(page.getByRole("button", { name: "3 years" })).toHaveAttribute(
+    await expect(page.getByRole("button", { name: "3 years", exact: true })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -802,7 +815,7 @@ test.describe("when the map cannot start", () => {
     ).toBeVisible();
 
     await page.reload();
-    await expect(page.getByRole("button", { name: "3 years" })).toHaveAttribute(
+    await expect(page.getByRole("button", { name: "3 years", exact: true })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -816,17 +829,17 @@ test.describe("when the map cannot start", () => {
   }) => {
     await page.goto("/?period=cases&order=most");
     await expect(
-      page.getByRole("button", { name: "12 months" }),
+      page.getByRole("button", { name: "12 months", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
     await expect(
       page.getByRole("button", { name: "Most first" }),
     ).toBeVisible();
 
-    await page.getByRole("button", { name: "2 years" }).click();
+    await page.getByRole("button", { name: "2 years", exact: true }).click();
     await expect(page).toHaveURL(/\/\?period=2y&order=most$/);
-    await page.getByRole("button", { name: "3 years" }).click();
+    await page.getByRole("button", { name: "3 years", exact: true }).click();
     await expect(page).toHaveURL(/\/\?period=3y&order=most$/);
-    await page.getByRole("button", { name: "12 months" }).click();
+    await page.getByRole("button", { name: "12 months", exact: true }).click();
     await expect(page).toHaveURL(/\/\?order=most$/);
   });
 
@@ -1027,7 +1040,8 @@ test.describe("a picked building", () => {
     const complex = recordOf(COMPLEX_WITH_RECORD);
     await page.goto("/");
     await waitForMap(page);
-    const period = page.getByRole("button", { name: "12 months" });
+    // By its whole name: a sentence of the record can speak of 12 months too.
+    const period = page.getByRole("button", { name: "12 months", exact: true });
 
     await pickFromSearch(page, complex.address, complex);
     await expect(panel(page)).toBeFocused();
@@ -1140,7 +1154,7 @@ test.describe("a picked building", () => {
       panel(page).getByText("in the last 12 months", { exact: true }),
     ).toBeVisible();
     await expect(
-      panel(page).getByRole("region", { name: "Month by month" }),
+      panel(page).getByRole("list", { name: "What the record shows" }),
     ).toBeVisible();
     await expect(
       panel(page).getByText("Loading from the City of Austin"),
@@ -1190,6 +1204,14 @@ test.describe("a building's complaint types", () => {
     "The buildings themselves: electrical, plumbing, roofs, walls, stairs and balconies, heating and appliances, pests.";
   const typeRow = (page: Page, label: string) =>
     panel(page).getByRole("button", { name: new RegExp(`^${label}`) });
+  /** The line that says what the complaints were about. The types stand behind it. */
+  const aboutLine = (scope: Page | Locator) =>
+    scope.getByRole("button", { name: /(were|was) about / });
+  async function openTypes(page: Page) {
+    const line = aboutLine(panel(page));
+    if ((await line.getAttribute("aria-expanded")) !== "true")
+      await line.click();
+  }
 
   test("open in place, one at a time, from the keyboard, with what each covers and its complaints", async ({
     page,
@@ -1213,6 +1235,7 @@ test.describe("a building's complaint types", () => {
       .locator(`[data-testid="card"][data-complex-id="${busiest.id}"]`)
       .click();
 
+    await openTypes(page);
     const building = typeRow(page, "Building condition");
     await expect(building).toHaveAttribute("aria-expanded", "false");
     await building.focus();
@@ -1234,11 +1257,11 @@ test.describe("a building's complaint types", () => {
     await expect(panel(page).getByText(BUILDING_CONDITION)).toHaveCount(0);
   });
 
-  test("at a Repeat Offender property, show the problems the city recorded, and link each case to the city's record", async ({
+  test("at a Repeat Offender property, say what the city recorded, in plain kinds over its own wording, and link each case to the city's record", async ({
     page,
   }) => {
     const listed = complexes
-      .filter((complex) => complex.repeatOffender !== null)
+      .filter((complex) => complex.repeatOffender?.recorded)
       .map((complex) => ({
         complex,
         record: readData<BuildingRecord>(`buildings/${complex.id}.json`),
@@ -1258,12 +1281,37 @@ test.describe("a building's complaint types", () => {
       "the data has a Repeat Offender property with building problems and a linked case",
     ).toBeDefined();
     if (!listed) return;
+    const families = listed.complex.repeatOffender?.recorded?.families ?? [];
+    const total = families.reduce((sum, { count }) => sum + count, 0);
 
     await page.goto(`/building/${listed.complex.id}`);
-    await page.getByRole("button", { name: /^Building condition/ }).click();
     await expect(
-      page.getByRole("region", { name: "Problems the city recorded here" }),
+      page.getByText("On the city's Repeat Offender list"),
     ).toBeVisible();
+    // The listing says what it is about before anything is opened.
+    const listing = page.getByRole("list", {
+      name: "What the listing is about",
+    });
+    const first = listing.getByRole("button", {
+      name: /^Recorded most often: /,
+    });
+    await expect(first).toContainText(
+      `${total.toLocaleString("en-US")} ${total === 1 ? "problem" : "problems"} in the last 3 years`,
+    );
+
+    // Behind it, every kind with its count, and under each the city's own wording, code section and all.
+    await first.click();
+    const more = listing.getByRole("button", { name: /^Show all \d+ kinds$/ });
+    if ((await more.count()) > 0) await more.click();
+    const kinds = listing.locator("li li");
+    await expect(kinds).toHaveCount(families.length);
+    await expect(kinds.filter({ hasText: /\(§\d{3}/ }).first()).toBeVisible();
+    await expect(
+      listing.getByRole("link", { name: "city's Repeat Offender list" }),
+    ).toHaveAttribute("href", "https://data.austintexas.gov/d/86z9-i27i");
+
+    await aboutLine(page).click();
+    await page.getByRole("button", { name: /^Building condition/ }).click();
 
     const complaints = page.getByRole("region", {
       name: "Complaints in the last 3 years, newest first",
@@ -1306,6 +1354,7 @@ test.describe("a building's complaint types", () => {
     await page.goto("/");
     await waitForMap(page);
     await pickFromSearch(page, longest.address, longest);
+    await openTypes(page);
     await typeRow(page, "Building condition").click();
     const complaints = panel(page).getByRole("region", {
       name: "Complaints in the last 3 years, newest first",
@@ -1329,7 +1378,8 @@ test.describe("a building's complaint types", () => {
       scroller.boundingBox(),
     ]);
     // The top 66 px of a scrolled record fade out under the close button; a focused link must sit below them.
-    expect(link!.y - record_scroller!.y).toBeGreaterThanOrEqual(66);
+    // To the nearest pixel: lines of fractional height leave the scroll position a hair off a whole one.
+    expect(Math.round(link!.y - record_scroller!.y)).toBeGreaterThanOrEqual(66);
   });
 
   test("on a phone, the close button stays in reach at the end of a long record, and closes it", async ({
@@ -1348,6 +1398,7 @@ test.describe("a building's complaint types", () => {
     await page.goto("/");
     await waitForMap(page);
     await pickFromSearch(page, longest.address, longest);
+    await openTypes(page);
     await typeRow(page, "Building condition").click();
     const complaints = panel(page).getByRole("region", {
       name: "Complaints in the last 3 years, newest first",
@@ -1358,7 +1409,7 @@ test.describe("a building's complaint types", () => {
     await scroller.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
-    // The record's last line, under the complaints, the months and the 311 requests.
+    // The record's last line, under every sentence and the complaints opened from one of them.
     await expect(
       panel(page).getByRole("link", { name: "Open this building's page" }),
     ).toBeInViewport();

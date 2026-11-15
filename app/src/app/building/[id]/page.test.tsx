@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import type { BuildingDetail, Complex, Meta } from "@/domain/types";
 import BuildingPage, { generateMetadata } from "./page";
@@ -136,26 +136,40 @@ it("shows the building's full record: the 3 years lead, with 12 months and 2 yea
   expect(
     screen.getByText("in the last 3 years", { exact: true }).closest("p"),
   ).toHaveTextContent("201 complaints in the last 3 years");
-  expect(screen.getByText("last 12 months").parentElement).toHaveTextContent(
-    "32",
+  const lines = [
+    ...screen.getByRole("list", { name: "What the record shows" }).children,
+  ].map((row) => row.firstElementChild?.textContent);
+  expect(lines.slice(0, 2)).toEqual([
+    "32 of them in the last 12 months.",
+    "The city confirmed a violation in 119 of them.",
+  ]);
+
+  // Behind the first line, the three periods side by side, with the 3 years marked as the one shown.
+  fireEvent.click(
+    screen.getByRole("button", { name: "32 of them in the last 12 months." }),
   );
-  expect(screen.getByText("last 2 years").parentElement).toHaveTextContent(
-    "85",
+  expect(
+    screen.getAllByTestId("period-figure").map((figure) => figure.textContent),
+  ).toEqual(["3212 months", "852 years", "2013 years"]);
+  expect(screen.getAllByTestId("period-figure")[2]).toHaveAttribute(
+    "aria-current",
+    "true",
   );
 
-  const found = within(
-    screen.getByRole("region", { name: "What the city found" }),
-  );
-  expect(found.getAllByRole("listitem")[0]).toHaveTextContent(
-    /^Violation confirmed.*119$/,
-  );
-  const types = within(
-    screen.getByRole("region", { name: "What the complaints were about" }),
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "The city confirmed a violation in 119 of them.",
+    }),
   );
   expect(
-    types.getByRole("button", { name: /^Building condition/ }),
+    screen.getByText("Violation confirmed").closest("li"),
+  ).toHaveTextContent(/^Violation confirmed.*119$/);
+
+  fireEvent.click(screen.getByRole("button", { name: /were about/ }));
+  expect(
+    screen.getByRole("button", { name: /^Building condition/ }),
   ).toHaveTextContent("185");
   expect(
-    types.getByRole("button", { name: /^Trash and grounds/ }),
+    screen.getByRole("button", { name: /^Trash and grounds/ }),
   ).toHaveTextContent("13");
 });

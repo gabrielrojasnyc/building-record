@@ -1,13 +1,14 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useContext, useId, useState } from "react";
 import { formatCount } from "@/domain/format";
 import { CATEGORY_LABEL } from "@/domain/labels";
 import type { Period } from "@/domain/periods";
 import { countFor, DEFAULT_VIEW, type View } from "@/domain/query";
-import type { BuildingDetail, Category, Complaint, Complex } from "@/domain/types";
+import type { Category, Complaint, Complex } from "@/domain/types";
 import { CategoryDetail } from "./CategoryDetail";
-import { Section, useSubheadingLevel } from "./panelParts";
+import { RecordHeadingLevel } from "./panelParts";
+import { Chevron } from "./SummaryRow";
 
 const CATEGORIES = Object.keys(CATEGORY_LABEL) as Category[];
 
@@ -19,14 +20,13 @@ function countsByCategory(complex: Complex, period: Period): Record<Category, nu
 
 /**
  * One row per category, each opening in place to explain itself; one open at a time. A type the map is
- * filtered to starts open, so the number on the card is the first thing found; a later filter change
+ * filtered to starts open, so the number on the map is the first thing found; a later filter change
  * leaves the person's choice alone.
  */
 export function Categories(props: {
   complex: Complex;
   view: View;
   complaints: Complaint[] | "loading" | "failed";
-  deficiencies: BuildingDetail["deficiencies"];
   stillOpenIn(category: Category): number | null;
 }) {
   const { complex, view } = props;
@@ -37,15 +37,14 @@ export function Categories(props: {
     filtered !== "all" && inThreeYears[filtered] > 0 ? filtered : null,
   );
   const idPrefix = useId();
-  const subheading = useSubheadingLevel();
+  const heading = useContext(RecordHeadingLevel);
 
   // Bars compare the counts on show: the period's, or the 3 years' when the period has none at all.
   const periodIsEmpty = CATEGORIES.every((category) => inPeriod[category] === 0);
   const longest = Math.max(1, ...CATEGORIES.map((category) => (periodIsEmpty ? inThreeYears : inPeriod)[category]));
 
   return (
-    <Section title="What the complaints were about">
-      <ul>
+    <ul>
         {CATEGORIES.map((category) => {
           const fromThreeYears = inPeriod[category] === 0 && inThreeYears[category] > 0;
           const shown = fromThreeYears ? inThreeYears[category] : inPeriod[category];
@@ -83,19 +82,16 @@ export function Categories(props: {
                     category={category}
                     complex={complex}
                     complaints={props.complaints}
-                    deficiencies={props.deficiencies}
                     view={view}
-                    isRepeatOffender={complex.repeatOffender !== null}
                     violationsOpen={props.stillOpenIn(category)}
-                    heading={subheading}
+                    heading={heading}
                   />
                 </div>
               )}
             </li>
           );
         })}
-      </ul>
-    </Section>
+    </ul>
   );
 }
 
@@ -114,20 +110,7 @@ function CategoryLine(props: {
         {props.chevron === null ? (
           <span aria-hidden className="size-2.5 flex-none" />
         ) : (
-          <svg
-            aria-hidden
-            viewBox="0 0 10 10"
-            className={`size-2.5 flex-none text-steel motion-safe:transition-transform motion-safe:duration-200 ${props.chevron === "open" ? "rotate-90" : ""}`}
-          >
-            <path
-              d="M3.5 1.5 7 5l-3.5 3.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <Chevron open={props.chevron === "open"} />
         )}
         <span className="flex-1">{props.label}</span>
         <span className="tabular-nums">

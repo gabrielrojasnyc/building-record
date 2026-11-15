@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -504,7 +505,14 @@ it("flies to the building's point, with no model, when its file cannot be loaded
   expect(
     screen.getByRole("heading", { level: 2, name: "Array Apartments" }),
   ).toBeVisible();
-  expect(await screen.findByText(/history could not be loaded/)).toBeVisible();
+  // The record's sentences stand without the file. The 311 line, which needs the parcel's box from it, goes.
+  const record = within(
+    screen.getByRole("list", { name: "What the record shows" }),
+  );
+  await waitFor(() =>
+    expect(record.queryByText("311 requests around this parcel")).toBeNull(),
+  );
+  expect(record.getByText("All 3 were about trash and grounds.")).toBeVisible();
 });
 
 it("asks for the fallback fly in the same render as an earlier model leaves, so the map hands the camera to it", async () => {
