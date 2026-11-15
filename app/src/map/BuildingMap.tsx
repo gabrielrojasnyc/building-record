@@ -56,7 +56,6 @@ export interface BuildingMapProps {
   complexes: Complex[];
   view: View;
   selectedId: string | null;
-  hoveredId: string | null;
   /** Moves the camera each time the object changes to a non-null value, so hold it in state rather than rebuilding it every render. */
   flyTo: { lon: number; lat: number; zoom: number } | null;
   /** Applied when the map starts and whenever a number changes; a new object with the same numbers does nothing. */
@@ -66,7 +65,6 @@ export interface BuildingMapProps {
   /** The ground visible inside the padding, reported when the map starts, after every move and when the padding changes. */
   onViewAreaChange(area: ViewArea): void;
   onSelect(id: string): void;
-  onHover(id: string | null): void;
   /** Called once if the map cannot start. The component then renders nothing. */
   onUnavailable(): void;
 }
@@ -122,7 +120,7 @@ function placeLabel(
 }
 
 export function BuildingMap(props: BuildingMapProps) {
-  const { complexes, view, selectedId, hoveredId, flyTo } = props;
+  const { complexes, view, selectedId, flyTo } = props;
   const { top, right, bottom, left } = props.padding ?? NO_PADDING;
   const spotlightId = props.spotlight?.id ?? null;
 
@@ -140,7 +138,6 @@ export function BuildingMap(props: BuildingMapProps) {
   const flyToBefore = useRef(props.flyTo);
   const reportedUnavailable = useRef(false);
   const markedSelected = useRef<string | null>(null);
-  const markedHovered = useRef<string | null>(null);
 
   useEffect(() => {
     flyToBefore.current = latest.current.flyTo;
@@ -219,7 +216,18 @@ export function BuildingMap(props: BuildingMapProps) {
         className: "pin-tooltip",
       });
       tooltipRef.current = tooltip;
-      let hoverReported: string | null = null;
+      /** The pin under the pointer, lit through its `hover` feature state, which the pin layers style. */
+      let hovered: string | null = null;
+      const markHovered = (id: string | null) => {
+        if (!map || id === hovered) return;
+        if (hovered)
+          map.setFeatureState(
+            { source: SOURCE_ID, id: hovered },
+            { hover: false },
+          );
+        if (id) map.setFeatureState({ source: SOURCE_ID, id }, { hover: true });
+        hovered = id;
+      };
       const reportViewArea = () => {
         if (!map) return;
         latest.current.onViewAreaChange(
@@ -263,17 +271,13 @@ export function BuildingMap(props: BuildingMapProps) {
             .setLngLat(event.lngLat)
             .setText(describeComplaints(address, Number(feature.properties.v)))
             .addTo(map);
-          if (hoverReported !== id) {
-            hoverReported = id;
-            latest.current.onHover(id);
-          }
+          markHovered(id);
         });
         map.on("mouseleave", "core", () => {
           if (!map) return;
           map.getCanvas().style.cursor = "";
           tooltip.remove();
-          hoverReported = null;
-          latest.current.onHover(null);
+          markHovered(null);
         });
         map.on("click", "core", (event: MapLayerMouseEvent) => {
           const id = event.features?.[0]?.properties.id;
@@ -300,7 +304,6 @@ export function BuildingMap(props: BuildingMapProps) {
       map?.remove();
       mapRef.current = null;
       markedSelected.current = null;
-      markedHovered.current = null;
       setReady(false);
     };
   }, []);
@@ -329,23 +332,6 @@ export function BuildingMap(props: BuildingMapProps) {
       );
     markedSelected.current = selectedId;
   }, [ready, selectedId]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!ready || !map) return;
-    if (markedHovered.current) {
-      map.setFeatureState(
-        { source: SOURCE_ID, id: markedHovered.current },
-        { hover: false },
-      );
-    }
-    if (hoveredId)
-      map.setFeatureState(
-        { source: SOURCE_ID, id: hoveredId },
-        { hover: true },
-      );
-    markedHovered.current = hoveredId;
-  }, [ready, hoveredId]);
 
   useEffect(() => {
     const map = mapRef.current;

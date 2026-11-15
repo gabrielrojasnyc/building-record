@@ -128,8 +128,8 @@
     }
   }
 
-  /* A building card lifts when it or its pin is hovered, and turns dark once selected. */
-  .tray-card {
+  /* A building card lifts when it is hovered, and turns dark once selected. */
+  .complex-card {
     transition:
       transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
       background 0.25s;
@@ -139,8 +139,7 @@
     }
   }
 
-  .tray-card:hover,
-  .tray-card[data-hovered] {
+  .complex-card:hover {
     transform: translateY(-6px);
     background: linear-gradient(
       145deg,
@@ -149,7 +148,7 @@
     );
   }
 
-  .tray-card[aria-current="true"] {
+  .complex-card[aria-current="true"] {
     background: linear-gradient(
       145deg,
       color-mix(in srgb, var(--color-deep) 92%, transparent),

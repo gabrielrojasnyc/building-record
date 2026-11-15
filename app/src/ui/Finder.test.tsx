@@ -55,14 +55,20 @@ vi.mock("next/dynamic", async () => {
 const NORMAL_PADDING: CameraPadding = {
   top: 80,
   right: 0,
-  bottom: 261,
+  bottom: 81,
   left: 0,
 };
 const SELECTION_PADDING: CameraPadding = {
   top: 110,
   right: 440,
-  bottom: 268,
+  bottom: 88,
   left: 70,
+};
+const PHONE_PADDING: CameraPadding = {
+  top: 170,
+  right: 0,
+  bottom: 111,
+  left: 0,
 };
 
 function complex(id: string, overrides: Partial<Complex>): Complex {
@@ -90,7 +96,7 @@ const array = complex("0307050309", {
   lat: 30.23,
   tally: { m12: { property: { none: 3 } }, y2: {}, y3: {} },
 });
-// Each has a complaint in the default period, since the tray gives a card only to a complex that has one.
+// Each has a complaint in the default period, since the list without a map gives a card only to a complex that has one.
 const crest = complex("0304070701", {
   address: "1601 Royal Crest Dr",
   lon: -97.729,
@@ -226,6 +232,26 @@ function lastMap(): BuildingMapProps {
 
 const reportView = (area: ViewArea) =>
   act(() => lastMap().onViewAreaChange(area));
+
+/** The count line's region, by what it says: "2 complexes in view". */
+const counting = (name: string) => screen.getByRole("region", { name });
+
+/** The count line itself, which takes focus when a closed building has no card to go back to. */
+function countLine(): HTMLElement {
+  const region = screen.getByRole("region", { name: /complex(es)? in / });
+  const line = document.getElementById(
+    region.getAttribute("aria-labelledby") ?? "",
+  );
+  if (!line) throw new Error("The count has no line");
+  return line;
+}
+
+/** Picks a building by its pin, as the map reports a click on one. */
+function pickOnMap(target: Complex) {
+  act(() => lastMap().onSelect(target.id));
+}
+
+/** A building's card in the list shown when the map cannot start. */
 const cardOf = (target: Complex) =>
   screen
     .getAllByTestId("card")
@@ -233,12 +259,16 @@ const cardOf = (target: Complex) =>
 const cardIds = () =>
   screen.getAllByTestId("card").map((card) => card.dataset.complexId);
 
-async function pick(target: Complex) {
-  const card = screen
-    .getAllByTestId("card")
-    .find((element) => element.dataset.complexId === target.id);
+async function pickFromList(target: Complex) {
+  const card = cardOf(target);
   if (!card) throw new Error(`No card for ${target.id}`);
   await userEvent.click(card);
+}
+
+/** Opens the screen and lets the map give up, so the list of every complex in Austin stands in for it. */
+function openWithoutMap() {
+  openFinder();
+  act(() => lastMap().onUnavailable());
 }
 
 const staged = (target: Complex) =>
@@ -284,9 +314,31 @@ afterEach(() => {
   }
 });
 
+it("on the map, shows only the count and the area shortcuts at the bottom: no cards and no order", () => {
+  openFinder();
+  expect(counting("2 complexes in view")).toBeVisible();
+  expect(
+    screen.getByRole("navigation", { name: "Jump to an area" }),
+  ).toBeVisible();
+  expect(screen.queryAllByTestId("card")).toHaveLength(0);
+  expect(screen.queryByRole("button", { name: /first$/ })).toBeNull();
+});
+
+it("without a map, lists every complex in Austin as cards in the order asked for, with no area shortcuts", async () => {
+  openWithoutMap();
+  expect(counting("3 complexes in Austin")).toBeVisible();
+  expect(cardIds()).toEqual([crest.id, domain.id, array.id]);
+  expect(
+    screen.queryByRole("navigation", { name: "Jump to an area" }),
+  ).toBeNull();
+
+  await userEvent.click(screen.getByRole("button", { name: "Fewest first" }));
+  expect(cardIds()).toEqual([array.id, domain.id, crest.id]);
+});
+
 it("stages a picked building on the map once its outline is known, with the selection padding in the same render, and leaves the camera to the map", async () => {
   openFinder();
-  await pick(array);
+  pickOnMap(array);
   await staged(array);
 
   expect(lastMap().spotlight).toEqual({
@@ -308,7 +360,8 @@ it("stages a picked building on the map once its outline is known, with the sele
 it("on a phone, frames the model above a record sheet 60% of the screen tall, as tall as the screen is now", async () => {
   setScreen({ phone: true, height: 812 });
   openFinder();
-  await pick(array);
+  expect(lastMap().padding).toEqual(PHONE_PADDING);
+  pickOnMap(array);
   await staged(array);
   expect(lastMap().padding).toEqual({
     top: 90,
@@ -330,81 +383,76 @@ it("on a phone, frames the model above a record sheet 60% of the screen tall, as
   });
 });
 
-it("keeps the tray on the ground it was counting while a building is open, and until the camera is back from it", async () => {
+it("keeps the count on the ground it was counting while a building is open, and until the camera is back from it", async () => {
   openFinder();
-  expect(cardIds()).toEqual([crest.id, array.id]);
-  await pick(array);
+  expect(counting("2 complexes in view")).toBeVisible();
+  pickOnMap(array);
   await staged(array);
 
   // The turning camera keeps reporting new ground.
   reportView(NORTH);
-  expect(cardIds()).toEqual([crest.id, array.id]);
-  expect(
-    screen.getByRole("region", { name: "2 complexes in view" }),
-  ).toBeVisible();
+  expect(counting("2 complexes in view")).toBeVisible();
 
-  // Closing, the camera eases back from the model's ground to where it was, and only then does the tray follow the map.
+  // Closing, the camera eases back from the model's ground to where it was, and only then does the count follow the map.
   await userEvent.keyboard("{Escape}");
   reportView(NORTH);
-  expect(cardIds()).toEqual([crest.id, array.id]);
-  expect(screen.getAllByTestId("card")[1]).toHaveFocus();
+  expect(counting("2 complexes in view")).toBeVisible();
+  expect(countLine()).toHaveFocus();
   reportView(RIVERSIDE);
   reportView(NORTH);
-  expect(cardIds()).toEqual([domain.id]);
-  expect(
-    screen.getByRole("region", { name: "1 complex in view" }),
-  ).toBeVisible();
+  expect(counting("1 complex in view")).toBeVisible();
 });
 
-it("lets the tray follow the map once someone moves it themselves, before the camera is back", async () => {
+it("lets the count follow the map once someone moves it themselves, before the camera is back", async () => {
   openFinder();
-  await pick(array);
+  pickOnMap(array);
   await staged(array);
   await userEvent.keyboard("{Escape}");
 
   fireEvent.pointerDown(screen.getByTestId("map"));
   reportView(NORTH);
-  expect(cardIds()).toEqual([domain.id]);
+  expect(counting("1 complex in view")).toBeVisible();
 });
 
-it("with no model, closing hands focus back to the card, and the tray follows the map once the hold ends", async () => {
+it("with no model, closing hands focus to the count line, and the count follows the map once the hold ends", async () => {
   serveBuildingFiles({ failing: { [array.id]: 503 } });
   openFinder();
-  await pick(array);
+  pickOnMap(array);
   await waitFor(() => expect(lastMap().flyTo).not.toBeNull());
 
   await userEvent.keyboard("{Escape}");
-  expect(cardOf(array)).toHaveFocus();
+  expect(countLine()).toHaveFocus();
   fireEvent.pointerDown(screen.getByTestId("map"));
   reportView(NORTH);
-  expect(cardIds()).toEqual([domain.id]);
+  expect(counting("1 complex in view")).toBeVisible();
 });
 
-it("hands focus back to the picked card when Escape lands after the model is staged but before the screen has run that render's effects", async () => {
+it("keeps the count, and hands focus to the count line, when Escape lands after the model is staged but before the screen has run that render's effects", async () => {
   // The map reports the smaller ground under the selection padding as soon as that padding arrives.
   mapScript.groundUnderSelectionPadding = NORTH;
   mapScript.escapeOnStage = true;
   openFinder();
-  await pick(array);
+  pickOnMap(array);
 
   await waitFor(() => expect(screen.queryByRole("complementary")).toBeNull());
-  expect(cardIds()).toEqual([crest.id, array.id]);
-  expect(cardOf(array)).toHaveFocus();
+  expect(counting("2 complexes in view")).toBeVisible();
+  expect(countLine()).toHaveFocus();
 });
 
-it("still applies a filter changed while a building is open, to the ground the tray was counting", async () => {
+it("still applies a filter changed while a building is open, to the ground the count was on", async () => {
   openFinder();
-  await pick(array);
+  pickOnMap(array);
   await staged(array);
   reportView(NORTH);
 
-  await userEvent.click(screen.getByRole("button", { name: "Fewest first" }));
-  expect(cardIds()).toEqual([array.id, crest.id]);
+  await userEvent.click(screen.getByRole("button", { name: "Grounds" }));
+  expect(counting("2 complexes in view")).toBeVisible();
+  expect(screen.getByText("1 with none of this type")).toBeVisible();
 });
 
 it("clears the model and restores the padding in one render when the building closes", async () => {
   openFinder();
-  await pick(array);
+  pickOnMap(array);
   await staged(array);
 
   const before = mapRenders.length;
@@ -419,11 +467,11 @@ it("clears the model and restores the padding in one render when the building cl
 
 it("switches the model straight to another building picked while one is open", async () => {
   openFinder();
-  await pick(array);
+  pickOnMap(array);
   await staged(array);
 
   const before = mapRenders.length;
-  await pick(crest);
+  pickOnMap(crest);
   await staged(crest);
   expect(
     mapRenders.slice(before).every((props) => props.spotlight !== null),
@@ -434,7 +482,7 @@ it("switches the model straight to another building picked while one is open", a
 it("flies to the building's point, with no model, when its file cannot be loaded, and still opens its record", async () => {
   serveBuildingFiles({ failing: { [array.id]: 503 } });
   openFinder();
-  await pick(array);
+  pickOnMap(array);
 
   await waitFor(() =>
     expect(lastMap().flyTo).toEqual({
@@ -457,11 +505,11 @@ it("flies to the building's point, with no model, when its file cannot be loaded
 it("asks for the fallback fly in the same render as an earlier model leaves, so the map hands the camera to it", async () => {
   serveBuildingFiles({ failing: { [crest.id]: 503 } });
   openFinder();
-  await pick(array);
+  pickOnMap(array);
   await staged(array);
   const before = mapRenders.length;
 
-  await pick(crest);
+  pickOnMap(crest);
   await waitFor(() => expect(lastMap().spotlight).toBeNull());
   const leaving = mapRenders
     .slice(before)
@@ -473,9 +521,9 @@ it("asks for the fallback fly in the same render as an earlier model leaves, so 
   });
 });
 
-it("leaves for an area in one render, with the fly, and the tray follows the map from there", async () => {
+it("leaves for an area in one render, with the fly, and the count follows the map from there", async () => {
   openFinder();
-  await pick(array);
+  pickOnMap(array);
   await staged(array);
   const before = mapRenders.length;
 
@@ -488,13 +536,12 @@ it("leaves for an area in one render, with the fly, and the tray follows the map
   expect(screen.queryByRole("complementary")).toBeNull();
 
   reportView(NORTH);
-  expect(cardIds()).toEqual([domain.id]);
+  expect(counting("1 complex in view")).toBeVisible();
 });
 
 it("without a map, opens a picked building's record with its photo and stages nothing", async () => {
-  openFinder();
-  act(() => lastMap().onUnavailable());
-  await pick(array);
+  openWithoutMap();
+  await pickFromList(array);
 
   expect(
     await screen.findByRole("img", {
@@ -505,9 +552,19 @@ it("without a map, opens a picked building's record with its photo and stages no
   expect(document.querySelector(".fog")).not.toHaveClass("fog-spotlight");
 });
 
+it("without a map, closing hands focus back to the building's card in the list", async () => {
+  openWithoutMap();
+  await pickFromList(array);
+  expect(screen.getByRole("complementary")).toHaveFocus();
+
+  await userEvent.keyboard("{Escape}");
+  expect(cardOf(array)).toHaveFocus();
+});
+
 it("reads the period from the address bar, and rewrites a retired or unknown one away on the next change", async () => {
+  // The order has its button only in the list shown without a map.
   window.history.replaceState(null, "", "/?period=cases&order=most");
-  openFinder();
+  openWithoutMap();
   expect(screen.getByRole("button", { name: "12 months" })).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -521,10 +578,9 @@ it("reads the period from the address bar, and rewrites a retired or unknown one
   await userEvent.click(screen.getByRole("button", { name: "2 years" }));
   expect(window.location.search).toBe("?period=2y");
 });
-
 it("asks the city for a picked building's 311 requests from the first day of the 3 years in the data", async () => {
   openFinder();
-  await pick(array);
+  pickOnMap(array);
   await staged(array);
   await waitFor(() =>
     expect(
@@ -536,43 +592,39 @@ it("asks the city for a picked building's 311 requests from the first day of the
   );
 });
 
-it("a pick made before the map has reported holds the list it was picked from, all of Austin, and its card", async () => {
+it("a pick made before the map has reported holds the count it was picked from, all of Austin", async () => {
   render(<Finder complexes={everything} meta={meta} />);
-  expect(
-    screen.getByRole("region", { name: "3 complexes in Austin" }),
-  ).toBeVisible();
-  await pick(domain);
+  expect(counting("3 complexes in Austin")).toBeVisible();
+  pickOnMap(domain);
   await staged(domain);
 
-  // The map's first report shows ground without that building; the list stays the one it was picked from.
+  // The map's first report shows ground without that building; the count stays the one it was picked from.
   reportView(RIVERSIDE);
   reportView(NORTH);
-  expect(
-    screen.getByRole("region", { name: "3 complexes in Austin" }),
-  ).toBeVisible();
+  expect(counting("3 complexes in Austin")).toBeVisible();
 
   await userEvent.keyboard("{Escape}");
-  expect(cardOf(domain)).toHaveFocus();
+  expect(countLine()).toHaveFocus();
 });
 
-it("lets go of the tray 1.5 seconds after a building closes, when the camera never comes back to the same ground", async () => {
+it("lets go of the count 1.5 seconds after a building closes, when the camera never comes back to the same ground", async () => {
   openFinder();
-  await pick(array);
+  pickOnMap(array);
   await staged(array);
   await userEvent.keyboard("{Escape}");
 
   // A rotation while the building was open: the camera returns, but to ground that no longer matches.
   reportView(NORTH);
-  expect(cardIds()).toEqual([crest.id, array.id]);
+  expect(counting("2 complexes in view")).toBeVisible();
   await act(() => new Promise((resolve) => setTimeout(resolve, 1000)));
-  expect(cardIds()).toEqual([crest.id, array.id]);
+  expect(counting("2 complexes in view")).toBeVisible();
   await act(() => new Promise((resolve) => setTimeout(resolve, 600)));
-  expect(cardIds()).toEqual([domain.id]);
+  expect(counting("1 complex in view")).toBeVisible();
 });
 
 it("drops a model whose map gave up after it was staged: no model, no selection padding, no spotlight fog", async () => {
   openFinder();
-  await pick(array);
+  pickOnMap(array);
   await staged(array);
 
   act(() => lastMap().onUnavailable());
@@ -584,19 +636,8 @@ it("drops a model whose map gave up after it was staged: no model, no selection 
   ).toBeVisible();
 });
 
-/** The tray's count line, which heads the tray. */
-function trayCountLine(): HTMLElement {
-  const tray = screen.getByRole("region", { name: /complex(es)? in / });
-  const line = document.getElementById(
-    tray.getAttribute("aria-labelledby") ?? "",
-  );
-  if (!line) throw new Error("The tray has no count line");
-  return line;
-}
-
-it("returns focus to the search when the closed building has no card in the tray and was picked through the search", async () => {
+it("returns focus to the search when the closed building was picked through the search", async () => {
   openFinder();
-  expect(cardIds()).not.toContain(domain.id);
   await pickFromSearch("11800", domain);
   await staged(domain);
 
@@ -604,17 +645,16 @@ it("returns focus to the search when the closed building has no card in the tray
   expect(screen.getByRole("combobox")).toHaveFocus();
 });
 
-it("hands focus to the tray's count line, never an input, when a building picked on the map has no card in the tray", async () => {
+it("hands focus to the count line, never an input, when a building picked on the map closes", async () => {
   openFinder();
-  expect(cardIds()).not.toContain(domain.id);
-  act(() => lastMap().onSelect(domain.id));
+  pickOnMap(domain);
   await staged(domain);
 
   await userEvent.click(
     screen.getByRole("button", { name: "Close building details" }),
   );
-  expect(trayCountLine()).toHaveFocus();
-  expect(trayCountLine()).toHaveAttribute("tabindex", "-1");
+  expect(countLine()).toHaveFocus();
+  expect(countLine()).toHaveAttribute("tabindex", "-1");
   expect(document.activeElement?.tagName).not.toBe("INPUT");
 });
 
@@ -622,18 +662,18 @@ it("goes by the latest pick: a search pick replaced by a pick on the map hands f
   openFinder();
   await pickFromSearch("2000 Burton", array);
   await staged(array);
-  act(() => lastMap().onSelect(domain.id));
+  pickOnMap(domain);
   await staged(domain);
 
   await userEvent.keyboard("{Escape}");
-  expect(trayCountLine()).toHaveFocus();
+  expect(countLine()).toHaveFocus();
 });
 
 describe("a building file that settles after the pick has moved on", () => {
   it("leaves no model, fog or fly when it arrives after the building closed", async () => {
     const files = serveBuildingFiles({ heldBack: [array.id] });
     openFinder();
-    await pick(array);
+    pickOnMap(array);
     await userEvent.keyboard("{Escape}");
 
     await files.release(array);
@@ -646,7 +686,7 @@ describe("a building file that settles after the pick has moved on", () => {
   it("leaves no fly when it fails after the building closed", async () => {
     const files = serveBuildingFiles({ heldBack: [array.id] });
     openFinder();
-    await pick(array);
+    pickOnMap(array);
     await userEvent.keyboard("{Escape}");
 
     await files.fail(array);
@@ -658,8 +698,8 @@ describe("a building file that settles after the pick has moved on", () => {
   it("shows only the second building when the first's file arrives after it", async () => {
     const files = serveBuildingFiles({ heldBack: [array.id] });
     openFinder();
-    await pick(array);
-    await pick(crest);
+    pickOnMap(array);
+    pickOnMap(crest);
     await staged(crest);
 
     await files.release(array);
@@ -677,7 +717,7 @@ describe("on a phone", () => {
     openFinder();
     expect(controls()).not.toHaveAttribute("inert");
 
-    await pick(array);
+    pickOnMap(array);
     expect(controls()).toHaveAttribute("inert");
     expect(screen.getByRole("complementary")).toHaveFocus();
 
@@ -695,36 +735,35 @@ describe("on a phone", () => {
       document.activeElement as HTMLElement,
     );
 
-    // That building has no card in the tray, so closing hands focus back to the search, which is back by then.
+    // Picked through the search, so closing hands focus back to the search, which is back by then.
     await staged(domain);
     await userEvent.keyboard("{Escape}");
     expect(controls()).not.toHaveAttribute("inert");
     expect(screen.getByRole("combobox")).toHaveFocus();
   });
 
-  it("closing a building picked from a pin, with no card for it, puts focus on the count line so no keyboard opens", async () => {
+  it("closing a building picked from a pin puts focus on the count line, so no keyboard opens", async () => {
     openFinder();
-    act(() => lastMap().onSelect(domain.id));
+    pickOnMap(domain);
     await staged(domain);
 
     await userEvent.click(
       screen.getByRole("button", { name: "Close building details" }),
     );
     expect(controls()).not.toHaveAttribute("inert");
-    expect(trayCountLine()).toHaveFocus();
+    expect(countLine()).toHaveFocus();
     expect(screen.getByRole("combobox")).not.toHaveFocus();
   });
 
   it("keeps the search and filters where they are without a map", async () => {
-    openFinder();
-    act(() => lastMap().onUnavailable());
-    await pick(array);
+    openWithoutMap();
+    await pickFromList(array);
     expect(controls()).not.toHaveAttribute("inert");
   });
 });
 
 it("keeps the search and filters where they are on a desktop while a building is open", async () => {
   openFinder();
-  await pick(array);
+  pickOnMap(array);
   expect(controls()).not.toHaveAttribute("inert");
 });

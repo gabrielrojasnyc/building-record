@@ -263,13 +263,11 @@ function renderMap(spotlight: SpotlightTarget | null = null) {
     complexes: [],
     view: DEFAULT_VIEW,
     selectedId: null,
-    hoveredId: null,
     flyTo: null,
     padding: PADDING,
     spotlight,
     onViewAreaChange: vi.fn(),
     onSelect: vi.fn(),
-    onHover: vi.fn(),
     onUnavailable: vi.fn(),
   };
   const rendered = render(<BuildingMap {...props} />);
@@ -1292,7 +1290,7 @@ describe("BuildingMap spotlight", () => {
   });
 });
 
-describe("a pin's tooltip", () => {
+describe("a pin under the pointer, and its tooltip", () => {
   async function hoveredPin() {
     stubStyle("now");
     const rendered = renderMap();
@@ -1321,6 +1319,35 @@ describe("a pin's tooltip", () => {
     const { tooltip, spotlightOn } = await hoveredPin();
     spotlightOn(ARRAY);
     expect(tooltip.shown).toBe(false);
+  });
+
+  it("lights the pin under the pointer, moves the light to the next pin, and puts it out when the pointer leaves the pins", async () => {
+    const { map, pin } = await hoveredPin();
+    const hoverStates = () =>
+      map.setFeatureState.mock.calls.filter(
+        ([, state]) => (state as { hover?: boolean }).hover !== undefined,
+      );
+    expect(hoverStates()).toEqual([
+      [{ source: "complexes", id: ARRAY.id }, { hover: true }],
+    ]);
+
+    // Moving within the same pin changes nothing.
+    map.fireOnLayer("mousemove", "core", pin);
+    expect(hoverStates()).toHaveLength(1);
+
+    map.fireOnLayer("mousemove", "core", {
+      features: [{ properties: { id: ELSEWHERE.id, v: 1 } }],
+      lngLat: { lng: ELSEWHERE.lon, lat: ELSEWHERE.lat },
+    });
+    expect(hoverStates().slice(1)).toEqual([
+      [{ source: "complexes", id: ARRAY.id }, { hover: false }],
+      [{ source: "complexes", id: ELSEWHERE.id }, { hover: true }],
+    ]);
+
+    map.fireOnLayer("mouseleave", "core", {});
+    expect(hoverStates().slice(3)).toEqual([
+      [{ source: "complexes", id: ELSEWHERE.id }, { hover: false }],
+    ]);
   });
 
   it("names the address and its complaints, in the singular for one and in words for none", () => {

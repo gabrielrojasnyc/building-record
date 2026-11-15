@@ -188,7 +188,7 @@ async function readCount(locator: Locator): Promise<number> {
   return Number((await locator.innerText()).replace(/,/g, ""));
 }
 
-/** The tray lists every complex until the map reports where it is looking, so a smaller count means the map has started. */
+/** The count takes in every complex until the map reports where it is looking, so a smaller count means the map has started. */
 async function waitForMap(page: Page) {
   await expect
     .poll(() => readCount(trayCount(page)))
@@ -201,10 +201,6 @@ const search = (page: Page) => page.getByRole("combobox");
 const spotlit = (page: Page, id: string) =>
   page.locator(`[data-spotlight="${id}"]`);
 const labels = (page: Page) => page.locator(".spotlight-label");
-const cardIds = (page: Page) =>
-  cards(page).evaluateAll((elements) =>
-    elements.map((element) => element.getAttribute("data-complex-id")),
-  );
 
 function recordOf(id: string): ComplexRecord {
   const complex = complexes.find((candidate) => candidate.id === id);
@@ -225,6 +221,57 @@ async function pickFromSearch(
     .click();
 }
 
+/** Where a pin with complaints is in the open middle of the map: the pointer there turns to a hand and opens the pin's tooltip. */
+function findPin(page: Page) {
+  return page.evaluate(() => {
+    const canvas =
+      document.querySelector<HTMLCanvasElement>(".maplibregl-canvas");
+    if (!canvas) return null;
+    const { innerWidth: width, innerHeight: height } = window;
+    for (let y = Math.round(height * 0.35); y < height * 0.7; y += 6) {
+      for (let x = 40; x < width - 40; x += 6) {
+        if (document.elementFromPoint(x, y) !== canvas) continue;
+        canvas.dispatchEvent(
+          new MouseEvent("mousemove", {
+            clientX: x,
+            clientY: y,
+            bubbles: true,
+          }),
+        );
+        const said = document.querySelector(".pin-tooltip")?.textContent ?? "";
+        if (
+          canvas.style.cursor === "pointer" &&
+          !said.endsWith("no complaints")
+        )
+          return { x, y };
+      }
+    }
+    return null;
+  });
+}
+
+/**
+ * Picks a building by its pin, and returns what the pin's tooltip said: "address: N complaints". The pins draw a
+ * moment after the map first reports, and the camera may still be easing back from a building, so it looks again
+ * until a pick takes.
+ */
+async function pickFromMap(page: Page): Promise<string> {
+  let said = "";
+  await expect(async () => {
+    const pin = await findPin(page);
+    expect(
+      pin,
+      "a pin with complaints in the open part of the map",
+    ).not.toBeNull();
+    if (!pin) return;
+    await page.mouse.move(pin.x, pin.y);
+    said = (await page.locator(".pin-tooltip").innerText()).trim();
+    await page.mouse.click(pin.x, pin.y);
+    await expect(panel(page)).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+  return said;
+}
+
 async function openFirstCard(page: Page): Promise<string> {
   const id = await cards(page).first().getAttribute("data-complex-id");
   expect(id).not.toBeNull();
@@ -237,7 +284,9 @@ test.beforeEach(async ({ page }) => {
   await stubCity(page);
 });
 
-test("pick an area, open a building, see its record", async ({ page }) => {
+test("pick an area, open a building from its pin, see its record", async ({
+  page,
+}) => {
   await page.goto("/");
   await waitForMap(page);
   const before = await readCount(trayCount(page));
@@ -250,111 +299,47 @@ test("pick an area, open a building, see its record", async ({ page }) => {
   }
   await expect(page.getByText(/complexes in view/)).toBeVisible();
 
-  await page.getByRole("button", { name: "Fewest first" }).click();
-  await expect(page.getByRole("button", { name: "Most first" })).toBeVisible();
-
-  const first = cards(page).first();
-  const cardText = await first.innerText();
-  await first.click();
+  const said = await pickFromMap(page);
   await expect(page.getByText("What the complaints were about")).toBeVisible();
-  const heading = await panel(page)
-    .getByRole("heading", { level: 2 })
-    .innerText();
-  expect(cardText).toContain(heading);
+  // The tooltip names the pin's address, and the record gives it under its title.
+  await expect(panel(page)).toContainText(said.slice(0, said.lastIndexOf(":")));
   await expect(page.locator("body")).not.toContainText(/code case/i);
 });
 
-test("a card's figure is its record's lead figure, in each of the three periods", async ({
-  page,
-}) => {
-  for (const [query, phrase] of [
-    ["", "in the last 12 months"],
-    ["period=2y&", "in the last 2 years"],
-    ["period=3y&", "in the last 3 years"],
-  ]) {
-    await page.goto(`/?${query}order=most`);
-    await waitForMap(page);
-    const first = cards(page).first();
-    const figure = (await first.innerText()).split("\n")[0];
-    expect(figure, query).toMatch(/^\d[\d,]*$/);
-    await first.click();
-    await expect(panel(page).getByText(phrase, { exact: true })).toBeVisible();
-    await expect(
-      panel(page).getByText(phrase, { exact: true }).locator("xpath=../.."),
-    ).toContainText(new RegExp(`^${figure} complaints? `));
-  }
-});
-
-test("the tray gives a card only to a complex with complaints, and says how many in view have none", async ({
+test("the map screen has no cards: its count says how many in view have no complaints, with the area shortcuts beside it on a desktop", async ({
   page,
 }) => {
   await page.goto("/");
   await waitForMap(page);
 
-  await expect(cards(page).first()).toBeVisible();
-  await expect(page.getByText(/^[\d,]+ with no complaints$/)).toBeVisible();
-  // No card stands for a complex with nothing on file: every card leads with a number above zero.
-  const figures = await cards(page).evaluateAll((elements) =>
-    elements.map((element) =>
-      Number((element.textContent ?? "").replace(/,/g, "").match(/^\d+/)?.[0]),
-    ),
-  );
-  expect(figures.length).toBeGreaterThan(0);
-  expect(figures.every((figure) => figure > 0)).toBe(true);
-  await expect(page.getByText("no complaints on file")).toHaveCount(0);
-});
-
-test("a filtered view survives a reload", async ({ page }) => {
-  await page.goto("/?period=3y&order=most");
-  await expect(page.getByRole("button", { name: "3 years" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await expect(page.getByRole("button", { name: "Most first" })).toBeVisible();
-
-  await page.reload();
-  await expect(page.getByRole("button", { name: "3 years" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await expect(page.getByRole("button", { name: "Most first" })).toBeVisible();
-});
-
-test("the address bar names 2 and 3 years, and a retired period falls back to 12 months and is dropped on the next change", async ({
-  page,
-}) => {
-  await page.goto("/?period=cases&order=most");
-  await expect(page.getByRole("button", { name: "12 months" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await expect(page.getByRole("button", { name: "Most first" })).toBeVisible();
-
-  await page.getByRole("button", { name: "2 years" }).click();
-  await expect(page).toHaveURL(/\/\?period=2y&order=most$/);
-  await page.getByRole("button", { name: "3 years" }).click();
-  await expect(page).toHaveURL(/\/\?period=3y&order=most$/);
-  await page.getByRole("button", { name: "12 months" }).click();
-  await expect(page).toHaveURL(/\/\?order=most$/);
-});
-
-test("the building panel takes focus, closes on Escape and hands focus back to its card", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await waitForMap(page);
-
-  const id = await openFirstCard(page);
-  await expect(panel(page)).toBeFocused();
-
-  await page.keyboard.press("Escape");
-  await expect(panel(page)).toBeHidden();
+  const leftOut = page.getByText(/^[\d,]+ with no complaints$/);
+  await expect(leftOut).toBeVisible();
+  await expect(cards(page)).toHaveCount(0);
   await expect(
-    page.locator(`[data-testid="card"][data-complex-id="${id}"]`),
-  ).toBeFocused();
+    page.getByRole("button", { name: /^(Fewest|Most) first$/ }),
+  ).toHaveCount(0);
+
+  const shortcuts = page.getByRole("navigation", { name: "Jump to an area" });
+  if (onPhone()) {
+    await expect(shortcuts).toBeHidden();
+    return;
+  }
+  const [note, downtown, notice] = await Promise.all([
+    leftOut.boundingBox(),
+    shortcuts.getByRole("button", { name: "Downtown" }).boundingBox(),
+    page.getByText(NOT_OFFICIAL).boundingBox(),
+  ]);
+  if (!note || !downtown || !notice)
+    throw new Error("Something is not on screen");
+  // On one row, the shortcuts after the pill, and the notice below them both.
+  expect(downtown.x).toBeGreaterThan(note.x + note.width);
+  expect(
+    Math.abs(downtown.y + downtown.height / 2 - (note.y + note.height / 2)),
+  ).toBeLessThan(4);
+  expect(notice.y).toBeGreaterThan(downtown.y + downtown.height);
 });
 
-test("hands focus back to its card even when Escape lands in the commit that stages the model", async ({
+test("hands focus back to the search even when Escape lands in the commit that stages the model", async ({
   page,
 }) => {
   // The map's wrapper gets data-spotlight in that commit. A MutationObserver runs right after it and before
@@ -380,15 +365,14 @@ test("hands focus back to its card even when Escape lands in the commit that sta
       }),
     );
   });
+  const complex = recordOf(COMPLEX_WITH_RECORD);
   await page.goto("/");
   await waitForMap(page);
 
-  const id = await cards(page).first().getAttribute("data-complex-id");
-  await cards(page).first().click();
+  await pickFromSearch(page, complex.address, complex);
   await expect(panel(page)).toBeHidden();
-  await expect(
-    page.locator(`[data-testid="card"][data-complex-id="${id}"]`),
-  ).toBeFocused();
+  await expect(page.locator("[data-spotlight]")).toHaveCount(0);
+  await expect(search(page)).toBeFocused();
 });
 
 test("with suggestions open, the first Escape closes only the suggestions", async ({
@@ -398,9 +382,11 @@ test("with suggestions open, the first Escape closes only the suggestions", asyn
     onPhone(),
     "On a phone the search steps aside while a building is open.",
   );
+  const complex = recordOf(COMPLEX_WITH_RECORD);
   await page.goto("/");
   await waitForMap(page);
-  await openFirstCard(page);
+  await pickFromSearch(page, complex.address, complex);
+  await expect(panel(page)).toBeVisible();
 
   await page.getByRole("combobox").fill("Zzyzx");
   await expect(
@@ -677,9 +663,7 @@ test.describe("when the map cannot start", () => {
     await page.goto("/");
     await expect(cards(page)).toHaveCount(40);
     await expect(
-      page.getByText(
-        `Showing 40 of ${withComplaints.toLocaleString("en-US")}`,
-      ),
+      page.getByText(`Showing 40 of ${withComplaints.toLocaleString("en-US")}`),
     ).toBeVisible();
     await expect(
       page.getByText(
@@ -765,9 +749,105 @@ test.describe("when the map cannot start", () => {
     expect(at("Show 40 more")).toBeGreaterThan(at("card"));
     expect(at("Method and sources")).toBeGreaterThan(at("Show 40 more"));
   });
+  test("the list gives a card only to a complex with complaints", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await expect(cards(page).first()).toBeVisible();
+
+    // No card stands for a complex with nothing on file: every card leads with a number above zero.
+    const figures = await cards(page).evaluateAll((elements) =>
+      elements.map((element) =>
+        Number(
+          (element.textContent ?? "").replace(/,/g, "").match(/^\d+/)?.[0],
+        ),
+      ),
+    );
+    expect(figures.length).toBeGreaterThan(0);
+    expect(figures.every((figure) => figure > 0)).toBe(true);
+    await expect(page.getByText("no complaints on file")).toHaveCount(0);
+  });
+
+  test("a card's figure is its record's lead figure, in each of the three periods", async ({
+    page,
+  }) => {
+    for (const [query, phrase] of [
+      ["", "in the last 12 months"],
+      ["period=2y&", "in the last 2 years"],
+      ["period=3y&", "in the last 3 years"],
+    ]) {
+      await page.goto(`/?${query}order=most`);
+      await expect(page.getByText(NO_MAP_SENTENCE)).toBeVisible();
+      const first = cards(page).first();
+      const figure = (await first.innerText()).split("\n")[0];
+      expect(figure, query).toMatch(/^\d[\d,]*$/);
+      await first.click();
+      await expect(
+        panel(page).getByText(phrase, { exact: true }),
+      ).toBeVisible();
+      await expect(
+        panel(page).getByText(phrase, { exact: true }).locator("xpath=../.."),
+      ).toContainText(new RegExp(`^${figure} complaints? `));
+    }
+  });
+
+  test("a filtered view survives a reload", async ({ page }) => {
+    await page.goto("/?period=3y&order=most");
+    await expect(page.getByRole("button", { name: "3 years" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(
+      page.getByRole("button", { name: "Most first" }),
+    ).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole("button", { name: "3 years" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(
+      page.getByRole("button", { name: "Most first" }),
+    ).toBeVisible();
+  });
+
+  test("the address bar names 2 and 3 years, and a retired period falls back to 12 months and is dropped on the next change", async ({
+    page,
+  }) => {
+    await page.goto("/?period=cases&order=most");
+    await expect(
+      page.getByRole("button", { name: "12 months" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByRole("button", { name: "Most first" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "2 years" }).click();
+    await expect(page).toHaveURL(/\/\?period=2y&order=most$/);
+    await page.getByRole("button", { name: "3 years" }).click();
+    await expect(page).toHaveURL(/\/\?period=3y&order=most$/);
+    await page.getByRole("button", { name: "12 months" }).click();
+    await expect(page).toHaveURL(/\/\?order=most$/);
+  });
+
+  test("the building panel takes focus, closes on Escape and hands focus back to its card", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await expect(cards(page).first()).toBeVisible();
+
+    const id = await openFirstCard(page);
+    await expect(panel(page)).toBeFocused();
+
+    await page.keyboard.press("Escape");
+    await expect(panel(page)).toBeHidden();
+    await expect(
+      page.locator(`[data-testid="card"][data-complex-id="${id}"]`),
+    ).toBeFocused();
+  });
 });
 
-test("with the map running, Tab goes search, filters, map, then the first card, each with a focus indicator", async ({
+test("with the map running, Tab goes search, filters, map, the area shortcuts on a desktop and the method link, never a card, each with a focus indicator", async ({
   page,
 }) => {
   await page.goto("/");
@@ -778,21 +858,30 @@ test("with the map running, Tab goes search, filters, map, then the first card, 
     const stop = await pressTab(page);
     if (!stop) continue;
     stops.push(stop);
-    if (stop.kind === "card") break;
+    if (stop.label === "Method and sources") break;
   }
 
   const first = (kind: Stop["kind"]) =>
     stops.findIndex((stop) => stop.kind === kind);
+  const at = (label: string) => stops.findIndex((stop) => stop.label === label);
   const search = first("search");
   const filter = first("filter");
   const map = first("map");
-  const card = first("card");
+  const downtown = at("Downtown");
+  const method = at("Method and sources");
   expect(search, "the first Tab lands on the search box").toBe(0);
   expect(filter).toBeGreaterThan(search);
   expect(map).toBeGreaterThan(filter);
-  expect(card).toBeGreaterThan(map);
+  expect(first("card"), "no card on the map screen").toBe(-1);
+  if (onPhone()) {
+    expect(downtown, "the area shortcuts are hidden on a phone").toBe(-1);
+  } else {
+    expect(downtown).toBeGreaterThan(map);
+  }
+  expect(method).toBeGreaterThan(Math.max(map, downtown));
 
-  for (const index of [search, filter, map, card]) {
+  for (const index of [search, filter, map, downtown, method]) {
+    if (index === -1) continue;
     expect(
       stops[index].ringed,
       `"${stops[index].label}" shows a focus indicator`,
@@ -852,22 +941,23 @@ test.describe("a picked building", () => {
     await expect(spotlit(page, NAMED.id)).toBeAttached();
   });
 
-  test("leaves on Escape: the model goes, the tray counts what it did before the pick, then follows the map again", async ({
+  test("leaves on Escape: the model goes, the count is what it was before the pick, then follows the map again", async ({
     page,
   }) => {
+    const complex = recordOf(COMPLEX_WITH_RECORD);
     await page.goto("/");
     await waitForMap(page);
     const before = await trayCount(page).innerText();
 
-    const id = await openFirstCard(page);
-    await expect(spotlit(page, id)).toBeAttached();
+    await pickFromSearch(page, complex.address, complex);
+    await expect(spotlit(page, complex.id)).toBeAttached();
     await page.keyboard.press("Escape");
 
     await expect(page.locator("[data-spotlight]")).toHaveCount(0);
     await expect(labels(page)).toHaveCount(0);
     await expect(trayCount(page)).toHaveText(before);
 
-    // A tray still holding would not follow a camera move the screen did not ask for, such as a smaller window.
+    // A count still holding would not follow a camera move the screen did not ask for, such as a smaller window.
     const viewport = page.viewportSize();
     if (!viewport) throw new Error("No viewport");
     await page.setViewportSize({
@@ -884,13 +974,12 @@ test.describe("a picked building", () => {
     }
   });
 
-  test("hands focus back to the search on closing, when it was picked there and the tray has no card for it", async ({
+  test("hands focus back to the search on closing, when it was picked there", async ({
     page,
   }) => {
     if (!NAMED) return;
     await page.goto("/");
     await waitForMap(page);
-    expect(await cardIds(page)).not.toContain(NAMED.id);
 
     await pickFromSearch(page, NAMED.address, NAMED);
     await expect(spotlit(page, NAMED.id)).toBeAttached();
@@ -899,19 +988,12 @@ test.describe("a picked building", () => {
     await expect(search(page)).toBeFocused();
   });
 
-  test("hands focus to the tray's count line, never an input, when it was picked from a card that has since left the tray", async ({
+  test("hands focus to the count line, never an input, when it was picked from a pin", async ({
     page,
   }) => {
-    test.skip(
-      onPhone(),
-      "On a phone the record sheet covers the tray, so its order cannot change while a building is open.",
-    );
     await page.goto("/");
     await waitForMap(page);
-    const id = await openFirstCard(page);
-    // The fewest first card is not among the most first, so the tray no longer has a card for the open building.
-    await page.getByRole("button", { name: "Fewest first" }).click();
-    expect(await cardIds(page)).not.toContain(id);
+    await pickFromMap(page);
 
     const countLine = page
       .locator('p[tabindex="-1"]')
@@ -932,9 +1014,7 @@ test.describe("a picked building", () => {
     expect(await ring()).toMatch(/^solid [1-9]/);
 
     // Closed with a press, it takes focus with no ring.
-    const again = await openFirstCard(page);
-    await page.getByRole("button", { name: "Most first" }).click();
-    expect(await cardIds(page)).not.toContain(again);
+    await pickFromMap(page);
     await page.getByRole("button", { name: "Close building details" }).click();
     await expect(panel(page)).toHaveCount(0);
     await expect(countLine).toBeFocused();
@@ -944,11 +1024,12 @@ test.describe("a picked building", () => {
   test("on a phone steps the search and filters aside while it is open, and on a desktop leaves them", async ({
     page,
   }) => {
+    const complex = recordOf(COMPLEX_WITH_RECORD);
     await page.goto("/");
     await waitForMap(page);
     const period = page.getByRole("button", { name: "12 months" });
 
-    await openFirstCard(page);
+    await pickFromSearch(page, complex.address, complex);
     await expect(panel(page)).toBeFocused();
     if (onPhone()) {
       await expect(search(page)).toBeHidden();
@@ -969,23 +1050,21 @@ test.describe("a picked building", () => {
     await expect(period).toBeVisible();
   });
 
-  test("keeps the tray's cards while it is open, though the camera moves", async ({
+  test("keeps the count while it is open, though the camera moves", async ({
     page,
   }) => {
+    const complex = recordOf(COMPLEX_WITH_RECORD);
     await page.goto("/");
     await waitForMap(page);
-    const before = {
-      ids: await cardIds(page),
-      count: await trayCount(page).innerText(),
-    };
+    const count = page.getByRole("region", { name: /complexes? in/ });
+    const before = await count.innerText();
 
-    const id = await openFirstCard(page);
-    await expect(spotlit(page, id)).toBeAttached();
+    await pickFromSearch(page, complex.address, complex);
+    await expect(spotlit(page, complex.id)).toBeAttached();
     // Unchanging is only shown over time: let the camera fly in and start to turn.
     await page.waitForTimeout(3_000);
 
-    expect(await cardIds(page)).toEqual(before.ids);
-    await expect(trayCount(page)).toHaveText(before.count);
+    expect(await count.innerText()).toBe(before);
   });
 
   test("picked and then replaced straight away leaves one label, for the second", async ({
@@ -993,16 +1072,15 @@ test.describe("a picked building", () => {
   }) => {
     test.skip(
       onPhone(),
-      "On a phone the record sheet covers the tray and the search steps aside, so no second pick is in reach.",
+      "On a phone the search steps aside while a building is open, so no second pick is in reach.",
     );
+    const first = recordOf(COMPLEX_WITH_RECORD);
+    const second = recordOf(LONG_LABEL);
     await page.goto("/");
     await waitForMap(page);
-    const [, secondId] = await cardIds(page);
-    expect(secondId).toBeTruthy();
-    const second = recordOf(secondId ?? "");
 
-    await cards(page).first().click();
-    await cards(page).nth(1).click();
+    await pickFromSearch(page, first.address, first);
+    await pickFromSearch(page, second.address, second);
 
     await expect(spotlit(page, second.id)).toBeAttached();
     await expect(labels(page)).toHaveCount(1);
@@ -1048,15 +1126,16 @@ test.describe("a picked building", () => {
   test("still opens its full record and stands forward when the city's building footprints fail", async ({
     page,
   }) => {
+    const complex = recordOf(COMPLEX_WITH_RECORD);
     await page.route(FOOTPRINTS, (route) => route.fulfill({ status: 500 }));
     await page.goto("/");
     await waitForMap(page);
 
     const askedForFootprints = page.waitForRequest(/3qcc-8uhz/);
-    const id = await openFirstCard(page);
+    await pickFromSearch(page, complex.address, complex);
     await askedForFootprints;
 
-    await expect(spotlit(page, id)).toBeAttached();
+    await expect(spotlit(page, complex.id)).toBeAttached();
     await expect(
       panel(page).getByText("in the last 12 months", { exact: true }),
     ).toBeVisible();
@@ -1239,7 +1318,9 @@ test.describe("a building's complaint types", () => {
 
     // Shift+Tab to a link far above scrolls it into view. Chromium centres a focused element; other browsers bring
     // it to the nearest edge, which is what `nearest` asks for here: the link arrives at the top of what scrolls.
-    const record = complaints.getByRole("link", { name: /^City record/ }).first();
+    const record = complaints
+      .getByRole("link", { name: /^City record/ })
+      .first();
     await record.evaluate((element) =>
       element.scrollIntoView({ block: "nearest" }),
     );

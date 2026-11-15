@@ -50,11 +50,11 @@ type LoadState<T> =
 const LOADING = { status: "loading" } as const;
 
 /*
-  On desktop the panel hangs between the filter bar and the tray head, which stands 273 px above
-  the bottom (the tray plus the data notice under it). On a phone it is a bottom sheet over the tray.
+  On desktop the panel hangs between the filter bar and the count pill, which stands 93 px above
+  the bottom (the pill plus the data notice under it). On a phone it is a bottom sheet over the pill.
 */
 const MAP_PLACEMENT =
-  "building-sheet fixed top-[76px] right-(--gutter) bottom-[277px] z-3 w-[372px] overflow-hidden rounded-[28px] motion-safe:animate-rise phone:top-auto phone:right-0 phone:bottom-0 phone:left-0 phone:z-4 phone:h-[60dvh] phone:w-auto phone:rounded-b-none";
+  "building-sheet fixed top-[76px] right-(--gutter) bottom-[97px] z-3 w-[372px] overflow-hidden rounded-[28px] motion-safe:animate-rise phone:top-auto phone:right-0 phone:bottom-0 phone:left-0 phone:z-4 phone:h-[60dvh] phone:w-auto phone:rounded-b-none";
 /*
   Contained, so a drag that reaches the top of the sheet never turns into the page's pull to refresh.
   `record-scroller` fades its top band once it is scrolled, from globals.css.

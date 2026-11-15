@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type Ref } from "react";
+import { useId, useState, type Ref } from "react";
 import { formatCount } from "@/domain/format";
 import { CATEGORY_LABEL, OUTCOME_CARD_PHRASE, titleOf } from "@/domain/labels";
 import { OUTCOMES, OUTCOME_LABEL, type Outcome } from "@/domain/outcomes";
@@ -10,43 +10,23 @@ import {
   type View,
 } from "@/domain/query";
 import type { Complex } from "@/domain/types";
+import { CountPill } from "./CountPill";
 import { Glass } from "./Glass";
 
-export interface Area {
-  name: string;
-  lon: number;
-  lat: number;
-}
+const PAGE_SIZE = 40;
 
-export const AREAS: Area[] = [
-  { name: "Downtown", lon: -97.7431, lat: 30.268 },
-  { name: "The Domain", lon: -97.722, lat: 30.402 },
-  { name: "East Riverside", lon: -97.725, lat: 30.237 },
-  { name: "South Lamar", lon: -97.77, lat: 30.248 },
-  { name: "Rundberg", lon: -97.703, lat: 30.362 },
-  { name: "Mueller", lon: -97.705, lat: 30.298 },
-];
-
-const CARD_LIMIT = 40;
-
-/** 18 px taller than before outcomes, the height of the line that names them. Finder's camera padding and the panel's bottom grow with it. */
+/** One fixed height for every card and note, whatever their lines, so the rows of the list line up. */
 const CARD_SIZE = "h-[166px] rounded-[22px] px-[18px] py-4 phone:h-[154px]";
 
-interface TrayProps {
+interface ComplexListProps {
+  /** Every complex in Austin under the filters, in the view's order. */
   complexes: Complex[];
-  /** Every complex in Austin as a wrapping list the page scrolls, for a device where the map cannot start. */
-  citywide?: boolean;
-  /** The map has not yet said what it shows, so the complexes are all of Austin's. */
-  awaitingView?: boolean;
   view: View;
   selectedId: string | null;
-  hoveredId: string | null;
-  /** The count line that heads the tray, which takes focus when a closed building has no card here. */
+  /** The count line, which takes focus when a closed building has no card here. */
   countRef?: Ref<HTMLParagraphElement>;
   onSelect(id: string): void;
-  onHover(id: string | null): void;
   onToggleOrder(): void;
-  onJump(area: Area): void;
 }
 
 const complaintsWord = (count: number) =>
@@ -89,15 +69,13 @@ function outcomeLine(split: Record<Outcome, number>): {
   };
 }
 
-function TrayCard(props: {
+function ComplexCard(props: {
   complex: Complex;
   view: View;
   selected: boolean;
-  hovered: boolean;
   onSelect(id: string): void;
-  onHover(id: string): void;
 }) {
-  const { complex, view, selected, hovered } = props;
+  const { complex, view, selected } = props;
   const count = countFor(complex, view);
   const outcomes = outcomeLine(outcomeSplit(complex, view));
   // Under a type filter the figure counts that type alone, and a card with no name has room to say so.
@@ -113,10 +91,8 @@ function TrayCard(props: {
       data-testid="card"
       data-complex-id={complex.id}
       aria-current={selected ? "true" : undefined}
-      data-hovered={hovered ? "" : undefined}
       onClick={() => props.onSelect(complex.id)}
-      onMouseEnter={() => props.onHover(complex.id)}
-      className={`tray-card glass flex w-[232px] flex-none cursor-pointer snap-start flex-col text-left phone:w-[200px] ${CARD_SIZE}`}
+      className={`complex-card glass flex w-[232px] flex-none cursor-pointer flex-col text-left phone:w-[200px] ${CARD_SIZE}`}
     >
       <span className="flex items-start justify-between gap-2">
         <span>
@@ -160,145 +136,72 @@ function TrayCard(props: {
   );
 }
 
-function TrayNote({ children }: { children: string }) {
+function ListNote({ children }: { children: string }) {
   return (
     <Glass
-      className={`flex w-[280px] flex-none snap-start flex-col justify-center text-slate ${CARD_SIZE}`}
+      className={`flex w-[280px] flex-none flex-col justify-center text-slate ${CARD_SIZE}`}
     >
       {children}
     </Glass>
   );
 }
 
-export function Tray(props: TrayProps) {
-  const { complexes, view, selectedId, hoveredId, countRef } = props;
+/**
+ * Every complex in Austin as a wrapping list the page scrolls, for a device where the map cannot start.
+ * A card is for a complex with complaints in the view; the rest are counted beside the total, and found by search.
+ */
+export function ComplexList(props: ComplexListProps) {
+  const { complexes, view, selectedId } = props;
   const countId = useId();
-  const cardsRef = useRef<HTMLDivElement>(null);
-  const citywide = props.citywide === true;
-  const countsAustin = citywide || props.awaitingView === true;
   const total = complexes.length;
-  // A card is for a complex with complaints in the view. The rest stay on the map and in search, and are counted beside the total.
   const listed = complexes.filter((complex) => countFor(complex, view) > 0);
-  const leftOut = total - listed.length;
-  const where = countsAustin ? "in Austin" : "in view";
 
   // Pages of 40 apply to the view they were asked for; any other view starts again at one page.
   const viewKey = viewToSearchParams(view).toString();
   const [revealed, setRevealed] = useState({ viewKey, pages: 1 });
   const pages = revealed.viewKey === viewKey ? revealed.pages : 1;
-  const shown = citywide
-    ? Math.min(listed.length, CARD_LIMIT * pages)
-    : Math.min(listed.length, CARD_LIMIT);
+  const shown = Math.min(listed.length, PAGE_SIZE * pages);
   const hidden = listed.length - shown;
 
-  const toggleOrder = () => {
-    props.onToggleOrder();
-    if (cardsRef.current) cardsRef.current.scrollLeft = 0;
-  };
-
   return (
-    <section
-      aria-labelledby={countId}
-      className={citywide ? "flex min-h-0 flex-1 flex-col" : undefined}
-    >
+    <section aria-labelledby={countId} className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2.5 px-(--gutter) pb-2.5">
-        <Glass className="flex h-[42px] flex-none items-center gap-2 rounded-full pr-1.5 pl-[18px]">
-          {/* Side by side with a rule between them; on a phone the second sits small under the first, so the pill keeps its width. */}
-          <div className="flex items-center gap-2 phone:flex-col phone:items-start phone:gap-0">
-            <p
-              id={countId}
-              ref={countRef}
-              tabIndex={-1}
-              className="flex items-center gap-2"
-            >
-              <strong className="font-display text-2xl leading-none font-normal text-deep tabular-nums">
-                {total.toLocaleString("en-US")}
-              </strong>{" "}
-              <span className="text-sm text-slate">
-                {total === 1 ? "complex" : "complexes"} {where}
-              </span>
-            </p>
-            {leftOut > 0 && (
-              <>
-                <span
-                  aria-hidden
-                  className="h-5 w-px flex-none bg-deep/16 phone:hidden"
-                />
-                <p className="text-[13px] whitespace-nowrap text-steel phone:text-[11px] phone:leading-none">
-                  {formatCount(leftOut)}{" "}
-                  {view.category === "all"
-                    ? "with no complaints"
-                    : "with none of this type"}
-                </p>
-              </>
-            )}
-          </div>
+        <CountPill
+          id={countId}
+          countRef={props.countRef}
+          total={total}
+          leftOut={total - listed.length}
+          where="in Austin"
+          category={view.category}
+        >
           <button
             type="button"
-            onClick={toggleOrder}
+            onClick={props.onToggleOrder}
             className="ml-1.5 h-[30px] cursor-pointer rounded-full bg-white/55 px-3 text-[13px] font-normal text-deep hover:bg-white/85"
           >
             {view.order === "fewest" ? "Fewest first" : "Most first"}
           </button>
-        </Glass>
-        {!citywide && (
-          <nav
-            aria-label="Jump to an area"
-            className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] phone:hidden [&::-webkit-scrollbar]:hidden"
-          >
-            {AREAS.map((area) => (
-              <button
-                key={area.name}
-                type="button"
-                onClick={() => props.onJump(area)}
-                className="h-[30px] flex-none cursor-pointer rounded-full border border-ice/50 bg-deep/28 px-[13px] text-[13px] font-normal text-ice backdrop-blur-[10px] hover:bg-deep/50"
-              >
-                {area.name}
-              </button>
-            ))}
-          </nav>
-        )}
+        </CountPill>
       </div>
-      <div
-        ref={cardsRef}
-        onMouseLeave={() => props.onHover(null)}
-        className={
-          citywide
-            ? "flex min-h-0 flex-1 flex-wrap content-start gap-3 overflow-y-auto px-(--gutter) pt-2 pb-1.5"
-            : "flex snap-x snap-proximity scroll-px-(--gutter) gap-3 overflow-x-auto px-(--gutter) pt-2 pb-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        }
-      >
+      <div className="flex min-h-0 flex-1 flex-wrap content-start gap-3 overflow-y-auto px-(--gutter) pt-2 pb-1.5">
         {listed.slice(0, shown).map((complex) => (
-          <TrayCard
+          <ComplexCard
             key={complex.id}
             complex={complex}
             view={view}
             selected={complex.id === selectedId}
-            hovered={complex.id === hoveredId}
             onSelect={props.onSelect}
-            onHover={props.onHover}
           />
         ))}
         {total === 0 && (
-          <TrayNote>
-            {citywide
-              ? "No apartment complexes match these filters."
-              : "No apartment complexes in this part of the map. Zoom out or jump to an area."}
-          </TrayNote>
+          <ListNote>No apartment complexes match these filters.</ListNote>
         )}
         {total > 0 && listed.length === 0 && (
-          <TrayNote>
-            {`No ${view.category === "all" ? "" : `${CATEGORY_LABEL[view.category].toLowerCase()} `}complaints ${PERIOD_PHRASE[view.period]} at the ${total === 1 ? "one complex" : `${formatCount(total)} complexes`} ${where}.`}
-          </TrayNote>
+          <ListNote>
+            {`No ${view.category === "all" ? "" : `${CATEGORY_LABEL[view.category].toLowerCase()} `}complaints ${PERIOD_PHRASE[view.period]} at the ${total === 1 ? "one complex" : `${formatCount(total)} complexes`} in Austin.`}
+          </ListNote>
         )}
-        {!citywide && hidden > 0 && (
-          <TrayNote>
-            {countsAustin
-              ? `${hidden.toLocaleString("en-US")} more in Austin.`
-              : `${hidden.toLocaleString("en-US")} more in view. Zoom in to narrow them down.`}
-          </TrayNote>
-        )}
-        {citywide && listed.length > CARD_LIMIT && (
+        {listed.length > PAGE_SIZE && (
           <div className="flex w-full items-center gap-3 pt-1 pb-1 text-[13px] text-slate">
             {hidden > 0 && (
               <button
@@ -306,7 +209,7 @@ export function Tray(props: TrayProps) {
                 onClick={() => setRevealed({ viewKey, pages: pages + 1 })}
                 className="h-[30px] cursor-pointer rounded-full bg-white/55 px-3 text-[13px] font-normal text-deep hover:bg-white/85"
               >
-                {`Show ${CARD_LIMIT} more`}
+                {`Show ${PAGE_SIZE} more`}
               </button>
             )}
             <span>

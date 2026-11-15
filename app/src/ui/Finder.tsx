@@ -11,6 +11,7 @@ import {
 } from "react";
 import type { AddressMatch } from "@/city/addressSearch";
 import { loadBuildingDetail } from "@/city/buildingDetail";
+import type { Area } from "@/domain/areas";
 import { titleOf } from "@/domain/labels";
 import {
   complexesInView,
@@ -23,11 +24,12 @@ import type { Complex, Meta } from "@/domain/types";
 import type { CameraPadding } from "@/map/BuildingMap";
 import type { SpotlightTarget } from "@/map/spotlight";
 import { BuildingPanel } from "./BuildingPanel";
+import { ComplexList } from "./ComplexList";
 import { Filters } from "./Filters";
 import { Glass } from "./Glass";
+import { InViewBar } from "./InViewBar";
 import { IntroSearch } from "./IntroSearch";
 import { Notice } from "./Notice";
-import { Tray, type Area } from "./Tray";
 
 // MapLibre needs the browser, so the map is left out of the prerendered HTML.
 const BuildingMap = dynamic(
@@ -50,20 +52,20 @@ const ADDRESS_ZOOM = 15;
 
 /*
   The camera centers on the strip of map the panels leave open. Top clears the intro block
-  (and the filter bar on phones); bottom clears the tray and the data notice below it, which
-  together stand 41 px taller than the mockup's tray on desktop and 79 px taller on a phone.
+  (and the filter bar on phones); bottom clears the count pill, the area shortcuts beside it
+  and the data notice below them.
 */
 const PHONE_QUERY = "(max-width: 760px)";
 const DESKTOP_PADDING: CameraPadding = {
   top: 80,
   right: 0,
-  bottom: 261,
+  bottom: 81,
   left: 0,
 };
 const PHONE_PADDING: CameraPadding = {
   top: 170,
   right: 0,
-  bottom: 279,
+  bottom: 111,
   left: 0,
 };
 
@@ -75,7 +77,7 @@ const PHONE_PADDING: CameraPadding = {
 const DESKTOP_SPOTLIGHT_PADDING: CameraPadding = {
   top: 110,
   right: 440,
-  bottom: 268,
+  bottom: 88,
   left: 70,
 };
 const PHONE_SHEET_SHARE = 0.6;
@@ -96,14 +98,14 @@ interface FlyTarget {
 }
 
 /**
- * The tray's hold: the ground it keeps counting while a building is open and until the camera is back.
- * `area` is null when the building was picked before the map first reported: the tray then keeps all of Austin.
+ * The count's hold: the ground it keeps counting while a building is open and until the camera is back.
+ * `area` is null when the building was picked before the map first reported: the count then keeps all of Austin.
  */
 interface Hold {
   area: ViewArea | null;
 }
 
-/** The camera eases back for about a second after a building closes; past this the tray stops waiting for it. */
+/** The camera eases back for about a second after a building closes; past this the count stops waiting for it. */
 const HOLD_AFTER_CLOSE_MS = 1500;
 
 /* On a phone the title block and filters step out of the way while a building is open, fading under motion-safe only. */
@@ -205,10 +207,9 @@ export function Finder({
   const [viewArea, setViewArea] = useState<ViewArea | null>(null);
   const [mapUnavailable, setMapUnavailable] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  /** So a moving camera never reshuffles the cards while a building is open. */
+  /** So a turning camera never makes the count flicker while a building is open. */
   const [hold, setHold] = useState<Hold | null>(null);
   const [stage, setStage] = useState<SpotlightTarget | null>(null);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [flyTo, setFlyTo] = useState<FlyTarget | null>(null);
 
   const byId = useMemo(
@@ -293,7 +294,7 @@ export function Finder({
 
   const selected = selectedId === null ? undefined : byId.get(selectedId);
   const controlsRef = useRef<HTMLDivElement>(null);
-  const trayCountRef = useRef<HTMLParagraphElement>(null);
+  const countLineRef = useRef<HTMLParagraphElement>(null);
   const openId = useRef<string | null>(null);
   const handFocusBack = useRef(false);
   /** Whether the building open now was picked through the search, the one place focus may go back to an input. */
@@ -302,7 +303,7 @@ export function Finder({
   /*
     Reads no render's values, so the panel's Escape listener can never hold a stale copy. The hold is
     left to end in its own ways (the camera back, the person moving the map, or the time limit), so
-    the list the building was picked from is still there when focus comes back to its card.
+    the count stays on the ground from before the pick while the camera eases back.
   */
   const clearSelection = useCallback(() => {
     handFocusBack.current = true;
@@ -311,9 +312,10 @@ export function Finder({
   }, []);
 
   /*
-    Closing hands focus back to the card for the building that was open. With no card for it in the tray, focus goes
-    back to the search only when the pick was made there; otherwise to the tray's count line, since focus in the
-    search would open a phone's keyboard. After the render, so on a phone the search is back and can take it.
+    Closing hands focus back to the building's card in the list shown when the map cannot start. On the map there are
+    no cards, nor in the list for a building beyond the pages shown, so focus goes back to the search only when the
+    pick was made there; otherwise to the count line, since focus in the search would open a phone's keyboard. After
+    the render, so on a phone the search is back and can take it.
   */
   useEffect(() => {
     const closed = openId.current;
@@ -327,7 +329,7 @@ export function Finder({
     const search =
       controlsRef.current?.querySelector<HTMLElement>('[role="combobox"]');
     (
-      card ?? (pickedThroughSearch.current ? search : trayCountRef.current)
+      card ?? (pickedThroughSearch.current ? search : countLineRef.current)
     )?.focus();
   }, [selectedId]);
 
@@ -386,13 +388,11 @@ export function Finder({
           complexes={complexes}
           view={view}
           selectedId={selectedId}
-          hoveredId={hoveredId}
           flyTo={flyTo}
           padding={padding}
           spotlight={spotlight}
           onViewAreaChange={reportViewArea}
           onSelect={(id) => select(id)}
-          onHover={setHoveredId}
           onUnavailable={() => setMapUnavailable(true)}
         />
       </div>
@@ -421,24 +421,29 @@ export function Finder({
             </Glass>
           </div>
         )}
-        <Tray
-          citywide={mapUnavailable}
-          awaitingView={countedArea === null}
-          complexes={inView}
-          view={view}
-          selectedId={selectedId}
-          hoveredId={hoveredId}
-          countRef={trayCountRef}
-          onSelect={(id) => select(id)}
-          onHover={setHoveredId}
-          onToggleOrder={() =>
-            changeView({
-              ...view,
-              order: view.order === "fewest" ? "most" : "fewest",
-            })
-          }
-          onJump={jump}
-        />
+        {mapUnavailable ? (
+          <ComplexList
+            complexes={inView}
+            view={view}
+            selectedId={selectedId}
+            countRef={countLineRef}
+            onSelect={(id) => select(id)}
+            onToggleOrder={() =>
+              changeView({
+                ...view,
+                order: view.order === "fewest" ? "most" : "fewest",
+              })
+            }
+          />
+        ) : (
+          <InViewBar
+            complexes={inView}
+            awaitingView={countedArea === null}
+            view={view}
+            countRef={countLineRef}
+            onJump={jump}
+          />
+        )}
         <div className="px-(--gutter)">
           <Notice meta={meta} />
         </div>
