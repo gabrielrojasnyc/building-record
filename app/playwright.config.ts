@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
-/** Not 3000, so the suite never talks to a dev server someone left running. */
-const PORT = 3100;
+/** Not 3000, so the suite never talks to a dev server someone left running. E2E_PORT lets two checkouts run the suite at once. */
+const PORT = Number(process.env.E2E_PORT ?? 3100);
 
 export default defineConfig({
   testDir: "./e2e",
@@ -14,12 +14,17 @@ export default defineConfig({
     baseURL: `http://localhost:${PORT}`,
     trace: "retain-on-failure",
     // Headless Chromium has no GPU. Software rendering lets MapLibre start its WebGL context.
-    launchOptions: { args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] },
+    launchOptions: {
+      args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+    },
   },
   projects: [
     {
       name: "desktop",
-      use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } },
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1440, height: 900 },
+      },
     },
     {
       name: "phone",
