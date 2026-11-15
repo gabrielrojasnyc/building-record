@@ -197,21 +197,32 @@ const WORDS_THAT_NAME_NO_PLACE = new Set([
   "austin",
 ]);
 
+/** Short forms a sign and a registration write differently, read as the word they stand for. */
+const SAME_WORD: ReadonlyMap<string, string> = new Map([["mt", "mount"]]);
+
 /** A name's words in lower case, apostrophes and periods dropped, other punctuation splitting words. */
 function placeWords(name: string): string[] {
   return name
     .toLowerCase()
     .replace(/['’.]/g, "")
     .split(/[^\p{L}\p{N}]+/u)
-    .filter((word) => word !== "" && !WORDS_THAT_NAME_NO_PLACE.has(word));
+    .filter((word) => word !== "" && !WORDS_THAT_NAME_NO_PLACE.has(word))
+    .map((word) => SAME_WORD.get(word) ?? word);
 }
 
-/** True when every word one name has left is found in the other, so "Menlo at Mueller" agrees with "Menlo Apartments". */
+/**
+ * True when every word one name has left is found in the other, so "Menlo at Mueller" agrees with "Menlo
+ * Apartments", or when the two are the same once spaces are removed, so "Parkside" agrees with "Park Side".
+ */
 export function namesAgree(a: string, b: string): boolean {
   const [wordsA, wordsB] = [placeWords(a), placeWords(b)];
   const within = (words: string[], other: string[]) =>
     words.every((word) => other.includes(word));
-  return within(wordsA, wordsB) || within(wordsB, wordsA);
+  return (
+    within(wordsA, wordsB) ||
+    within(wordsB, wordsA) ||
+    wordsA.join("") === wordsB.join("")
+  );
 }
 
 export interface NameChoice {

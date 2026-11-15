@@ -82,6 +82,26 @@ describe("namesAgree", () => {
     expect(namesAgree(city, openStreetMap)).toBe(true);
   });
 
+  it("reads mt as mount", () => {
+    expect(
+      namesAgree("Mount Carmel Apartments", "Mt. Carmel Village Apartments"),
+    ).toBe(true);
+    expect(namesAgree("Mt Bonnell Flats", "Mount Bonnell")).toBe(true);
+  });
+
+  it("agrees when the two are the same once spaces are removed", () => {
+    expect(namesAgree("Parkside Apartments", "Park Side Apartments")).toBe(
+      true,
+    );
+    expect(namesAgree("The Lakeview", "Lake View Apartments")).toBe(true);
+    expect(namesAgree("Parkside Commons", "Park Side")).toBe(false);
+  });
+
+  it("still finds two names different when neither holds all of the other's words", () => {
+    expect(namesAgree("Altura Falls", "Avesta Altura Apartments")).toBe(false);
+    expect(namesAgree("Avesta Altura Apartments", "Altura Falls")).toBe(false);
+  });
+
   it("agrees when every word left of one name is in the other", () => {
     expect(namesAgree("Menlo at Mueller", "Menlo Apartments")).toBe(true);
     expect(
