@@ -1,0 +1,79 @@
+
+0304070701 1601 Royal Crest Dr parcels=0304070701 rows=284 diffs=0 lateRows=0
+  m12 total:10/10 violation:7/7 fixed:0/0 none:3/3 other:0/0 open:0/0 duplicates:2/2
+  y2  total:185/185 violation:112/112 fixed:1/1 none:71/71 other:1/1 open:0/0 duplicates:34/34
+  y3  total:246/246 violation:137/137 fixed:2/2 none:100/100 other:7/7 open:0/0 duplicates:38/38
+  y3  open (not closed): 1/1
+  y3  violationsOpen: 1/1
+
+0243100803 9024 Northgate Blvd parcels=0243100803 rows=259 diffs=0 lateRows=0
+  m12 total:45/45 violation:28/28 fixed:0/0 none:17/17 other:0/0 open:0/0 duplicates:0/0
+  y2  total:69/69 violation:39/39 fixed:0/0 none:29/29 other:1/1 open:0/0 duplicates:4/4
+  y3  total:243/243 violation:130/130 fixed:0/0 none:112/112 other:1/1 open:0/0 duplicates:16/16
+  y3  open (not closed): 2/2
+  y3  violationsOpen: 2/2
+
+0307110310 2239 Cromwell Cir parcels=0307110310 rows=237 diffs=0 lateRows=0
+  m12 total:75/75 violation:33/33 fixed:1/1 none:35/35 other:5/5 open:1/1 duplicates:7/7
+  y2  total:197/197 violation:80/80 fixed:1/1 none:88/88 other:27/27 open:1/1 duplicates:15/15
+  y3  total:222/222 violation:87/87 fixed:1/1 none:106/106 other:27/27 open:1/1 duplicates:15/15
+  y3  open (not closed): 14/14
+  y3  violationsOpen: 13/13
+
+0239160102 846 Payton Gin Rd parcels=0239160102 rows=34 diffs=0 lateRows=0
+  m12 total:14/14 violation:9/9 fixed:0/0 none:5/5 other:0/0 open:0/0 duplicates:2/2
+  y2  total:21/21 violation:11/11 fixed:0/0 none:10/10 other:0/0 open:0/0 duplicates:2/2
+  y3  total:32/32 violation:13/13 fixed:0/0 none:19/19 other:0/0 open:0/0 duplicates:2/2
+  y3  open (not closed): 3/3
+  y3  violationsOpen: 3/3
+
+R392272 10015 Lake Creek Pkwy parcels=R392272 rows=36 diffs=0 lateRows=0
+  m12 total:7/7 violation:3/3 fixed:0/0 none:3/3 other:1/1 open:0/0 duplicates:0/0
+  y2  total:19/19 violation:4/4 fixed:0/0 none:11/11 other:4/4 open:0/0 duplicates:1/1
+  y3  total:35/35 violation:6/6 fixed:0/0 none:25/25 other:4/4 open:0/0 duplicates:1/1
+  y3  open (not closed): 0/0
+  y3  violationsOpen: 0/0
+
+0204040107 85 Trinity St parcels=0204040107 rows=39 diffs=0 lateRows=0
+  m12 total:15/15 violation:1/1 fixed:0/0 none:13/13 other:0/0 open:1/1 duplicates:2/2
+  y2  total:24/24 violation:1/1 fixed:0/0 none:21/21 other:1/1 open:1/1 duplicates:2/2
+  y3  total:37/37 violation:3/3 fixed:0/0 none:31/31 other:2/2 open:1/1 duplicates:2/2
+  y3  open (not closed): 2/2
+  y3  violationsOpen: 1/1
+
+0221130237 1215 E 52nd St parcels=0221130237 rows=4 diffs=0 lateRows=0
+  m12 total:0/0 violation:0/0 fixed:0/0 none:0/0 other:0/0 open:0/0 duplicates:0/0
+  y2  total:2/2 violation:1/1 fixed:0/0 none:1/1 other:0/0 open:0/0 duplicates:2/2
+  y3  total:2/2 violation:1/1 fixed:0/0 none:1/1 other:0/0 open:0/0 duplicates:2/2
+  y3  open (not closed): 0/0
+  y3  violationsOpen: 0/0
+
+0210020608 604 W 18th St parcels=0210020608 rows=2 diffs=0 lateRows=0
+  m12 total:2/2 violation:1/1 fixed:0/0 none:0/0 other:0/0 open:1/1 duplicates:0/0
+  y2  total:2/2 violation:1/1 fixed:0/0 none:0/0 other:0/0 open:1/1 duplicates:0/0
+  y3  total:2/2 violation:1/1 fixed:0/0 none:0/0 other:0/0 open:1/1 duplicates:0/0
+  y3  open (not closed): 1/1
+  y3  violationsOpen: 0/0
+
+0100050212 1703 Kinney Ave parcels=0100050212 rows=2 diffs=0 lateRows=0
+  m12 total:0/0 violation:0/0 fixed:0/0 none:0/0 other:0/0 open:0/0 duplicates:0/0
+  y2  total:2/2 violation:0/0 fixed:0/0 none:1/1 other:1/1 open:0/0 duplicates:0/0
+  y3  total:2/2 violation:0/0 fixed:0/0 none:1/1 other:1/1 open:0/0 duplicates:0/0
+  y3  open (not closed): 0/0
+  y3  violationsOpen: 0/0
+
+0168090512 8312 Fathom Cir parcels=0168090512+R072626 rows=25 diffs=0 lateRows=0
+  m12 total:2/2 violation:1/1 fixed:0/0 none:1/1 other:0/0 open:0/0 duplicates:0/0
+  y2  total:16/16 violation:12/12 fixed:0/0 none:3/3 other:1/1 open:0/0 duplicates:9/9
+  y3  total:16/16 violation:12/12 fixed:0/0 none:3/3 other:1/1 open:0/0 duplicates:9/9
+  y3  open (not closed): 0/0
+  y3  violationsOpen: 0/0
+
+0307150614 6118 Fairway St parcels=0307150614+0307150617 rows=82 diffs=0 lateRows=0
+  m12 total:37/37 violation:19/19 fixed:0/0 none:14/14 other:4/4 open:0/0 duplicates:0/0
+  y2  total:42/42 violation:19/19 fixed:0/0 none:18/18 other:5/5 open:0/0 duplicates:0/0
+  y3  total:82/82 violation:34/34 fixed:0/0 none:41/41 other:7/7 open:0/0 duplicates:0/0
+  y3  open (not closed): 2/2
+  y3  violationsOpen: 2/2
+
+mismatching cells: 0

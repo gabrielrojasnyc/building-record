@@ -6,6 +6,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "4173", "--directory", "mockup"],
       "port": 4173
+    },
+    {
+      "name": "building-record",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "app", "run", "start", "--", "--port", "4180"],
+      "port": 4180
     }
   ]
 }
