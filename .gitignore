@@ -8,3 +8,4 @@ app/public/data
 app/.vitest
 app/test-results
 app/playwright-report
+.claude/worktrees
