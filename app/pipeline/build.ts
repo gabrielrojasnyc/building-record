@@ -32,7 +32,7 @@ export const MIN_EXPECTED_ADDRESS_POINTS = 300_000; // live: 441,043
 export const MIN_EXPECTED_REPEAT_OFFENDER_ROWS = 40; // live: 80
 export const MIN_EXPECTED_DEFICIENCY_ROWS = 1_000; // live: 5,376 in the rolling 3 years
 /** More unrecognized descriptions than this share of all complaint rows read means the city changed its categories. */
-export const MAX_UNCATEGORIZED_SHARE = 0.01; // live: under 0.1%
+export const MAX_UNCATEGORIZED_SHARE = 0.01; // live: 0%
 /** More outcome phrases outside the allow-list than this share of all complaint rows read means the city changed its wording. */
 export const MAX_UNRECOGNIZED_OUTCOME_SHARE = 0.01; // live: 0%
 /** More rows with no outcome phrase than this share means the city stopped sending it, and every outcome would be misread. */
