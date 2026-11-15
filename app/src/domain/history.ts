@@ -1,10 +1,7 @@
-/** The first day of the case history, inclusive. The city's dataset is sparse before it. */
+/** The day the city's case data becomes dense, which is why no period reaches back further than 3 years. */
 export const HISTORY_START = '2023-11-01';
-/** The month the history starts, YYYY-MM. */
-export const HISTORY_START_MONTH = HISTORY_START.slice(0, 7);
 
-/** How the start reads on screen. */
-export const HISTORY_START_SHORT = 'Nov 2023';
+/** How that day reads on screen. */
 export const HISTORY_START_LONG = 'November 2023';
 export const HISTORY_START_DAY = 'November 1, 2023';
 

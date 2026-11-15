@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import caseRows from "./fixtures/cases.json";
 import { PERIODS, periodStarts } from "@/domain/periods";
-import { categoryOf, emptyCaseSummary, loadCases } from "./cases";
+import type { Period } from "@/domain/periods";
+import {
+  categoryOf,
+  emptyCaseSummary,
+  loadCases,
+  type CaseSummary,
+} from "./cases";
 
 const PULLED_AT = new Date("2026-11-14T15:00:00Z");
 const PARCEL_A = "0100000001";
@@ -24,8 +30,11 @@ const caseOn = (opened: string, overrides: Record<string, string> = {}) => ({
   ...overrides,
 });
 
-const total = (counts: Record<string, number>) =>
-  Object.values(counts).reduce((a, b) => a + b, 0);
+/** Complaints in one period of a summary's tally, every category and outcome together. */
+const complaintsIn = (summary: CaseSummary, period: Period) =>
+  Object.values(summary.tally[period])
+    .flatMap((outcomes) => Object.values(outcomes))
+    .reduce((a, b) => a + b, 0);
 
 describe("categoryOf", () => {
   it("maps the four city descriptions", () => {
@@ -61,52 +70,59 @@ describe("loadCases with the fixture", () => {
     expect(index.byParcel.has("0100000003")).toBe(false);
     const a = index.byParcel.get(PARCEL_A)!;
     expect(a.open).toBe(2);
-    expect(a.lastCase).toBe("2026-11-14");
-    expect(a.detail.latest.map((c) => c.opened)).not.toContain("2026-11-20");
+    expect(a.detail.complaints.map((c) => c.opened)).not.toContain(
+      "2026-11-20",
+    );
   });
 
-  it("keeps the monthly series summing to the case total for every parcel", async () => {
+  it("keeps the monthly series summing to the complaints in the 3 year period for every parcel", async () => {
     const { index } = await load();
     for (const summary of index.byParcel.values()) {
       const monthlySum = summary.detail.monthly.reduce(
         (sum, m) => sum + m.count,
         0,
       );
-      expect(monthlySum).toBe(total(summary.cases));
+      expect(monthlySum).toBe(complaintsIn(summary, "y3"));
     }
   });
 
-  it("includes a case opened on 2023-11-01 in the totals and the first month", async () => {
+  it("asks the city for cases from the 3 year start and leaves out any opened before it", async () => {
     const { index, urls } = await load();
     expect(new URL(urls[0]).searchParams.get("$where")).toBe(
-      "opened_date >= '2023-11-01'",
+      "opened_date >= '2023-11-14'",
     );
-    const a = index.byParcel.get(PARCEL_A)!;
-    expect(a.cases.structure).toBe(4);
-    expect(a.detail.monthly[0]).toEqual({ month: "2023-11", count: 2 });
+    const opened = index.byParcel
+      .get(PARCEL_A)!
+      .detail.complaints.map((c) => c.opened);
+    // The fixture's cases of 2023-11-01 and 2023-11-02 are before 2023-11-14.
+    expect(opened).not.toContain("2023-11-01");
+    expect(opened).not.toContain("2023-11-02");
+    expect(index.byParcel.get(PARCEL_A)!.detail.monthly[0]).toEqual({
+      month: "2023-11",
+      count: 0,
+    });
   });
 
   it("keeps a parcel for every ID with a categorized case, trimming IDs", async () => {
     const { index } = await load();
     expect([...index.byParcel.keys()].sort()).toEqual([PARCEL_A, PARCEL_B]);
-    expect(total(index.byParcel.get(PARCEL_B)!.cases)).toBe(2);
+    expect(complaintsIn(index.byParcel.get(PARCEL_B)!, "y3")).toBe(2);
   });
 
-  it("counts a case on the 12 month boundary day in both periods and the day before in one", async () => {
+  it("counts a case on the 12 month boundary day in every period and the day before only in the longer ones", async () => {
     const { index } = await load();
     const a = index.byParcel.get(PARCEL_A)!;
-    // 2025-11-14 is inside the window, 2025-11-13 is outside; 2025-10-14 is 13 months back.
-    expect(a.cases12).toEqual({
-      structure: 2,
-      property: 1,
-      landuse: 2,
-      permit: 0,
+    // 2025-11-14 is inside the 12 months, 2025-11-13 is outside; 2025-10-14 is 13 months back.
+    expect(a.tally.m12).toEqual({
+      structure: { open: 1, other: 1 },
+      property: { open: 1 },
+      landuse: { other: 2 },
     });
-    expect(a.cases).toEqual({
-      structure: 4,
-      property: 2,
-      landuse: 2,
-      permit: 2,
+    expect(a.tally.y3).toEqual({
+      structure: { open: 1, other: 2 },
+      property: { open: 1, other: 1 },
+      landuse: { other: 2 },
+      permit: { other: 1 },
     });
   });
 
@@ -117,7 +133,7 @@ describe("loadCases with the fixture", () => {
     expect(index.byParcel.get(PARCEL_B)!.open).toBe(0);
   });
 
-  it("fills months with no cases as zero", async () => {
+  it("fills months with no complaints as zero, from the 3 year start's month to the pull month", async () => {
     const { index } = await load();
     const summary = index.byParcel.get(PARCEL_B)!;
     expect(summary.detail.monthly[0]).toEqual({ month: "2023-11", count: 0 });
@@ -131,44 +147,20 @@ describe("loadCases with the fixture", () => {
     ).toBe(1);
   });
 
-  it("puts a case from the first history month and one from the pull day in their months", async () => {
+  it("puts a case from the pull day in the last month", async () => {
     const { index } = await load();
     const { monthly } = index.byParcel.get(PARCEL_A)!.detail;
-    expect(monthly[0]).toEqual({ month: "2023-11", count: 2 });
     expect(monthly.at(-1)).toEqual({ month: "2026-11", count: 2 });
-    expect(monthly.reduce((sum, m) => sum + m.count, 0)).toBe(10);
+    expect(monthly.reduce((sum, m) => sum + m.count, 0)).toBe(8);
   });
 
-  it("keeps the 8 newest cases, newest first, with the city status unchanged", async () => {
-    const { index } = await load();
-    const { latest } = index.byParcel.get(PARCEL_A)!.detail;
-    expect(latest).toHaveLength(8);
-    expect(latest[0]).toEqual({
-      opened: "2026-11-14",
-      category: "property",
-      status: "Pending",
-    });
-    expect(latest.map((c) => c.opened)).toEqual(
-      [...latest.map((c) => c.opened)].sort().reverse(),
-    );
-    expect(latest.map((c) => c.opened)).not.toContain("2023-11-02");
-  });
-
-  it("reports the most recent categorized case as lastCase", async () => {
-    const { index } = await load();
-    expect(index.byParcel.get(PARCEL_A)!.lastCase).toBe("2026-11-14");
-    // The newer unknown description case on parcel B is ignored.
-    expect(index.byParcel.get(PARCEL_B)!.lastCase).toBe("2026-06-01");
-  });
-
-  it("never requests inspector or owner, and asks only for the case fields it uses since 2023-11-01", async () => {
+  it("never requests inspector or owner, and asks only for the case fields it uses", async () => {
     const { urls } = await load();
     const url = new URL(urls[0]);
     expect(url.pathname).toBe("/resource/6wtj-zbtb.json");
     expect(url.searchParams.get("$select")).toBe(
       "parcelid,description,status,opened_date,closed_date,last_update,violationcasenumber,violationcaselink",
     );
-    expect(url.searchParams.get("$where")).toBe("opened_date >= '2023-11-01'");
     expect(decodeURIComponent(urls[0])).not.toMatch(/inspector|owner/i);
   });
 });
@@ -180,20 +172,21 @@ describe("date boundaries", () => {
     return index.byParcel.get(PARCEL_A)!;
   };
 
-  it("counts a case opened 11 months before the pull in both periods, 13 months in one", async () => {
+  it("counts a case opened 11 months before the pull in every period, 13 months back only in the longer ones", async () => {
     const summary = await summaryFor("2026-11-14T15:00:00Z", [
       "2025-12-14",
       "2025-10-14",
     ]);
-    expect(total(summary.cases)).toBe(2);
-    expect(total(summary.cases12)).toBe(1);
+    expect(complaintsIn(summary, "y3")).toBe(2);
+    expect(complaintsIn(summary, "y2")).toBe(2);
+    expect(complaintsIn(summary, "m12")).toBe(1);
   });
 
   it("includes exactly the same day 12 months back and excludes the day before", async () => {
     const onDay = await summaryFor("2026-11-14T15:00:00Z", ["2025-11-14"]);
     const dayBefore = await summaryFor("2026-11-14T15:00:00Z", ["2025-11-13"]);
-    expect(total(onDay.cases12)).toBe(1);
-    expect(total(dayBefore.cases12)).toBe(0);
+    expect(complaintsIn(onDay, "m12")).toBe(1);
+    expect(complaintsIn(dayBefore, "m12")).toBe(0);
   });
 
   it("takes the pull date in Austin: 03:00Z is still the evening of 13 November", async () => {
@@ -203,10 +196,9 @@ describe("date boundaries", () => {
       "2026-11-13",
       "2026-11-14",
     ]);
-    // Austin date 2026-11-13: window opens 2025-11-13, and the 14th is in the future.
-    expect(total(summary.cases12)).toBe(2);
-    expect(total(summary.cases)).toBe(3);
-    expect(summary.lastCase).toBe("2026-11-13");
+    // Austin date 2026-11-13: the 12 months open on 2025-11-13, and the 14th is in the future.
+    expect(complaintsIn(summary, "m12")).toBe(2);
+    expect(complaintsIn(summary, "y3")).toBe(3);
   });
 
   it("takes the pull date in Austin: 07:00Z is the early morning of 14 November", async () => {
@@ -216,9 +208,8 @@ describe("date boundaries", () => {
       "2026-11-14",
       "2026-11-15",
     ]);
-    expect(total(summary.cases12)).toBe(2);
-    expect(total(summary.cases)).toBe(3);
-    expect(summary.lastCase).toBe("2026-11-14");
+    expect(complaintsIn(summary, "m12")).toBe(2);
+    expect(complaintsIn(summary, "y3")).toBe(3);
   });
 
   it("puts the pull in the previous month when Austin has not reached it yet", async () => {
@@ -234,41 +225,30 @@ describe("date boundaries", () => {
       "2027-02-28",
       "2027-02-27",
     ]);
-    expect(total(summary.cases12)).toBe(1);
+    expect(complaintsIn(summary, "m12")).toBe(1);
   });
 
-  it("ends the monthly series at the pull month", async () => {
+  it("runs the monthly series from the 3 year start's month to the pull month", async () => {
     const summary = await summaryFor("2024-02-10T15:00:00Z", ["2024-02-01"]);
-    expect(summary.detail.monthly.map((m) => m.month)).toEqual([
-      "2023-11",
-      "2023-12",
-      "2024-01",
-      "2024-02",
-    ]);
+    const months = summary.detail.monthly.map((m) => m.month);
+    expect(months[0]).toBe("2021-02");
+    expect(months).toHaveLength(37);
+    expect(months.at(-1)).toBe("2024-02");
     expect(summary.detail.monthly.at(-1)?.count).toBe(1);
   });
 });
 
 describe("emptyCaseSummary", () => {
-  it("returns zero counts and a zero-filled series for the pull date", () => {
+  it("returns nothing open and a zero-filled series for the pull date", () => {
     const summary = emptyCaseSummary("0100000009", PULLED_AT);
-    expect(summary.cases).toEqual({
-      structure: 0,
-      property: 0,
-      landuse: 0,
-      permit: 0,
-    });
-    expect(summary.cases12).toEqual(summary.cases);
     expect(summary.open).toBe(0);
-    expect(summary.lastCase).toBeNull();
     expect(summary.detail.id).toBe("0100000009");
-    expect(summary.detail.latest).toEqual([]);
     expect(summary.detail.monthly).toHaveLength(37);
     expect(summary.detail.monthly.every((m) => m.count === 0)).toBe(true);
+    expect(summary.detail.monthly[0].month).toBe("2023-11");
     expect(summary.detail.monthly.at(-1)?.month).toBe("2026-11");
   });
-});
-describe("emptyCaseSummary outcome fields", () => {
+
   it("starts with empty tallies, no duplicates and no open violations", () => {
     const summary = emptyCaseSummary("0100000009", PULLED_AT);
     expect(summary.tally).toEqual({ m12: {}, y2: {}, y3: {} });
@@ -341,8 +321,6 @@ describe("complaint outcomes", () => {
       permit: { open: 1 },
     });
     expect(summary.duplicates).toEqual({ m12: 1, y2: 1, y3: 2 });
-    // The existing counts keep their meaning: every categorized case since 2023-11-01, duplicates included.
-    expect(total(summary.cases)).toBe(6);
   });
 
   it("counts a complaint opened on a period start and leaves out the day before, for all three periods", async () => {
@@ -566,7 +544,7 @@ describe("complaint outcomes", () => {
     expect(backward).toEqual(forward);
   });
 
-  it("reads from the earlier of the history start and the 3 year start, but leaves the existing counts on the history start", async () => {
+  it("reads from the 3 year start whatever the pull date, and starts the monthly series in its month", async () => {
     const { urls, summary } = await summaryOf(
       [
         complaint("2023-10-31", { last_update: NONE }),
@@ -579,25 +557,61 @@ describe("complaint outcomes", () => {
     );
     expect(summary.tally.y3).toEqual({ property: { none: 2 } });
     expect(summary.detail.complaints).toHaveLength(2);
-    expect(total(summary.cases)).toBe(1);
-    expect(summary.detail.monthly[0]).toEqual({ month: "2023-11", count: 1 });
-    expect(summary.lastCase).toBe("2023-11-01");
+    expect(summary.detail.monthly.slice(0, 2)).toEqual([
+      { month: "2023-10", count: 1 },
+      { month: "2023-11", count: 1 },
+    ]);
   });
 
-  it("keeps the history start in the filter when it is the earlier one", async () => {
-    const { urls } = await summaryOf([complaint("2024-01-01")]);
-    expect(new URL(urls[0]).searchParams.get("$where")).toBe(
-      "opened_date >= '2023-11-01'",
-    );
-  });
-
-  it("leaves a complaint opened between the history start and the 3 year start out of the tallies but in the existing counts", async () => {
-    const { summary } = await summaryOf([
+  it("leaves a complaint opened before the 3 year start out of everything", async () => {
+    const { index } = await summaryOf([
       complaint("2023-11-05", { last_update: NONE }),
     ]);
-    expect(summary.tally.y3).toEqual({});
-    expect(summary.detail.complaints).toEqual([]);
-    expect(total(summary.cases)).toBe(1);
+    expect(index.byParcel.has(PARCEL_A)).toBe(false);
+  });
+
+  it("counts as open every complaint whose case is not closed, duplicates left out", async () => {
+    const { summary } = await summaryOf([
+      complaint("2026-09-01", { status: "Active", last_update: NONE }),
+      complaint("2026-09-02", {
+        status: "Active",
+        violationcasenumber: "2026 141538-CV",
+      }),
+      complaint("2026-09-03", { status: "Pending" }),
+      complaint("2026-09-04", { status: "Active", last_update: DUPLICATE }),
+      complaint("2026-09-05", { status: "Closed", last_update: NONE }),
+    ]);
+    expect(summary.open).toBe(3);
+  });
+
+  it("leaves duplicates out of the monthly series", async () => {
+    const { summary } = await summaryOf([
+      complaint("2026-09-01", { last_update: NONE }),
+      complaint("2026-09-02", { last_update: DUPLICATE }),
+      complaint("2026-09-03", { last_update: DUPLICATE }),
+    ]);
+    expect(
+      summary.detail.monthly.find((m) => m.month === "2026-09")?.count,
+    ).toBe(1);
+    expect(summary.duplicates.y3).toBe(2);
+  });
+
+  it("writes none of the retired fields: counts by category, the latest list or the last case date", async () => {
+    const { summary } = await summaryOf([
+      complaint("2026-09-01", { last_update: NONE }),
+    ]);
+    expect(Object.keys(summary).sort()).toEqual([
+      "detail",
+      "duplicates",
+      "open",
+      "tally",
+      "violationsOpen",
+    ]);
+    expect(Object.keys(summary.detail).sort()).toEqual([
+      "complaints",
+      "id",
+      "monthly",
+    ]);
   });
 });
 

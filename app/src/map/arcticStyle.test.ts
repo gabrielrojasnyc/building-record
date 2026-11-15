@@ -1,19 +1,11 @@
 import type { LayerSpecification, StyleSpecification } from "maplibre-gl";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_VIEW } from "@/domain/query";
-import type { Complex, Counts } from "@/domain/types";
+import type { Complex } from "@/domain/types";
 import { buildingsLayer, pinLayers, repaint, toFeatures } from "./arcticStyle";
 import positron from "./fixtures/positron.json";
 
 const base = positron as unknown as StyleSpecification;
-
-const counts = (overrides: Partial<Counts> = {}): Counts => ({
-  structure: 0,
-  property: 0,
-  landuse: 0,
-  permit: 0,
-  ...overrides,
-});
 
 const burton: Complex = {
   id: "0123456789",
@@ -23,13 +15,15 @@ const burton: Complex = {
   lon: -97.72,
   lat: 30.23,
   acres: 5,
-  cases12: counts({ structure: 100, property: 50 }),
-  cases: counts({ structure: 200, property: 84 }),
   open: 3,
-  tally: { m12: {}, y2: {}, y3: {} },
-  duplicates: { m12: 0, y2: 0, y3: 0 },
+  tally: {
+    m12: { structure: { violation: 60, none: 40 }, property: { none: 50 } },
+    y2: { structure: { violation: 120, none: 60 }, property: { none: 70 } },
+    y3: { structure: { violation: 150, none: 50 }, property: { none: 84 } },
+  },
+  // Never part of a pin's count.
+  duplicates: { m12: 30, y2: 35, y3: 40 },
   violationsOpen: 0,
-  lastCase: "2026-10-01",
   repeatOffender: {
     name: "Burton Holdings",
     units: 300,
@@ -43,8 +37,7 @@ const clean: Complex = {
   id: "0000000001",
   parcelIds: ["0000000001"],
   address: "2 Quiet Ln",
-  cases12: counts(),
-  cases: counts(),
+  tally: { m12: {}, y2: {}, y3: {} },
   repeatOffender: null,
 };
 
@@ -150,10 +143,10 @@ describe("repaint", () => {
 });
 
 describe("toFeatures", () => {
-  it("emits one feature per complex with the count for the current view", () => {
+  it("emits one feature per complex with the complaints for the current view, duplicates left out", () => {
     const { features } = toFeatures([burton], {
       ...DEFAULT_VIEW,
-      period: "cases",
+      period: "y3",
     });
     expect(features).toHaveLength(1);
     expect(features[0].properties).toEqual({ id: burton.id, v: 284, ro: 1 });
@@ -174,6 +167,8 @@ describe("toFeatures", () => {
       category: "structure",
     });
     expect(structureOnly.features[0].properties?.v).toBe(100);
+    const twoYears = toFeatures([burton], { ...DEFAULT_VIEW, period: "y2" });
+    expect(twoYears.features[0].properties?.v).toBe(250);
   });
 
   it("leaves out complexes that are not repeat offenders when the view asks for offenders only", () => {

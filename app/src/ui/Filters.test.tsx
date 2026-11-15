@@ -1,25 +1,45 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import { DEFAULT_VIEW } from "@/domain/query";
 import { Filters } from "./Filters";
 
-it("marks the active period and reports a change", async () => {
+it("offers the three periods, shortest first, and marks the active one", () => {
+  render(
+    <Filters view={{ ...DEFAULT_VIEW, period: "y2" }} onChange={vi.fn()} />,
+  );
+  const periods = within(screen.getByRole("group", { name: "Period" }));
+  expect(
+    periods.getAllByRole("button").map((button) => button.textContent),
+  ).toEqual(["12 months", "2 years", "3 years"]);
+  expect(periods.getByRole("button", { name: "2 years" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(periods.getByRole("button", { name: "12 months" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+});
+
+it("reports a change of period", async () => {
   const onChange = vi.fn();
   render(<Filters view={DEFAULT_VIEW} onChange={onChange} />);
   expect(screen.getByRole("button", { name: "12 months" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-  await userEvent.click(screen.getByRole("button", { name: "Since Nov 2023" }));
-  expect(onChange).toHaveBeenCalledWith({ ...DEFAULT_VIEW, period: "cases" });
+  await userEvent.click(screen.getByRole("button", { name: "3 years" }));
+  expect(onChange).toHaveBeenCalledWith({ ...DEFAULT_VIEW, period: "y3" });
+  await userEvent.click(screen.getByRole("button", { name: "2 years" }));
+  expect(onChange).toHaveBeenCalledWith({ ...DEFAULT_VIEW, period: "y2" });
 });
 
 it("reports a complaint type and keeps the rest of the view", async () => {
   const onChange = vi.fn();
   const view = {
     ...DEFAULT_VIEW,
-    period: "cases" as const,
+    period: "y3" as const,
     order: "most" as const,
   };
   render(<Filters view={view} onChange={onChange} />);
@@ -42,4 +62,9 @@ it("toggles Repeat Offenders only", async () => {
     ...view,
     repeatOffendersOnly: false,
   });
+});
+
+it("never says code case, and no longer offers Since Nov 2023", () => {
+  render(<Filters view={DEFAULT_VIEW} onChange={vi.fn()} />);
+  expect(document.body.textContent).not.toMatch(/code case|since/i);
 });

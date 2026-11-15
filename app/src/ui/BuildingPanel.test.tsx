@@ -11,19 +11,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { aerialPhotoUrl } from "@/city/aerialPhoto";
 import { forgetBuildingDetails } from "@/city/buildingDetail";
 import { DEFAULT_VIEW, type View } from "@/domain/query";
-import type { BuildingDetail, Complex, Counts } from "@/domain/types";
+import type { BuildingDetail, Complex, Meta } from "@/domain/types";
 import { BuildingPanel } from "./BuildingPanel";
 
 // The building file is shared and remembered, so each test starts from an empty cache.
 beforeEach(forgetBuildingDetails);
 
-const counts = (overrides: Partial<Counts> = {}): Counts => ({
-  structure: 0,
-  property: 0,
-  landuse: 0,
-  permit: 0,
-  ...overrides,
-});
+const PERIOD_STARTS: Meta["periodStarts"] = {
+  m12: "2025-11-14",
+  y2: "2024-11-14",
+  y3: "2023-11-14",
+};
 
 const busy: Complex = {
   id: "0304070701",
@@ -33,13 +31,23 @@ const busy: Complex = {
   lon: -97.7287,
   lat: 30.2379,
   acres: 20.5,
-  cases12: counts({ structure: 11, landuse: 1 }),
-  cases: counts({ structure: 254, property: 24, landuse: 5, permit: 1 }),
   open: 1,
-  tally: { m12: {}, y2: {}, y3: {} },
-  duplicates: { m12: 0, y2: 0, y3: 0 },
+  tally: {
+    m12: { structure: { violation: 8, none: 3 }, landuse: { none: 1 } },
+    y2: {
+      structure: { violation: 50, none: 40 },
+      property: { none: 10 },
+      landuse: { none: 2 },
+    },
+    y3: {
+      structure: { violation: 150, none: 100, other: 4 },
+      property: { none: 24 },
+      landuse: { none: 5 },
+      permit: { open: 1 },
+    },
+  },
+  duplicates: { m12: 40, y2: 41, y3: 43 },
   violationsOpen: 0,
-  lastCase: "2026-05-20",
   repeatOffender: {
     name: "Mia Riverside",
     units: 562,
@@ -56,10 +64,6 @@ const busyDetail: BuildingDetail = {
     { month: "2025-10", count: 1 },
     { month: "2025-11", count: 0 },
   ],
-  latest: [
-    { opened: "2026-05-20", category: "structure", status: "Active" },
-    { opened: "2026-04-28", category: "landuse", status: "Closed" },
-  ],
   complaints: [],
   deficiencies: [],
   outline: [],
@@ -74,13 +78,10 @@ const clean: Complex = {
   lon: -97.788,
   lat: 30.4572,
   acres: 15,
-  cases12: counts(),
-  cases: counts(),
   open: 0,
   tally: { m12: {}, y2: {}, y3: {} },
   duplicates: { m12: 0, y2: 0, y3: 0 },
   violationsOpen: 0,
-  lastCase: null,
   repeatOffender: null,
 };
 
@@ -90,14 +91,14 @@ const cleanDetail: BuildingDetail = {
     { month: "2026-10", count: 0 },
     { month: "2026-11", count: 0 },
   ],
-  latest: [],
   complaints: [],
   deficiencies: [],
   outline: [],
   bbox: [-97.79, 30.456, -97.787, 30.458],
 };
 
-const SINCE_2023: View = { ...DEFAULT_VIEW, period: "cases" };
+const TWO_YEARS: View = { ...DEFAULT_VIEW, period: "y2" };
+const THREE_YEARS: View = { ...DEFAULT_VIEW, period: "y3" };
 
 type Reply = () => Promise<Response>;
 const pending: Reply = () => new Promise<Response>(() => {});
@@ -146,6 +147,7 @@ function renderPage(
       complex={complex}
       detail={detail}
       view={view}
+      periodStarts={PERIOD_STARTS}
       fetchImpl={fetchImpl}
     />,
   );
@@ -155,7 +157,7 @@ function renderPage(
 /** The large figure and its caption, read as one sentence. */
 function leadFigure() {
   const period = screen.getByText(
-    /^(in the last 12 months|since November 2023)$/,
+    /^in the last (12 months|2 years|3 years)$/,
   );
   const figure = period.closest("p");
   if (!figure)
@@ -163,41 +165,91 @@ function leadFigure() {
   return figure;
 }
 
+/** The three small figures under the lead, each read as its value and label. */
+function smallFigures() {
+  const open = screen.getByText("open now").parentElement?.parentElement;
+  if (!open) throw new Error("No small figures");
+  return [...open.children].map((figure) => figure.textContent);
+}
+
 function barRow(label: string) {
   const bars = screen.getByRole("region", {
-    name: "What the cases were about",
+    name: "What the complaints were about",
   });
   const row = within(bars).getByText(label).parentElement;
   if (!row) throw new Error(`No bar row for ${label}`);
   return row;
 }
 
-it("leads with the count for the active period", () => {
+it("leads with the complaints of the active period, the other two periods and open now beside it", () => {
   renderPage(busy, busyDetail);
-  expect(leadFigure()).toHaveTextContent("12 code cases in the last 12 months");
-  expect(screen.getByText("since Nov 2023").parentElement).toHaveTextContent(
-    "284",
-  );
-  expect(barRow("Structure condition")).toHaveTextContent("11");
+  expect(leadFigure()).toHaveTextContent("12 complaints in the last 12 months");
+  expect(smallFigures()).toEqual([
+    "102last 2 years",
+    "284last 3 years",
+    "1open now",
+  ]);
+  expect(barRow("Building condition")).toHaveTextContent("11");
 
   cleanup();
-  renderPage(busy, busyDetail, { view: SINCE_2023 });
-  expect(leadFigure()).toHaveTextContent("284 code cases since November 2023");
-  expect(screen.getByText("last 12 months").parentElement).toHaveTextContent(
-    "12",
-  );
-  expect(barRow("Structure condition")).toHaveTextContent("254");
+  renderPage(busy, busyDetail, { view: TWO_YEARS });
+  expect(leadFigure()).toHaveTextContent("102 complaints in the last 2 years");
+  expect(smallFigures()).toEqual([
+    "12last 12 months",
+    "284last 3 years",
+    "1open now",
+  ]);
+  expect(barRow("Building condition")).toHaveTextContent("90");
+
+  cleanup();
+  renderPage(busy, busyDetail, { view: THREE_YEARS });
+  expect(leadFigure()).toHaveTextContent("284 complaints in the last 3 years");
+  expect(smallFigures()).toEqual([
+    "12last 12 months",
+    "102last 2 years",
+    "1open now",
+  ]);
+  expect(barRow("Building condition")).toHaveTextContent("254");
 });
 
-it('shows None and "no code cases" for a clean building', () => {
+it("never counts a duplicate in its figures", () => {
+  renderPage(busy, busyDetail, { view: THREE_YEARS });
+  // 284 complaints and 43 duplicates: the figure is the complaints alone.
+  expect(leadFigure()).toHaveTextContent(/^284 /);
+  expect(document.body.textContent).not.toContain("327");
+});
+
+it("speaks of one complaint in the singular", () => {
+  renderPage(
+    { ...clean, tally: { m12: { permit: { open: 1 } }, y2: {}, y3: {} } },
+    cleanDetail,
+  );
+  expect(leadFigure()).toHaveTextContent("1 complaint in the last 12 months");
+});
+
+it('shows None and "no complaints" for a clean building', () => {
   renderPage(clean, cleanDetail);
 
   expect(leadFigure()).toHaveTextContent(
-    "None no code cases in the last 12 months",
+    "None no complaints in the last 12 months",
   );
-  expect(screen.getByText("No code cases since Nov 2023.")).toBeVisible();
+  expect(smallFigures()).toEqual([
+    "0last 2 years",
+    "0last 3 years",
+    "0open now",
+  ]);
+  expect(screen.getByText("No complaints in the last 3 years.")).toBeVisible();
   expect(screen.queryAllByTestId("month-bar")).toHaveLength(0);
-  expect(screen.queryByText("Latest cases")).toBeNull();
+});
+
+it("shows None and zeros, never NaN or undefined, when the tally has no entry for a period", () => {
+  renderPage({ ...clean, tally: {} as Complex["tally"] }, cleanDetail, {
+    view: TWO_YEARS,
+  });
+  expect(leadFigure()).toHaveTextContent(
+    "None no complaints in the last 2 years",
+  );
+  expect(document.body.textContent).not.toMatch(/NaN|undefined/);
 });
 
 describe("the header", () => {
@@ -340,11 +392,12 @@ it("keeps the full record whatever complaint type the map is filtered to", () =>
     view: { ...DEFAULT_VIEW, category: "permit" },
   });
 
-  expect(leadFigure()).toHaveTextContent("12 code cases in the last 12 months");
-  expect(barRow("Structure condition")).toHaveTextContent("11");
-  expect(barRow("Property upkeep")).toHaveTextContent("0");
-  expect(barRow("Land use")).toHaveTextContent("1");
-  expect(barRow("Work without permit")).toHaveTextContent("0");
+  expect(leadFigure()).toHaveTextContent("12 complaints in the last 12 months");
+  expect(smallFigures()[1]).toBe("284last 3 years");
+  expect(barRow("Building condition")).toHaveTextContent("11");
+  expect(barRow("Trash and grounds")).toHaveTextContent("0");
+  expect(barRow("Signs, zoning and use")).toHaveTextContent("1");
+  expect(barRow("Work without a permit")).toHaveTextContent("0");
 });
 
 it("renders one bar per month", () => {
@@ -352,14 +405,14 @@ it("renders one bar per month", () => {
   expect(screen.getAllByTestId("month-bar")).toHaveLength(
     busyDetail.monthly.length,
   );
-  expect(screen.getByText("Busiest month: Sep 2025, 75 cases")).toBeVisible();
+  expect(screen.getByText("Busiest month: Sep 2025, 75 complaints")).toBeVisible();
 });
 
 it("describes the month chart in words, naming the busiest month and its count", () => {
   renderPage(busy, busyDetail);
   expect(
     screen.getByRole("img", {
-      name: "Code cases opened each month, Aug 2025 to Nov 2025. Busiest month: Sep 2025, with 75 cases.",
+      name: "Complaints opened each month, Aug 2025 to Nov 2025. Busiest month: Sep 2025, with 75 complaints.",
     }),
   ).toBeVisible();
 });
@@ -373,23 +426,24 @@ it("names the most recent of tied busiest months, in the caption and the text al
       { month: "2025-10", count: 0 },
     ],
   });
-  expect(screen.getByText("Busiest month: Sep 2025, 1 case")).toBeVisible();
+  expect(screen.getByText("Busiest month: Sep 2025, 1 complaint")).toBeVisible();
   expect(
     screen.getByRole("img", {
-      name: "Code cases opened each month, Aug 2025 to Oct 2025. Busiest month: Sep 2025, with 1 case.",
+      name: "Complaints opened each month, Aug 2025 to Oct 2025. Busiest month: Sep 2025, with 1 complaint.",
     }),
   ).toBeVisible();
 });
 
-it("lists the latest cases with their date, type and status", () => {
+it("titles each month's bar with its complaints", () => {
   renderPage(busy, busyDetail);
-
-  const items = within(
-    screen.getByRole("region", { name: "Latest cases" }),
-  ).getAllByRole("listitem");
-  expect(items).toHaveLength(2);
-  expect(items[0]).toHaveTextContent("May 20, 2026Structure conditionActive");
-  expect(items[1]).toHaveTextContent("Apr 28, 2026Land useClosed");
+  expect(screen.getAllByTestId("month-bar")[1]).toHaveAttribute(
+    "title",
+    "Sep 2025: 75 complaints",
+  );
+  expect(screen.getAllByTestId("month-bar")[3]).toHaveAttribute(
+    "title",
+    "Nov 2025: 0 complaints",
+  );
 });
 
 it("says so when the 311 lookup fails, and keeps everything else", async () => {
@@ -400,7 +454,7 @@ it("says so when the 311 lookup fails, and keeps everything else", async () => {
       "311 requests could not be loaded from the city right now.",
     ),
   ).toBeVisible();
-  expect(screen.getByText("What the cases were about")).toBeVisible();
+  expect(screen.getByText("What the complaints were about")).toBeVisible();
   expect(screen.getAllByTestId("month-bar")).toHaveLength(
     busyDetail.monthly.length,
   );
@@ -422,12 +476,15 @@ it("lists the 311 request types counted around the parcel", async () => {
   ).toBeVisible();
   expect(
     screen.getByText(
-      "Counted inside the rectangle around the parcel since Nov 2023, so some may belong to neighbors.",
+      "Counted inside the rectangle around the parcel in the last 3 years, so some may belong to neighbors.",
     ),
   ).toBeVisible();
-  expect(decodeURIComponent(String(fetchImpl.mock.calls[0][0]))).toContain(
+  const asked = decodeURIComponent(String(fetchImpl.mock.calls[0][0]));
+  expect(asked).toContain(
     "within_box(sr_location_lat_long, 30.2408, -97.7308, 30.2361, -97.7277)",
   );
+  // From the first day of the 3 years, as the data was pulled.
+  expect(asked).toContain("sr_created_date >= '2023-11-14'");
 });
 
 it("lists 311 rows that share a label, such as two Unspecified types, without mixing them up", async () => {
@@ -454,11 +511,11 @@ it("lists 311 rows that share a label, such as two Unspecified types, without mi
 it("says when the city has no 311 requests in the area", async () => {
   renderPage(clean, cleanDetail, { city: ok([]) });
   expect(
-    await screen.findByText("No 311 requests in this area since Nov 2023."),
+    await screen.findByText("No 311 requests in this area in the last 3 years."),
   ).toBeVisible();
 });
 
-it("credits both city datasets and says what no cases means", () => {
+it("credits both city datasets and says what no complaints means", () => {
   renderPage(clean, cleanDetail);
 
   expect(
@@ -469,7 +526,7 @@ it("credits both city datasets and says what no cases means", () => {
     "https://data.austintexas.gov/d/xwdj-i9he",
   );
   expect(screen.getByText(/^From .*, City of Austin\./)).toHaveTextContent(
-    "From Austin Code Complaint Cases and Austin 311, City of Austin. No cases means none reached Code Enforcement. It does not mean the building has no problems.",
+    "From Austin Code Complaint Cases and Austin 311, City of Austin. No complaints means none reached Code Enforcement. It does not mean the building has no problems.",
   );
 });
 
@@ -483,7 +540,7 @@ it("links the Repeat Offender note to the city's list, so its figures can be tra
 it("puts its section headings one level under the page's h1", () => {
   renderPage(busy, busyDetail);
   expect(
-    screen.getByRole("heading", { level: 2, name: "What the cases were about" }),
+    screen.getByRole("heading", { level: 2, name: "What the complaints were about" }),
   ).toBeVisible();
   expect(screen.queryAllByRole("heading", { level: 3 })).toHaveLength(0);
 });
@@ -502,12 +559,15 @@ it("names the building as the page's h1 on its own page", () => {
   ).toBeNull();
 });
 
-it("never renders the words score, grade, rating or rank", async () => {
+it("never renders the words score, grade, rating, rank or code case", async () => {
   renderPage(busy, busyDetail, {
     city: ok([{ sr_type_desc: "DSD - Request Code Officer", count: "262" }]),
   });
   await screen.findByText("DSD - Request Code Officer");
-  expect(document.body.textContent).not.toMatch(/score|grade|rating|rank/i);
+  expect(document.body.textContent).not.toMatch(
+    /score|grade|rating|rank|code case/i,
+  );
+  expect(screen.queryByText(/^Latest cases$/)).toBeNull();
 });
 
 describe("over the map", () => {
@@ -525,6 +585,7 @@ describe("over the map", () => {
         place="map"
         complex={selected}
         view={DEFAULT_VIEW}
+        periodStarts={PERIOD_STARTS}
         onClose={onClose}
         fetchImpl={fetchImpl}
       />
@@ -545,15 +606,14 @@ describe("over the map", () => {
       screen.getByRole("heading", { level: 2, name: "1601 Royal Crest Dr" }),
     ).toBeVisible();
     expect(leadFigure()).toHaveTextContent(
-      "12 code cases in the last 12 months",
+      "12 complaints in the last 12 months",
     );
     expect(
       screen.getByText("On the city's Repeat Offender list"),
     ).toBeVisible();
     expect(screen.getByText("open now").parentElement).toHaveTextContent("1");
-    expect(screen.getByText("What the cases were about")).toBeVisible();
+    expect(screen.getByText("What the complaints were about")).toBeVisible();
     expect(screen.queryAllByTestId("month-bar")).toHaveLength(0);
-    expect(screen.queryByText("Latest cases")).toBeNull();
     expect(screen.getByText("Loading from the City of Austin")).toBeVisible();
   });
 
@@ -580,13 +640,12 @@ describe("over the map", () => {
     expect(screen.queryByRole("img", { name: /^Aerial photo/ })).toBeNull();
   });
 
-  it("draws the months and latest cases once the history arrives", async () => {
+  it("draws the months once the history arrives", async () => {
     renderOnMap(busy, { [HISTORY]: ok(busyDetail) });
 
     expect(await screen.findAllByTestId("month-bar")).toHaveLength(
       busyDetail.monthly.length,
     );
-    expect(screen.getByText("Latest cases")).toBeVisible();
   });
 
   it("says the history could not be loaded and keeps the counts", async () => {
@@ -598,9 +657,9 @@ describe("over the map", () => {
       ),
     ).toBeVisible();
     expect(leadFigure()).toHaveTextContent(
-      "12 code cases in the last 12 months",
+      "12 complaints in the last 12 months",
     );
-    expect(screen.getByText("What the cases were about")).toBeVisible();
+    expect(screen.getByText("What the complaints were about")).toBeVisible();
     expect(screen.queryAllByTestId("month-bar")).toHaveLength(0);
     // Without the parcel's box there is nothing to ask the city about.
     expect(screen.queryByText("311 requests around this parcel")).toBeNull();
@@ -620,7 +679,7 @@ describe("over the map", () => {
 
     select(clean);
     expect(
-      await screen.findByText("No code cases since Nov 2023."),
+      await screen.findByText("No complaints in the last 3 years."),
     ).toBeVisible();
 
     await act(async () =>
@@ -630,7 +689,7 @@ describe("over the map", () => {
       "9805 Copper Creek Dr",
     );
     expect(screen.queryAllByTestId("month-bar")).toHaveLength(0);
-    expect(screen.getByText("No code cases since Nov 2023.")).toBeVisible();
+    expect(screen.getByText("No complaints in the last 3 years.")).toBeVisible();
   });
 
   it("closes from its button and from the Escape key", async () => {
@@ -659,7 +718,7 @@ describe("over the map", () => {
   it("puts its section headings one level under its own h2", () => {
     renderOnMap(busy, { [HISTORY]: pending });
     expect(
-      screen.getByRole("heading", { level: 3, name: "What the cases were about" }),
+      screen.getByRole("heading", { level: 3, name: "What the complaints were about" }),
     ).toBeVisible();
     expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(1);
   });

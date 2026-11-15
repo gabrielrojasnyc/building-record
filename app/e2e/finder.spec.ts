@@ -8,6 +8,8 @@ interface ComplexRecord {
   address: string;
   name: { text: string } | null;
   acres: number;
+  repeatOffender: object | null;
+  tally: Record<"m12" | "y2" | "y3", Record<string, Record<string, number>>>;
 }
 
 interface MetaRecord {
@@ -40,7 +42,7 @@ const NOT_OFFICIAL = "Not an official City of Austin site";
 const NO_MAP_SENTENCE =
   "The map could not load on this device. You can still browse the list below.";
 const CAUTION =
-  "No cases means none reached Code Enforcement. It does not mean the building has no problems.";
+  "No complaints means none reached Code Enforcement. It does not mean the building has no problems.";
 const COMPLEX_WITH_RECORD = "0304070701";
 const FOOTPRINTS = "https://data.austintexas.gov/resource/3qcc-8uhz.json**";
 const AERIAL_PHOTOS = "https://imagery.nationalmap.gov/**";
@@ -51,6 +53,11 @@ const PHOTO = Buffer.from(
 );
 
 const titleOf = (complex: ComplexRecord) => complex.name?.text ?? complex.address;
+/** Every complaint in a period's tally, as the site counts them: duplicates are never in a tally. */
+const complaintsIn = (complex: ComplexRecord, period: keyof ComplexRecord["tally"]) =>
+  Object.values(complex.tally[period])
+    .flatMap((outcomes) => Object.values(outcomes))
+    .reduce((sum, count) => sum + count, 0);
 const formatAcres = (acres: number) =>
   acres < 0.1 ? "under 0.1 acres" : `${acres} ${acres === 1 ? "acre" : "acres"}`;
 
@@ -204,23 +211,58 @@ test("pick an area, open a building, see its record", async ({ page }) => {
   const first = cards(page).first();
   const cardText = await first.innerText();
   await first.click();
-  await expect(page.getByText("What the cases were about")).toBeVisible();
+  await expect(page.getByText("What the complaints were about")).toBeVisible();
   const heading = await panel(page).getByRole("heading", { level: 2 }).innerText();
   expect(cardText).toContain(heading);
+  await expect(page.locator("body")).not.toContainText(/code case/i);
+});
+
+test("a card's figure is its record's lead figure, in each of the three periods", async ({ page }) => {
+  for (const [query, phrase] of [
+    ["", "in the last 12 months"],
+    ["period=2y&", "in the last 2 years"],
+    ["period=3y&", "in the last 3 years"],
+  ]) {
+    await page.goto(`/?${query}order=most`);
+    await waitForMap(page);
+    const first = cards(page).first();
+    const figure = (await first.innerText()).split("\n")[0];
+    expect(figure, query).toMatch(/^\d[\d,]*$/);
+    await first.click();
+    await expect(panel(page).getByText(phrase, { exact: true })).toBeVisible();
+    await expect(panel(page).getByText(phrase, { exact: true }).locator("xpath=../..")).toContainText(
+      new RegExp(`^${figure} complaints? `),
+    );
+  }
 });
 
 test("a filtered view survives a reload", async ({ page }) => {
-  await page.goto("/?period=cases&order=most");
+  await page.goto("/?period=3y&order=most");
   await expect(
-    page.getByRole("button", { name: "Since Nov 2023" }),
+    page.getByRole("button", { name: "3 years" }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Most first" })).toBeVisible();
 
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "Since Nov 2023" }),
+    page.getByRole("button", { name: "3 years" }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Most first" })).toBeVisible();
+});
+
+test("the address bar names 2 and 3 years, and a retired period falls back to 12 months and is dropped on the next change", async ({
+  page,
+}) => {
+  await page.goto("/?period=cases&order=most");
+  await expect(page.getByRole("button", { name: "12 months" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Most first" })).toBeVisible();
+
+  await page.getByRole("button", { name: "2 years" }).click();
+  await expect(page).toHaveURL(/\/\?period=2y&order=most$/);
+  await page.getByRole("button", { name: "3 years" }).click();
+  await expect(page).toHaveURL(/\/\?period=3y&order=most$/);
+  await page.getByRole("button", { name: "12 months" }).click();
+  await expect(page).toHaveURL(/\/\?order=most$/);
 });
 
 test("the building panel takes focus, closes on Escape and hands focus back to its card", async ({
@@ -275,6 +317,8 @@ test("a building page is reachable directly", async ({ page }) => {
   await expect(
     page.getByRole("link", { name: "Back to the map" }),
   ).toHaveAttribute("href", "/");
+  await expect(page.getByText("What the complaints were about")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText(/code case/i);
 });
 
 test("an unknown building id is a 404 that leads back to the map", async ({ page }) => {
@@ -338,6 +382,39 @@ test("every page carries the not-official notice, the pull date and the way to t
 
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 375, height: 812 } });
+
+  test("a Repeat Offender card with a three-digit figure keeps its figure and chip apart and inside the card", async ({
+    page,
+  }) => {
+    const busiest = complexes
+      .filter((complex) => complex.repeatOffender !== null)
+      .sort((a, b) => complaintsIn(b, "y3") - complaintsIn(a, "y3"))[0];
+    expect(complaintsIn(busiest, "y3"), "the busiest Repeat Offender has a three-digit figure").toBeGreaterThanOrEqual(100);
+
+    // Without the map the list holds every complex in Austin, so the busiest one is first.
+    await withoutMap(page);
+    await page.goto("/?period=3y&order=most&ro=1");
+    const card = page.locator(`[data-testid="card"][data-complex-id="${busiest.id}"]`);
+    await expect(card).toContainText(String(complaintsIn(busiest, "y3")));
+
+    const chip = card.getByTitle("Repeat Offender");
+    await expect(chip).toContainText("Repeat Offender");
+    const [cardBox, chipBox, figureBox] = await Promise.all([
+      card.boundingBox(),
+      chip.boundingBox(),
+      card.getByText(String(complaintsIn(busiest, "y3")), { exact: true }).boundingBox(),
+    ]);
+    if (!cardBox || !chipBox || !figureBox) throw new Error("The card is not on screen");
+    expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+    expect(chipBox.y).toBeGreaterThanOrEqual(cardBox.y);
+    expect(figureBox.x + figureBox.width).toBeLessThan(chipBox.x);
+
+    // Every card keeps one height, whatever its lines.
+    const heights = await cards(page).evaluateAll((elements) =>
+      elements.slice(0, 12).map((element) => element.getBoundingClientRect().height),
+    );
+    expect(new Set(heights).size).toBe(1);
+  });
 
   test("nothing scrolls sideways", async ({ page }) => {
     for (const path of ["/", `/building/${COMPLEX_WITH_RECORD}`, "/method"]) {
@@ -442,7 +519,7 @@ test.describe("when the map cannot start", () => {
 
     await page.getByRole("combobox").fill("");
     await cards(page).first().click();
-    await expect(page.getByText("What the cases were about")).toBeVisible();
+    await expect(page.getByText("What the complaints were about")).toBeVisible();
     await expect(panel(page)).toBeFocused();
     // No map, so nothing is staged, but the record still has its photo.
     await expect(
@@ -603,7 +680,7 @@ test.describe("a picked building", () => {
     await askedForFootprints;
 
     await expect(spotlit(page, id)).toBeAttached();
-    await expect(panel(page).getByText("What the cases were about")).toBeVisible();
+    await expect(panel(page).getByText("What the complaints were about")).toBeVisible();
     await expect(panel(page).getByRole("region", { name: "Month by month" })).toBeVisible();
     await expect(panel(page).getByText("Loading from the City of Austin")).toHaveCount(0);
   });

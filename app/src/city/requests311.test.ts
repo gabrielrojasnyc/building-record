@@ -4,6 +4,8 @@ import { load311Summary } from "./requests311";
 const BOX: [number, number, number, number] = [
   -97.73, 30.2365, -97.7265, 30.2395,
 ];
+/** The first day of the 3 year period for a pull on 2026-11-14. */
+const SINCE = "2023-11-14";
 
 function fakeFetch(reply: Response | Error) {
   return vi.fn<typeof fetch>(async () => {
@@ -19,9 +21,9 @@ const urlOf = (fetchImpl: ReturnType<typeof fakeFetch>, call: number): string =>
   String(fetchImpl.mock.calls[call][0]);
 
 describe("load311Summary", () => {
-  it("queries 311 by the parcel box and the history start date", async () => {
+  it("queries 311 by the parcel box from the day it is given", async () => {
     const fetchImpl = fakeFetch(json([]));
-    await load311Summary(BOX, fetchImpl);
+    await load311Summary(BOX, SINCE, fetchImpl);
 
     const url = decodeURIComponent(urlOf(fetchImpl, 0));
     expect(url).toContain(
@@ -30,12 +32,12 @@ describe("load311Summary", () => {
     expect(url).toContain(
       "within_box(sr_location_lat_long, 30.2395, -97.73, 30.2365, -97.7265)",
     );
-    expect(url).toContain("sr_created_date >= '2023-11-01'");
+    expect(url).toContain("sr_created_date >= '2023-11-14'");
   });
 
   it("asks the city for the six most frequent request types, counted", async () => {
     const fetchImpl = fakeFetch(json([]));
-    await load311Summary(BOX, fetchImpl);
+    await load311Summary(BOX, SINCE, fetchImpl);
 
     const params = new URL(urlOf(fetchImpl, 0)).searchParams;
     expect(params.get("$select")).toBe("sr_type_desc, count(*) as count");
@@ -52,7 +54,7 @@ describe("load311Summary", () => {
       ]),
     );
 
-    expect(await load311Summary(BOX, fetchImpl)).toEqual([
+    expect(await load311Summary(BOX, SINCE, fetchImpl)).toEqual([
       { type: "DSD - Request Code Officer", count: 262 },
       { type: "APD - Non Emergency Noise/Alarm", count: 63 },
     ]);
@@ -60,7 +62,7 @@ describe("load311Summary", () => {
 
   it("labels a group the city returns with no request type as Unspecified", async () => {
     const fetchImpl = fakeFetch(json([{ count: "4" }, { sr_type_desc: "", count: "2" }]));
-    expect(await load311Summary(BOX, fetchImpl)).toEqual([
+    expect(await load311Summary(BOX, SINCE, fetchImpl)).toEqual([
       { type: "Unspecified", count: 4 },
       { type: "Unspecified", count: 2 },
     ]);
@@ -68,12 +70,12 @@ describe("load311Summary", () => {
 
   it("rejects when the city answers with an error status", async () => {
     const fetchImpl = fakeFetch(json({ message: "busy" }, 503));
-    await expect(load311Summary(BOX, fetchImpl)).rejects.toThrow("503");
+    await expect(load311Summary(BOX, SINCE, fetchImpl)).rejects.toThrow("503");
   });
 
   it("rejects when the network fails", async () => {
     const fetchImpl = fakeFetch(new TypeError("Failed to fetch"));
-    await expect(load311Summary(BOX, fetchImpl)).rejects.toThrow(
+    await expect(load311Summary(BOX, SINCE, fetchImpl)).rejects.toThrow(
       "Failed to fetch",
     );
   });

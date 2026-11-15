@@ -1,4 +1,3 @@
-import { HISTORY_START } from "@/domain/history";
 import type { BuildingDetail } from "@/domain/types";
 
 export interface RequestTypeCount {
@@ -26,17 +25,18 @@ function toQueryString(params: Record<string, string>): string {
 }
 
 /**
- * The most frequent 311 request types inside a parcel's bounding box since the history start, the same months as the code cases,
- * read live from the city. Rejects when the city answers with an error or cannot be reached.
+ * The most frequent 311 request types inside a parcel's bounding box since `since` (YYYY-MM-DD), read live from the city.
+ * Rejects when the city answers with an error or cannot be reached.
  */
 export async function load311Summary(
   bbox: BuildingDetail["bbox"],
+  since: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<RequestTypeCount[]> {
   const [west, south, east, north] = bbox;
   const query = toQueryString({
     $select: "sr_type_desc, count(*) as count",
-    $where: `sr_created_date >= '${HISTORY_START}' AND within_box(sr_location_lat_long, ${north}, ${west}, ${south}, ${east})`,
+    $where: `sr_created_date >= '${since}' AND within_box(sr_location_lat_long, ${north}, ${west}, ${south}, ${east})`,
     $group: "sr_type_desc",
     $order: "count DESC",
     $limit: String(TOP_TYPES),

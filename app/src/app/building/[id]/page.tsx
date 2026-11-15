@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { HISTORY_START_SHORT } from "@/domain/history";
+import { PERIOD_PHRASE } from "@/domain/periods";
 import { countFor, DEFAULT_VIEW } from "@/domain/query";
 import type { BuildingDetail, Complex, Meta } from "@/domain/types";
 import { BuildingPanel } from "@/ui/BuildingPanel";
@@ -27,12 +27,12 @@ export async function generateStaticParams() {
 }
 
 function describeRecord(complex: Complex): string {
-  const total = countFor(complex, { ...DEFAULT_VIEW, period: "cases" });
-  const cases =
+  const total = countFor(complex, { ...DEFAULT_VIEW, period: "y3" });
+  const complaints =
     total === 0
-      ? "no code complaint cases"
-      : `${total.toLocaleString("en-US")} code complaint ${total === 1 ? "case" : "cases"}`;
-  return `${complex.address}: ${cases} since ${HISTORY_START_SHORT}. Data from the City of Austin.`;
+      ? "no complaints"
+      : `${total.toLocaleString("en-US")} ${total === 1 ? "complaint" : "complaints"}`;
+  return `${complex.address}: ${complaints} ${PERIOD_PHRASE.y3}. Data from the City of Austin.`;
 }
 
 export async function generateMetadata({
@@ -78,6 +78,7 @@ export default async function BuildingPage({
           complex={complex}
           detail={detail}
           view={DEFAULT_VIEW}
+          periodStarts={meta.periodStarts}
         />
       </div>
       {/* Outside the reading column, so the notice keeps to one line wherever the screen allows. */}

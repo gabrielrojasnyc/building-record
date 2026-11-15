@@ -1,12 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  HISTORY_START,
-  HISTORY_START_DAY,
-  HISTORY_START_LONG,
-  HISTORY_START_MONTH,
-  HISTORY_START_SHORT,
-  austinCalendarDate,
-} from './history';
+import { HISTORY_START, HISTORY_START_DAY, HISTORY_START_LONG, austinCalendarDate } from './history';
 
 describe('the history start', () => {
   it('is November 1, 2023, in every form the site shows it', () => {
@@ -14,8 +7,6 @@ describe('the history start', () => {
     const reads = (options: Intl.DateTimeFormatOptions) => start.toLocaleDateString('en-US', { ...options, timeZone: 'UTC' });
 
     expect(HISTORY_START).toBe('2023-11-01');
-    expect(HISTORY_START_MONTH).toBe('2023-11');
-    expect(HISTORY_START_SHORT).toBe(reads({ month: 'short', year: 'numeric' }));
     expect(HISTORY_START_LONG).toBe(reads({ month: 'long', year: 'numeric' }));
     expect(HISTORY_START_DAY).toBe(reads({ month: 'long', day: 'numeric', year: 'numeric' }));
   });

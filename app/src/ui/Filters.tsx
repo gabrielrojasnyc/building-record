@@ -1,12 +1,7 @@
 import type { ReactNode } from "react";
-import { HISTORY_START_SHORT } from "@/domain/history";
-import type { CategoryFilter, Period, View } from "@/domain/query";
+import { PERIODS, PERIOD_LABEL } from "@/domain/periods";
+import type { CategoryFilter, View } from "@/domain/query";
 import { Glass } from "./Glass";
-
-const PERIODS: { value: Period; label: string }[] = [
-  { value: "cases12", label: "12 months" },
-  { value: "cases", label: `Since ${HISTORY_START_SHORT}` },
-];
 
 const CATEGORIES: { value: CategoryFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -47,13 +42,13 @@ export function Filters({
   return (
     <Glass className="fixed top-(--gutter) left-[calc(340px+var(--gutter)*2)] z-3 flex max-w-[calc(100vw-340px-var(--gutter)*3-52px)] items-center gap-1.5 overflow-x-auto rounded-full p-1.5 [scrollbar-width:none] phone:right-(--gutter) phone:left-(--gutter) phone:top-[124px] phone:max-w-none [&::-webkit-scrollbar]:hidden">
       <div role="group" aria-label="Period" className="flex flex-none gap-0.5">
-        {PERIODS.map(({ value, label }) => (
+        {PERIODS.map((period) => (
           <FilterButton
-            key={value}
-            pressed={view.period === value}
-            onClick={() => onChange({ ...view, period: value })}
+            key={period}
+            pressed={view.period === period}
+            onClick={() => onChange({ ...view, period })}
           >
-            {label}
+            {PERIOD_LABEL[period]}
           </FilterButton>
         ))}
       </div>

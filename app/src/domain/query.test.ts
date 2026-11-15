@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { Complex, Counts } from './types';
+import type { Complex, Tally } from './types';
 import {
   DEFAULT_VIEW,
   complexesInView,
   countFor,
   isInViewArea,
+  outcomeSplit,
   viewFromSearchParams,
   viewToSearchParams,
   type View,
@@ -29,13 +30,7 @@ const PITCHED: ViewArea = [
   [-97.76, 30.21],
 ];
 
-const counts = (overrides: Partial<Counts> = {}): Counts => ({
-  structure: 0,
-  property: 0,
-  landuse: 0,
-  permit: 0,
-  ...overrides,
-});
+const NO_OUTCOMES = { violation: 0, fixed: 0, none: 0, other: 0, open: 0 };
 
 function complex(id: string, overrides: Partial<Complex> = {}): Complex {
   return {
@@ -46,40 +41,93 @@ function complex(id: string, overrides: Partial<Complex> = {}): Complex {
     lon: -97.74,
     lat: 30.27,
     acres: 1,
-    cases12: counts(),
-    cases: counts(),
     open: 0,
     tally: { m12: {}, y2: {}, y3: {} },
     duplicates: { m12: 0, y2: 0, y3: 0 },
     violationsOpen: 0,
-    lastCase: null,
     repeatOffender: null,
     ...overrides,
   };
 }
 
-describe('countFor', () => {
-  const c = complex('a', {
-    cases12: counts({ structure: 1, property: 2, landuse: 3, permit: 4 }),
-    cases: counts({ structure: 10, property: 20, landuse: 30, permit: 40 }),
+/** A complex with `count` complaints in the last 12 months, all of one category and outcome. */
+const withComplaints = (id: string, count: number, overrides: Partial<Complex> = {}) =>
+  complex(id, { tally: { m12: { property: { none: count } }, y2: {}, y3: {} }, ...overrides });
+
+describe('countFor and outcomeSplit', () => {
+  const m12: Tally = { structure: { violation: 1, none: 2 }, property: { fixed: 3 } };
+  const y2: Tally = { structure: { violation: 4, none: 5 }, property: { fixed: 6 }, permit: { open: 1 } };
+  const y3: Tally = {
+    structure: { violation: 10, none: 20, other: 1 },
+    property: { fixed: 6 },
+    landuse: { other: 2 },
+    permit: { open: 1 },
+  };
+  const c = complex('a', { tally: { m12, y2, y3 }, duplicates: { m12: 50, y2: 60, y3: 70 } });
+
+  it('counts every complaint in the period, all categories together, and never a duplicate', () => {
+    expect(countFor(c, DEFAULT_VIEW)).toBe(6);
+    expect(countFor(c, { ...DEFAULT_VIEW, period: 'y2' })).toBe(16);
+    expect(countFor(c, { ...DEFAULT_VIEW, period: 'y3' })).toBe(40);
   });
 
-  it('sums all categories for "all" and one for a single category', () => {
-    expect(countFor(c, DEFAULT_VIEW)).toBe(10);
-    expect(countFor(c, { ...DEFAULT_VIEW, category: 'landuse' })).toBe(3);
+  it('counts one category alone when the view asks for it, in each period', () => {
+    expect(countFor(c, { ...DEFAULT_VIEW, category: 'structure' })).toBe(3);
+    expect(countFor(c, { ...DEFAULT_VIEW, period: 'y2', category: 'structure' })).toBe(9);
+    expect(countFor(c, { ...DEFAULT_VIEW, period: 'y3', category: 'landuse' })).toBe(2);
+    expect(countFor(c, { ...DEFAULT_VIEW, period: 'y3', category: 'permit' })).toBe(1);
   });
 
-  it('reads the period the view asks for', () => {
-    expect(countFor(c, { ...DEFAULT_VIEW, period: 'cases' })).toBe(100);
-    expect(countFor(c, { ...DEFAULT_VIEW, period: 'cases', category: 'permit' })).toBe(40);
+  it('splits the same complaints by outcome, with every outcome present', () => {
+    expect(outcomeSplit(c, DEFAULT_VIEW)).toEqual({ ...NO_OUTCOMES, violation: 1, none: 2, fixed: 3 });
+    expect(outcomeSplit(c, { ...DEFAULT_VIEW, period: 'y2' })).toEqual({
+      ...NO_OUTCOMES,
+      violation: 4,
+      none: 5,
+      fixed: 6,
+      open: 1,
+    });
+    expect(outcomeSplit(c, { ...DEFAULT_VIEW, period: 'y3' })).toEqual({
+      violation: 10,
+      fixed: 6,
+      none: 20,
+      other: 3,
+      open: 1,
+    });
+  });
+
+  it('splits one category alone when the view asks for it', () => {
+    expect(outcomeSplit(c, { ...DEFAULT_VIEW, period: 'y3', category: 'structure' })).toEqual({
+      ...NO_OUTCOMES,
+      violation: 10,
+      none: 20,
+      other: 1,
+    });
+    expect(outcomeSplit(c, { ...DEFAULT_VIEW, period: 'y2', category: 'permit' })).toEqual({ ...NO_OUTCOMES, open: 1 });
+  });
+
+  it('is zero, never undefined or NaN, for a category the tally has no entry for', () => {
+    expect(countFor(c, { ...DEFAULT_VIEW, category: 'landuse' })).toBe(0);
+    expect(outcomeSplit(c, { ...DEFAULT_VIEW, category: 'landuse' })).toEqual(NO_OUTCOMES);
+  });
+
+  it('is zero for a complex with an empty tally, or with no entry at all for the period', () => {
+    const empty = complex('empty');
+    const missing = complex('missing', { tally: { m12: {} } as Complex['tally'] });
+    for (const view of [DEFAULT_VIEW, { ...DEFAULT_VIEW, period: 'y3' as const, category: 'permit' as const }]) {
+      expect(countFor(empty, view)).toBe(0);
+      expect(outcomeSplit(empty, view)).toEqual(NO_OUTCOMES);
+    }
+    expect(countFor(missing, { ...DEFAULT_VIEW, period: 'y2' })).toBe(0);
+    expect(outcomeSplit(missing, { ...DEFAULT_VIEW, period: 'y3' })).toEqual(NO_OUTCOMES);
   });
 });
 
 describe('complexesInView ordering', () => {
   const small0 = complex('small0', { acres: 1 });
   const large0 = complex('large0', { acres: 9 });
-  const one = complex('one', { acres: 20, cases12: counts({ property: 1 }) });
-  const manyLarge = complex('manyLarge', { acres: 5, cases12: counts({ property: 5 }) });
+  const one = withComplaints('one', 1, { acres: 20 });
+  const manyLarge = withComplaints('manyLarge', 5, { acres: 5 });
 
   it('orders fewest first, and among equal counts puts the larger parcel first', () => {
     const ordered = complexesInView([small0, large0, one], WORLD, DEFAULT_VIEW);
@@ -87,7 +135,7 @@ describe('complexesInView ordering', () => {
   });
 
   it('orders most first when asked, ties still largest first', () => {
-    const tiedSmall = complex('tiedSmall', { acres: 2, cases12: counts({ property: 5 }) });
+    const tiedSmall = withComplaints('tiedSmall', 5, { acres: 2 });
     const view: View = { ...DEFAULT_VIEW, order: 'most' };
     const ordered = complexesInView([small0, tiedSmall, one, manyLarge, large0], WORLD, view);
     expect(ordered.map((x) => x.id)).toEqual(['manyLarge', 'tiedSmall', 'one', 'large0', 'small0']);
@@ -102,9 +150,9 @@ describe('complexesInView ordering', () => {
   });
 
   it('orders by the count of the selected category and period', () => {
-    const a = complex('a', { cases12: counts({ permit: 9 }), cases: counts({ structure: 1 }) });
-    const b = complex('b', { cases12: counts({ structure: 2 }), cases: counts({ structure: 5 }) });
-    const view: View = { ...DEFAULT_VIEW, period: 'cases', category: 'structure' };
+    const a = complex('a', { tally: { m12: { permit: { none: 9 } }, y2: {}, y3: { structure: { none: 1 } } } });
+    const b = complex('b', { tally: { m12: { structure: { none: 2 } }, y2: {}, y3: { structure: { violation: 5 } } } });
+    const view: View = { ...DEFAULT_VIEW, period: 'y3', category: 'structure' };
     expect(complexesInView([b, a], WORLD, view).map((x) => x.id)).toEqual(['a', 'b']);
   });
 
@@ -156,7 +204,30 @@ describe('isInViewArea', () => {
 });
 
 describe('search params', () => {
-  it('round-trips a view through search params and ignores junk values', () => {
+  it('defaults to the last 12 months', () => {
+    expect(DEFAULT_VIEW.period).toBe('m12');
+    expect(viewFromSearchParams(new URLSearchParams('')).period).toBe('m12');
+  });
+
+  it('reads 2y and 3y as the 2 and 3 year periods, and writes them back the same way', () => {
+    expect(viewFromSearchParams(new URLSearchParams('period=2y')).period).toBe('y2');
+    expect(viewFromSearchParams(new URLSearchParams('period=3y')).period).toBe('y3');
+    expect(viewToSearchParams({ ...DEFAULT_VIEW, period: 'y2' }).toString()).toBe('period=2y');
+    expect(viewToSearchParams({ ...DEFAULT_VIEW, period: 'y3' }).toString()).toBe('period=3y');
+  });
+
+  it('falls back to 12 months for junk, for the names the code uses inside, and for the retired cases', () => {
+    for (const value of ['nope', 'y2', 'm12', 'cases12', 'cases', '']) {
+      expect(viewFromSearchParams(new URLSearchParams({ period: value })).period, value).toBe('m12');
+    }
+  });
+
+  it('drops the retired period=cases from the query string once the view is written back', () => {
+    const view = viewFromSearchParams(new URLSearchParams('period=cases&order=most'));
+    expect(viewToSearchParams(view).toString()).toBe('order=most');
+  });
+
+  it('ignores junk values field by field', () => {
     expect(viewFromSearchParams(new URLSearchParams('period=nope&order=most'))).toEqual({
       ...DEFAULT_VIEW,
       order: 'most',
@@ -164,8 +235,10 @@ describe('search params', () => {
   });
 
   it('round-trips every non-default field', () => {
-    const view: View = { period: 'cases', category: 'permit', repeatOffendersOnly: true, order: 'most' };
-    expect(viewFromSearchParams(viewToSearchParams(view))).toEqual(view);
+    for (const period of ['y2', 'y3'] as const) {
+      const view: View = { period, category: 'permit', repeatOffendersOnly: true, order: 'most' };
+      expect(viewFromSearchParams(viewToSearchParams(view))).toEqual(view);
+    }
   });
 
   it('omits default values, so the default view has an empty query string', () => {
@@ -174,7 +247,7 @@ describe('search params', () => {
   });
 
   it('ignores unknown names and invalid values field by field', () => {
-    const params = new URLSearchParams('foo=bar&category=nope&ro=yes&period=cases');
-    expect(viewFromSearchParams(params)).toEqual({ ...DEFAULT_VIEW, period: 'cases' });
+    const params = new URLSearchParams('foo=bar&category=nope&ro=yes&period=3y');
+    expect(viewFromSearchParams(params)).toEqual({ ...DEFAULT_VIEW, period: 'y3' });
   });
 });

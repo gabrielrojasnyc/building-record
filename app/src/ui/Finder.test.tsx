@@ -9,7 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { forgetBuildingDetails } from "@/city/buildingDetail";
 import type { ViewArea } from "@/domain/query";
-import type { BuildingDetail, Complex, Counts, Meta } from "@/domain/types";
+import type { BuildingDetail, Complex, Meta } from "@/domain/types";
 import type { BuildingMapProps, CameraPadding } from "@/map/BuildingMap";
 import { Finder } from "./Finder";
 
@@ -29,23 +29,15 @@ vi.mock("next/dynamic", () => ({
 const NORMAL_PADDING: CameraPadding = {
   top: 80,
   right: 0,
-  bottom: 243,
+  bottom: 261,
   left: 0,
 };
 const SELECTION_PADDING: CameraPadding = {
   top: 110,
   right: 440,
-  bottom: 250,
+  bottom: 268,
   left: 70,
 };
-
-const counts = (overrides: Partial<Counts> = {}): Counts => ({
-  structure: 0,
-  property: 0,
-  landuse: 0,
-  permit: 0,
-  ...overrides,
-});
 
 function complex(id: string, overrides: Partial<Complex>): Complex {
   return {
@@ -56,13 +48,10 @@ function complex(id: string, overrides: Partial<Complex>): Complex {
     lon: -97.74,
     lat: 30.27,
     acres: 2,
-    cases12: counts(),
-    cases: counts(),
     open: 0,
     tally: { m12: {}, y2: {}, y3: {} },
     duplicates: { m12: 0, y2: 0, y3: 0 },
     violationsOpen: 0,
-    lastCase: null,
     repeatOffender: null,
     ...overrides,
   };
@@ -73,7 +62,7 @@ const array = complex("0307050309", {
   name: { text: "Array Apartments", source: "openstreetmap" },
   lon: -97.73,
   lat: 30.23,
-  cases12: counts({ property: 3 }),
+  tally: { m12: { property: { none: 3 } }, y2: {}, y3: {} },
 });
 const crest = complex("0304070701", {
   address: "1601 Royal Crest Dr",
@@ -113,7 +102,6 @@ function detailFor({ id, lon, lat }: Complex): BuildingDetail {
   return {
     id,
     monthly: [{ month: "2026-11", count: 0 }],
-    latest: [],
     complaints: [],
     deficiencies: [],
     outline: [[ring]],
@@ -155,7 +143,6 @@ function setScreen({
 
 const meta: Meta = {
   pulledAt: "2026-11-14",
-  since: "2023-11-01",
   complexCount: 3,
   caseCount: 3,
   unmatchedCaseShare: 0.131,
@@ -206,6 +193,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  window.history.replaceState(null, "", "/");
   // The model and the selection padding travel together: no render has one without the other.
   // Only the selection padding, on a desktop or a phone, keeps room at the sides.
   for (const props of mapRenders) {
@@ -398,4 +386,35 @@ it("without a map, opens a picked building's record with its photo and stages no
   ).toBeVisible();
   expect(mapRenders.every((props) => !props.spotlight)).toBe(true);
   expect(document.querySelector(".fog")).not.toHaveClass("fog-spotlight");
+});
+
+it("reads the period from the address bar, and rewrites a retired or unknown one away on the next change", async () => {
+  window.history.replaceState(null, "", "/?period=cases&order=most");
+  openFinder();
+  expect(screen.getByRole("button", { name: "12 months" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: "Most first" }));
+  expect(window.location.search).toBe("");
+
+  await userEvent.click(screen.getByRole("button", { name: "3 years" }));
+  expect(window.location.search).toBe("?period=3y");
+  await userEvent.click(screen.getByRole("button", { name: "2 years" }));
+  expect(window.location.search).toBe("?period=2y");
+});
+
+it("asks the city for a picked building's 311 requests from the first day of the 3 years in the data", async () => {
+  openFinder();
+  await pick(array);
+  await staged(array);
+  await waitFor(() =>
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.map(([input]) => decodeURIComponent(String(input)))
+        .find((url) => url.includes("xwdj-i9he")),
+    ).toContain("sr_created_date >= '2023-11-14'"),
+  );
 });

@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Complex, Counts } from "@/domain/types";
+import type { Complex } from "@/domain/types";
 import { escapeSoql, searchAddresses, searchComplexes } from "./addressSearch";
-
-const counts: Counts = { structure: 0, property: 0, landuse: 0, permit: 0 };
 
 function complex(id: string, address: string, name: string | null = null): Complex {
   return {
@@ -13,13 +11,10 @@ function complex(id: string, address: string, name: string | null = null): Compl
     lon: -97.7,
     lat: 30.2,
     acres: 2,
-    cases12: counts,
-    cases: counts,
     open: 0,
     tally: { m12: {}, y2: {}, y3: {} },
     duplicates: { m12: 0, y2: 0, y3: 0 },
     violationsOpen: 0,
-    lastCase: null,
     repeatOffender: null,
   };
 }

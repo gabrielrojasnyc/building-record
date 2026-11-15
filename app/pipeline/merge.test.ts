@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Period } from "@/domain/periods";
-import type {
-  Category,
-  Complaint,
-  Counts,
-  Deficiency,
-  Tally,
-} from "@/domain/types";
+import type { Complaint, Deficiency, Tally } from "@/domain/types";
 import type { CaseSummary } from "./cases";
 import type { RepeatOffenderRecord } from "./context";
 import {
@@ -20,19 +14,9 @@ const ORIGIN = { lon: -97.75, lat: 30.3 };
 const MONTHS = ["2026-09", "2026-10", "2026-11"];
 const SQUARE_FEET_PER_ACRE = 43_560;
 
-const counts = (overrides: Partial<Counts> = {}): Counts => ({
-  structure: 0,
-  property: 0,
-  landuse: 0,
-  permit: 0,
-  ...overrides,
-});
-
 interface SummaryInput {
-  cases?: Partial<Counts>;
-  cases12?: Partial<Counts>;
   open?: number;
-  /** Opened dates, each a structure case, in any order. */
+  /** Opened dates of complaints, for the monthly series, in any order. */
   opened?: string[];
   tally?: Partial<Record<Period, Tally>>;
   duplicates?: Partial<Record<Period, number>>;
@@ -43,8 +27,6 @@ interface SummaryInput {
 function summary(
   id: string,
   {
-    cases = {},
-    cases12 = {},
     open = 0,
     opened = [],
     tally = {},
@@ -53,19 +35,8 @@ function summary(
     complaints = [],
   }: SummaryInput = {},
 ): CaseSummary {
-  const latest = [...opened]
-    .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
-    .slice(0, 8)
-    .map((date) => ({
-      opened: date,
-      category: "structure" as Category,
-      status: "Closed",
-    }));
   return {
-    cases: counts(cases),
-    cases12: counts(cases12),
     open,
-    lastCase: latest[0]?.opened ?? null,
     tally: { m12: {}, y2: {}, y3: {}, ...tally },
     duplicates: { m12: 0, y2: 0, y3: 0, ...duplicates },
     violationsOpen,
@@ -75,11 +46,15 @@ function summary(
         month,
         count: opened.filter((date) => date.startsWith(month)).length,
       })),
-      latest,
       complaints,
     },
   };
 }
+
+/** A tally of `count` complaints in the 3 years, all about the building and none confirmed. */
+const inThreeYears = (count: number): Partial<Record<Period, Tally>> => ({
+  y3: { structure: { none: count } },
+});
 
 const offender = (
   overrides: Partial<RepeatOffenderRecord> = {},
@@ -149,8 +124,7 @@ describe("combineParcels", () => {
     const busy = parcel("0204040107", {
       acres: 1.2,
       summary: summary("0204040107", {
-        cases: { structure: 30, property: 9 },
-        cases12: { structure: 4 },
+        tally: inThreeYears(39),
         open: 2,
         opened: [
           "2026-09-03",
@@ -166,8 +140,7 @@ describe("combineParcels", () => {
       metresNorth: 20,
       acres: 1.5,
       summary: summary("0203020605", {
-        cases: { landuse: 1, permit: 2 },
-        cases12: { permit: 1 },
+        tally: inThreeYears(3),
         open: 1,
         opened: ["2026-09-30", "2026-11-12", "2026-11-11"],
       }),
@@ -180,12 +153,8 @@ describe("combineParcels", () => {
     expect(complex.id).toBe("0204040107");
     expect(complex.parcelIds).toEqual(["0203020605", "0204040107"]);
     expect(complex.address).toBe("100 Main St");
-    expect(complex.cases).toEqual(
-      counts({ structure: 30, property: 9, landuse: 1, permit: 2 }),
-    );
-    expect(complex.cases12).toEqual(counts({ structure: 4, permit: 1 }));
+    expect(complex.tally.y3).toEqual({ structure: { none: 42 } });
     expect(complex.open).toBe(3);
-    expect(complex.lastCase).toBe("2026-11-12");
     expect(complex.acres).toBe(2.7);
     // The larger parcel's centroid, so the pin sits on the bulk of the property.
     expect(complex.lat).toBeCloseTo(quiet.lat, 6);
@@ -194,16 +163,6 @@ describe("combineParcels", () => {
       { month: "2026-09", count: 2 },
       { month: "2026-10", count: 2 },
       { month: "2026-11", count: 5 },
-    ]);
-    expect(detail.latest.map(({ opened }) => opened)).toEqual([
-      "2026-11-12",
-      "2026-11-11",
-      "2026-11-10",
-      "2026-11-09",
-      "2026-11-02",
-      "2026-10-20",
-      "2026-10-01",
-      "2026-09-30",
     ]);
     expect(detail.bbox).toEqual([
       busy.bbox[0],
@@ -299,7 +258,7 @@ describe("combineParcels", () => {
       source: "registered",
       label: "8312 Fathom Cir",
       offender: offender(),
-      summary: summary("0168090512", { cases: { structure: 25 } }),
+      summary: summary("0168090512", { tally: inThreeYears(25) }),
     });
     const sameLand = parcel("R072626", {
       source: "inside",
@@ -315,9 +274,9 @@ describe("combineParcels", () => {
     });
   });
 
-  it("takes the Repeat Offender registration from the member that holds it, even when another member has more cases", () => {
+  it("takes the Repeat Offender registration from the member that holds it, even when another member has more complaints", () => {
     const busy = parcel("0000000002", {
-      summary: summary("0000000002", { cases: { property: 9 } }),
+      summary: summary("0000000002", { tally: inThreeYears(9) }),
     });
     const listed = parcel("0000000001", {
       metresNorth: 30,
@@ -348,16 +307,16 @@ describe("combineParcels", () => {
 
   it("keeps the busiest member as the complex ID, and the lowest ID when members tie", () => {
     const busyHigh = parcel("R072626", {
-      summary: summary("R072626", { cases: { structure: 2 } }),
+      summary: summary("R072626", { tally: inThreeYears(2) }),
     });
     const quietLow = parcel("0168090512", {
       metresNorth: 20,
-      summary: summary("0168090512", { cases: { structure: 1 } }),
+      summary: summary("0168090512", { tally: inThreeYears(1) }),
     });
     expect(combineParcels([quietLow, busyHigh])[0].complex.id).toBe("R072626");
 
     const tiedHigh = parcel("R072626", {
-      summary: summary("R072626", { cases: { structure: 1 } }),
+      summary: summary("R072626", { tally: inThreeYears(1) }),
     });
     expect(combineParcels([tiedHigh, quietLow])[0].complex.id).toBe(
       "0168090512",
@@ -367,18 +326,36 @@ describe("combineParcels", () => {
     );
   });
 
-  it("counts only cases since November 2023 when choosing the busiest member", () => {
+  it("chooses the busiest member by the 3 years, not the 12 months", () => {
     const recent = parcel("0000000002", {
       summary: summary("0000000002", {
-        cases: { structure: 3 },
-        cases12: { structure: 3 },
+        tally: {
+          m12: { structure: { none: 3 } },
+          y3: { structure: { none: 3 } },
+        },
       }),
     });
     const older = parcel("0000000001", {
       metresNorth: 20,
-      summary: summary("0000000001", { cases: { structure: 5 } }),
+      summary: summary("0000000001", { tally: inThreeYears(5) }),
     });
     expect(combineParcels([recent, older])[0].complex.id).toBe("0000000001");
+  });
+
+  it("counts duplicates too when choosing the busiest member, so a page keeps the ID the city's reports gave it", () => {
+    const moreComplaints = parcel("0000000001", {
+      summary: summary("0000000001", { tally: inThreeYears(2) }),
+    });
+    const moreReports = parcel("0000000002", {
+      metresNorth: 20,
+      summary: summary("0000000002", {
+        tally: inThreeYears(1),
+        duplicates: { y3: 2 },
+      }),
+    });
+    expect(combineParcels([moreComplaints, moreReports])[0].complex.id).toBe(
+      "0000000002",
+    );
   });
 
   it("returns complexes in ID order", () => {
@@ -429,7 +406,6 @@ describe("combineParcels outcome fields", () => {
         }),
       ],
       summary: summary("0204040107", {
-        cases: { structure: 3 },
         tally: {
           m12: { structure: { none: 1 } },
           y3: { structure: { none: 2, violation: 1 }, property: { fixed: 1 } },
@@ -446,7 +422,6 @@ describe("combineParcels outcome fields", () => {
       metresNorth: 20,
       deficiencies: [deficiency({ cleared: 0, notCleared: 4 })],
       summary: summary("0203020605", {
-        cases: { structure: 1 },
         tally: {
           m12: { structure: { none: 2 }, landuse: { open: 1 } },
           y3: { structure: { none: 1, other: 1 } },
