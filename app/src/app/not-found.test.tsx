@@ -17,6 +17,7 @@ const meta: Meta = {
   duplicateCases: 0,
   unrecognizedOutcomes: 0,
   skippedDeficiencies: 0,
+  phrasesUsuallyWithCase: [],
 };
 
 vi.mock("./dataFiles", () => ({ readDataFile: vi.fn(async () => meta) }));

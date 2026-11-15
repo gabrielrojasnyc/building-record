@@ -105,4 +105,9 @@ export interface Meta {
   unrecognizedOutcomes: number;
   /** Deficiency rows left out: a category this site does not recognize, or a kind that is missing or not a code section title. */
   skippedDeficiencies: number;
+  /**
+   * Allow-listed phrases whose closed complaints in the 3 years nearly all carry a violation case number, most used
+   * first. Read from every complaint the city published, not only those at apartment complexes.
+   */
+  phrasesUsuallyWithCase: string[];
 }

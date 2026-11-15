@@ -17,6 +17,7 @@ const meta: Meta = {
   duplicateCases: 0,
   unrecognizedOutcomes: 0,
   skippedDeficiencies: 0,
+  phrasesUsuallyWithCase: [],
 };
 
 it("says the site is not official, gives the pull date and links to the method page", () => {

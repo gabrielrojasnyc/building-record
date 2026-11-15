@@ -203,6 +203,7 @@ const meta: Meta = {
   duplicateCases: 0,
   unrecognizedOutcomes: 0,
   skippedDeficiencies: 0,
+  phrasesUsuallyWithCase: [],
 };
 
 function lastMap(): BuildingMapProps {

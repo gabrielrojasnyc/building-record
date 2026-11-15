@@ -31,6 +31,7 @@ const meta: Meta = {
   duplicateCases: 1732,
   unrecognizedOutcomes: 0,
   skippedDeficiencies: 0,
+  phrasesUsuallyWithCase: [],
 };
 
 vi.mock("../dataFiles", () => ({
@@ -394,6 +395,31 @@ describe("how outcomes are decided", () => {
       expect(sectionOf("How outcomes are decided")).toHaveTextContent(
         "The table shows where each phrase lands for a complaint the city has closed and that has no violation case number.",
       );
+    });
+
+    it("notes, from the data, the phrases that land without a finding on their own but in practice come with a violation case", async () => {
+      await renderPage({
+        phrasesUsuallyWithCase: [
+          "Closed due to Voluntary Compliance",
+          // Confirmed on its own, so the table already puts it where its complaints are counted.
+          "CV Violation(s) Found/Inspection Performed",
+          "Closed due to Abatement",
+          "Legal Action-All Deficiencies Satisfied",
+          "Follow-up Inspection",
+        ],
+      });
+      const note = screen.getByText(/^Phrases such as /);
+      expect(note).toHaveTextContent(
+        'Phrases such as "Closed due to Voluntary Compliance", "Closed due to Abatement" and "Legal Action-All Deficiencies Satisfied" appear under Referred or closed without a finding because the table shows where a phrase lands on its own. In practice nearly every complaint the city closes with one of them carries a violation case number, and so counts as Violation confirmed.',
+      );
+      expect(note.previousElementSibling).toContainElement(
+        screen.getByRole("table"),
+      );
+    });
+
+    it("leaves the note out when the data names no such phrase", async () => {
+      await renderPage({ phrasesUsuallyWithCase: [] });
+      expect(screen.queryByText(/^Phrases such as /)).toBeNull();
     });
   });
 

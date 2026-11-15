@@ -379,6 +379,7 @@ describe("buildData", () => {
       duplicateCases: 2,
       unrecognizedOutcomes: 1,
       skippedDeficiencies: 1,
+      phrasesUsuallyWithCase: [],
     });
   });
 

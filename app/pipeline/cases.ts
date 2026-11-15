@@ -52,6 +52,11 @@ export interface CaseIndex {
   blankOutcomes: number;
   /** Rows whose status is Closed. */
   closedCases: number;
+  /**
+   * Allow-listed phrases whose closed complaints nearly all carry a violation case number, most used first: the city
+   * writes them when it closes a case, whatever the phrase would mean on its own.
+   */
+  phrasesUsuallyWithCase: string[];
 }
 
 interface CaseRow {
@@ -96,6 +101,29 @@ function monthRange(pulled: string): string[] {
 }
 
 const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/** The share of a phrase's closed complaints that must carry a violation case number for it to count as written on closing a case. */
+const USUALLY_WITH_CASE = 0.99;
+
+/** Closed complaints carrying a phrase, and how many of them have a violation case number. */
+interface ClosedWithPhrase {
+  closed: number;
+  withCase: number;
+}
+
+function phrasesUsuallyWithCase(
+  byPhrase: Map<string, ClosedWithPhrase>,
+): string[] {
+  return [...byPhrase]
+    .filter(
+      ([, { closed, withCase }]) => withCase / closed >= USUALLY_WITH_CASE,
+    )
+    .sort(
+      ([phraseA, a], [phraseB, b]) =>
+        b.closed - a.closed || compareText(phraseA, phraseB),
+    )
+    .map(([phrase]) => phrase);
+}
 
 /** Newest first. Complaints opened the same day fall back on fields that tell them apart, so the order never depends on how the city returned them. */
 export function compareComplaints(a: Complaint, b: Complaint): number {
@@ -206,6 +234,7 @@ export async function loadCases(
   const unrecognizedPhrases = new Map<string, number>();
   let blankOutcomes = 0;
   let closedCases = 0;
+  const closedByPhrase = new Map<string, ClosedWithPhrase>();
 
   for (const row of rows) {
     const phrase = row.last_update?.trim() ?? "";
@@ -217,7 +246,15 @@ export async function loadCases(
         (unrecognizedPhrases.get(phrase) ?? 0) + 1,
       );
     }
-    if (row.status === "Closed") closedCases += 1;
+    if (row.status === "Closed") {
+      closedCases += 1;
+      if (isKnownCityOutcome(phrase)) {
+        const tally = closedByPhrase.get(phrase) ?? { closed: 0, withCase: 0 };
+        tally.closed += 1;
+        if (row.violationcasenumber?.trim()) tally.withCase += 1;
+        closedByPhrase.set(phrase, tally);
+      }
+    }
 
     const parcelId = row.parcelid?.trim();
     if (!parcelId) {
@@ -290,5 +327,6 @@ export async function loadCases(
     ),
     blankOutcomes,
     closedCases,
+    phrasesUsuallyWithCase: phrasesUsuallyWithCase(closedByPhrase),
   };
 }

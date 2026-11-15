@@ -461,6 +461,37 @@ describe("complaint outcomes", () => {
     expect(index.unrecognizedOutcomes).toBe(2);
   });
 
+  it("lists the allow-listed phrases whose closed complaints nearly all carry a violation case number, most used first", async () => {
+    const withCase = (opened: string, phrase: string, n: number) =>
+      complaint(opened, {
+        last_update: phrase,
+        violationcasenumber: `2026 ${String(n).padStart(6, "0")}-CV`,
+      });
+    const rows = [
+      ...Array.from({ length: 3 }, (_, n) =>
+        withCase("2026-09-01", "Closed due to Abatement", n),
+      ),
+      ...Array.from({ length: 4 }, (_, n) =>
+        withCase("2026-09-02", "Closed due to Voluntary Compliance", n),
+      ),
+      // Open complaints say nothing about how the city closes them.
+      complaint("2026-09-03", {
+        status: "Active",
+        last_update: "Closed due to Abatement",
+      }),
+      // One closed without a case number in two is far from nearly all.
+      withCase("2026-09-04", "Contact Performed", 1),
+      complaint("2026-09-05", { last_update: "Contact Performed" }),
+      complaint("2026-09-06", { last_update: NONE }),
+      withCase("2026-09-07", "Not a city phrase", 1),
+    ];
+    const { index } = await summaryOf(rows);
+    expect(index.phrasesUsuallyWithCase).toEqual([
+      "Closed due to Voluntary Compliance",
+      "Closed due to Abatement",
+    ]);
+  });
+
   it("names each unrecognized phrase with how many rows carry it, for the build log, and counts blank phrases and closed rows", async () => {
     const { index } = await summaryOf([
       complaint("2026-09-01", { parcelid: "", last_update: "Something new" }),

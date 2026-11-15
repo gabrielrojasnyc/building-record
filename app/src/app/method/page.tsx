@@ -121,6 +121,26 @@ function phrasesByOutcome(): { heading: string; phrases: string[] }[] {
   ].filter(({ phrases }) => phrases.length > 0);
 }
 
+/** At most this many phrases are named in the note under the table. */
+const NAMED_IN_NOTE = 3;
+
+/**
+ * Phrases the table puts under Referred or closed without a finding whose closed complaints, in the data, nearly all
+ * carry a violation case number, and so are counted as Violation confirmed. Most used first.
+ */
+function phrasesThatComeWithCases(meta: Meta): string[] {
+  return meta.phrasesUsuallyWithCase
+    .filter(
+      (phrase) =>
+        classify({
+          cityOutcome: phrase,
+          status: "Closed",
+          hasViolationCase: false,
+        }) === "other",
+    )
+    .slice(0, NAMED_IN_NOTE);
+}
+
 function ExternalLink({
   href,
   children,
@@ -195,6 +215,7 @@ function PhraseTable() {
 export default async function MethodPage() {
   const meta = await readDataFile<Meta>("meta.json");
   const unmatchedPercent = Math.round(meta.unmatchedCaseShare * 100);
+  const comeWithCases = phrasesThatComeWithCases(meta);
 
   return (
     <main className="px-(--gutter) py-6">
@@ -390,6 +411,16 @@ export default async function MethodPage() {
               own words, shown exactly as written.
             </p>
             <PhraseTable />
+            {comeWithCases.length > 0 && (
+              <p>
+                Phrases such as{" "}
+                {sayList(comeWithCases.map((phrase) => `"${phrase}"`))} appear
+                under {OUTCOME_LABEL.other} because the table shows where a
+                phrase lands on its own. In practice nearly every complaint the
+                city closes with one of them carries a violation case number,
+                and so counts as {OUTCOME_LABEL.violation}.
+              </p>
+            )}
             <p>
               This site shows only these phrases. Any other wording is never
               shown and is treated as if the city had left the phrase blank.

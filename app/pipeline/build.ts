@@ -396,6 +396,7 @@ async function assemble(
     duplicateCases: complexes.reduce((sum, c) => sum + c.duplicates.y3, 0),
     unrecognizedOutcomes: caseIndex.unrecognizedOutcomes,
     skippedDeficiencies: deficiencies.skipped,
+    phrasesUsuallyWithCase: caseIndex.phrasesUsuallyWithCase,
   };
   files.set("complexes.json", JSON.stringify(complexes));
   files.set("meta.json", JSON.stringify(meta));
