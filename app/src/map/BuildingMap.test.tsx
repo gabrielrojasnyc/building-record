@@ -35,8 +35,27 @@ const { FakeMap, FakeMarker, maps } = vi.hoisted(() => {
     readonly setLayoutProperty = vi.fn();
     readonly setPaintProperty = vi.fn();
     readonly querySourceFeatures = vi.fn((): unknown[] => []);
+    /** The map's container, which the page lays out at once when the window changes size. */
+    readonly container = { clientWidth: 1000, clientHeight: 800 };
+    /** The canvas, which MapLibre brings to the container's size only in `resize`, from a throttled ResizeObserver. */
+    readonly canvas = { clientWidth: 1000, clientHeight: 800, style: {} };
+    /** The canvas size at each fit, so a test can tell a fit against a stale canvas. */
+    readonly fittedOn: { width: number; height: number }[] = [];
     /** Always fits the box at zoom 17. */
-    readonly cameraForBounds = vi.fn(() => ({ zoom: 17 }));
+    readonly cameraForBounds = vi.fn(() => {
+      const { clientWidth: width, clientHeight: height } = this.canvas;
+      this.fittedOn.push({ width, height });
+      return { zoom: 17 };
+    });
+    /** As MapLibre's: sizes the canvas to the container, then fires movestart and move unless a movement is running, resize, and moveend. */
+    readonly resize = vi.fn((eventData: EventData = {}) => {
+      this.canvas.clientWidth = this.container.clientWidth;
+      this.canvas.clientHeight = this.container.clientHeight;
+      const fireMoving = this.moving === null;
+      if (fireMoving) this.fire("movestart", eventData);
+      this.fire("resize", eventData);
+      if (fireMoving) this.fire("moveend", eventData);
+    });
     /*
       Camera calls behave as MapLibre's: an eased movement fires movestart and runs until `arrive`, and
       the next camera call, `stop` or `setPadding` (a jump) interrupts it first, firing its moveend.
@@ -58,7 +77,9 @@ const { FakeMap, FakeMarker, maps } = vi.hoisted(() => {
     readonly jumpTo = vi.fn((_options: object, eventData?: EventData) =>
       this.jump(eventData),
     );
-    readonly setPadding = vi.fn(() => this.jump());
+    readonly setPadding = vi.fn((_padding: object, eventData?: EventData) =>
+      this.jump(eventData),
+    );
     readonly stop = vi.fn(() => this.arrive());
     private moving: EventData | null = null;
     /** Whether the map has drawn the current view with all its tiles; `loaded` reads it. */
@@ -67,15 +88,20 @@ const { FakeMap, FakeMarker, maps } = vi.hoisted(() => {
     constructor() {
       maps.push(this);
     }
-    /** A 1000 by 800 container whose screen pixels unproject to thousandths of a degree. */
+    /** A 1000 by 800 container at first, whose screen pixels unproject to thousandths of a degree. */
     getContainer() {
-      return { clientWidth: 1000, clientHeight: 800 };
+      return this.container;
     }
     unproject([x, y]: [number, number]) {
       return { lng: x / 1000, lat: y / 1000 };
     }
     getCanvas() {
-      return { style: {} };
+      return this.canvas;
+    }
+    /** The window changes size: the container follows at once, the canvas only once `resize` runs. */
+    windowResizedTo(width: number, height: number) {
+      this.container.clientWidth = width;
+      this.container.clientHeight = height;
     }
     getCenter() {
       return { lng: this.camera.lng, lat: this.camera.lat };
@@ -657,6 +683,54 @@ describe("BuildingMap spotlight", () => {
     );
   });
 
+  const DOWNTOWN = { lon: -97.7431, lat: 30.2672, zoom: 13.9 };
+
+  it("returns the bearing from before the spotlight on a fly that replaces it, so the city is not left turned", async () => {
+    const { map, update } = await turning(ARRAY);
+    map.camera.bearing = 108;
+
+    update({ spotlight: null, flyTo: DOWNTOWN });
+
+    expect(map.flyTo).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        center: [DOWNTOWN.lon, DOWNTOWN.lat],
+        zoom: 13.9,
+        pitch: 58,
+        bearing: -12,
+      }),
+    );
+  });
+
+  it("keeps the person's bearing on a fly with nothing spotlit", async () => {
+    const { map, update } = await loadedMap();
+    map.camera.bearing = 108;
+
+    update({ flyTo: DOWNTOWN });
+
+    expect(map.flyTo).toHaveBeenCalledOnce();
+    expect(map.flyTo.mock.calls[0][0]).not.toHaveProperty("bearing");
+  });
+
+  it("under reduced motion, a jump that replaces a spotlight returns the bearing too, and one with nothing spotlit keeps it", async () => {
+    reducedMotion = true;
+    vi.mocked(loadFootprints).mockReturnValue(new Promise(() => {}));
+    const { map, update, spotlightOn } = await loadedMap();
+    spotlightOn(ARRAY);
+    map.camera.bearing = 108;
+
+    update({ spotlight: null, flyTo: DOWNTOWN });
+    expect(map.jumpTo).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        center: [DOWNTOWN.lon, DOWNTOWN.lat],
+        bearing: -12,
+      }),
+    );
+
+    update({ flyTo: { ...DOWNTOWN, zoom: 15 } });
+    expect(map.jumpTo.mock.calls.at(-1)?.[0]).toMatchObject({ zoom: 15 });
+    expect(map.jumpTo.mock.calls.at(-1)?.[0]).not.toHaveProperty("bearing");
+  });
+
   it("turns 60 degrees every 21 seconds once it arrives", async () => {
     vi.mocked(loadFootprints).mockReturnValue(new Promise(() => {}));
     const { map, spotlightOn } = await loadedMap();
@@ -718,6 +792,106 @@ describe("BuildingMap spotlight", () => {
     expect(map.rotateTo).toHaveBeenCalledOnce();
   });
 
+  describe("picking again while the camera eases back", () => {
+    const BEFORE = {
+      center: [-97.7431, 30.285],
+      zoom: 11.6,
+      pitch: 52,
+      bearing: -12,
+    };
+    const ELSEWHERE_CAMERA = {
+      lng: -97.72,
+      lat: 30.29,
+      zoom: 13,
+      pitch: 56,
+      bearing: 10,
+    };
+
+    /** As the screen does it: the selection padding comes and goes with the model. */
+    async function openThenEscape() {
+      const loaded = await turning(ARRAY);
+      loaded.update({ padding: SELECTION_PADDING });
+      loaded.map.camera = {
+        lng: ARRAY.lon,
+        lat: ARRAY.lat,
+        zoom: 16.75,
+        pitch: 60,
+        bearing: 48,
+      };
+      loaded.update({ spotlight: null, padding: PADDING });
+      expect(loaded.map.easeTo).toHaveBeenCalledOnce();
+      return loaded;
+    }
+
+    function pickThenClose(
+      update: (changes: Partial<BuildingMapProps>) => void,
+    ) {
+      update({ spotlight: ELSEWHERE, padding: SELECTION_PADDING });
+      update({ spotlight: null, padding: PADDING });
+    }
+
+    it("keeps the camera from before the first pick when the next pick comes before the ease back ends", async () => {
+      const { map, update } = await openThenEscape();
+      map.camera = ELSEWHERE_CAMERA;
+
+      pickThenClose(update);
+
+      expect(map.easeTo).toHaveBeenLastCalledWith(
+        expect.objectContaining(BEFORE),
+        expect.anything(),
+      );
+    });
+
+    it("records the camera afresh for a pick after the ease back has ended", async () => {
+      const { map, update } = await openThenEscape();
+      map.arrive();
+      map.camera = ELSEWHERE_CAMERA;
+
+      pickThenClose(update);
+
+      expect(map.easeTo).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          center: [-97.72, 30.29],
+          zoom: 13,
+          bearing: 10,
+        }),
+        expect.anything(),
+      );
+    });
+
+    it("records the camera afresh for a pick after the person moved the map during the ease back", async () => {
+      const { map, update } = await openThenEscape();
+      // The person drags, which interrupts the ease back.
+      map.fire("mousedown");
+      map.jumpTo({ center: [-97.72, 30.29] });
+      map.camera = ELSEWHERE_CAMERA;
+
+      pickThenClose(update);
+
+      expect(map.easeTo).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          center: [-97.72, 30.29],
+          zoom: 13,
+          bearing: 10,
+        }),
+        expect.anything(),
+      );
+    });
+
+    it("returns the bearing from before on a fly asked for before the ease back ends", async () => {
+      const { map, update } = await openThenEscape();
+
+      update({ flyTo: DOWNTOWN });
+
+      expect(map.flyTo).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          center: [DOWNTOWN.lon, DOWNTOWN.lat],
+          bearing: -12,
+        }),
+      );
+    });
+  });
+
   it("leaves the camera to a movement it did not start", async () => {
     const { map } = await turning(ARRAY);
 
@@ -772,7 +946,10 @@ describe("BuildingMap spotlight", () => {
 
     update({ padding: SELECTION_PADDING });
 
-    expect(map.setPadding).toHaveBeenLastCalledWith(SELECTION_PADDING);
+    expect(map.setPadding).toHaveBeenLastCalledWith(
+      SELECTION_PADDING,
+      expect.anything(),
+    );
     expect(map.flyTo).toHaveBeenCalledTimes(2);
     expect(map.flyTo.mock.calls[1][0]).toEqual(map.flyTo.mock.calls[0][0]);
     // Fitted after the new padding is the map's, so it frames inside it.
@@ -818,6 +995,63 @@ describe("BuildingMap spotlight", () => {
       expect.objectContaining({ center: [-97.7431, 30.285], zoom: 11.6 }),
       expect.anything(),
     );
+  });
+
+  it("frames against the new canvas when new padding comes with a window resize that MapLibre has not caught up with", async () => {
+    const { map, update } = await turning(ARRAY);
+
+    // In the browser's order: the window resizes, the screen renders its new padding, and only then
+    // does MapLibre's ResizeObserver size the canvas.
+    map.windowResizedTo(375, 812);
+    update({ padding: { top: 190, right: 30, bottom: 507, left: 30 } });
+    map.resize();
+
+    expect(map.fittedOn).toEqual([
+      { width: 1000, height: 800 },
+      { width: 375, height: 812 },
+    ]);
+    await wait(20);
+    expect(map.rotateTo).toHaveBeenCalledOnce();
+    for (const turns of [2, 3]) {
+      map.arrive();
+      await wait(20);
+      expect(map.rotateTo).toHaveBeenCalledTimes(turns);
+    }
+    expect(labels()).toEqual(["Array Apartments"]);
+  });
+
+  it("frames the complex again when the window resizes with no change of padding", async () => {
+    const { map } = await turning(ARRAY);
+
+    map.windowResizedTo(900, 700);
+    map.resize();
+
+    expect(map.fittedOn).toEqual([
+      { width: 1000, height: 800 },
+      { width: 900, height: 700 },
+    ]);
+    expect(map.flyTo).toHaveBeenCalledTimes(2);
+    await wait(20);
+    // The turn the new flight interrupted does not start another.
+    expect(map.rotateTo).toHaveBeenCalledOnce();
+    for (const turns of [2, 3]) {
+      map.arrive();
+      await wait(20);
+      expect(map.rotateTo).toHaveBeenCalledTimes(turns);
+    }
+  });
+
+  it("leaves the camera alone when the window resizes with nothing spotlit", async () => {
+    const { map } = await loadedMap();
+
+    map.windowResizedTo(375, 812);
+    map.resize();
+    await wait(100);
+
+    expect(map.cameraForBounds).not.toHaveBeenCalled();
+    expect(map.flyTo).not.toHaveBeenCalled();
+    expect(map.jumpTo).not.toHaveBeenCalled();
+    expect(map.easeTo).not.toHaveBeenCalled();
   });
 
   it("under reduced motion, reads the tile buildings only once the map has drawn the view it jumped to", async () => {
