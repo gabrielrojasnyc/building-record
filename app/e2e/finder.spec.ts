@@ -416,6 +416,13 @@ test("a building page is reachable directly", async ({ page }) => {
   ).toHaveAttribute("href", "/");
   await expect(page.getByText("What the complaints were about")).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/code case/i);
+  // The page is the building's full record, so it leads with the 3 years.
+  await expect(
+    page
+      .getByText("in the last 3 years", { exact: true })
+      .locator("xpath=../.."),
+  ).toContainText(complaintsIn(complex, "y3").toLocaleString("en-US"));
+  await expect(page.getByText("last 12 months", { exact: true })).toBeVisible();
 
   // The stubbed photo answers at once, often before the page is hydrated, and must still be taken.
   const photo = page.getByRole("img", { name: /^Aerial photo of / });

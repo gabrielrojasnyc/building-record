@@ -2,11 +2,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PERIOD_PHRASE } from "@/domain/periods";
-import { countFor, DEFAULT_VIEW } from "@/domain/query";
+import { countFor, DEFAULT_VIEW, type View } from "@/domain/query";
 import type { BuildingDetail, Complex, Meta } from "@/domain/types";
 import { BuildingPanel } from "@/ui/BuildingPanel";
 import { Notice } from "@/ui/Notice";
 import { readDataFile } from "../../dataFiles";
+
+/**
+ * A building's own page is its full record, so it leads with the 3 years, the figure its description gives, with
+ * 12 months and 2 years beside it. It has no period control.
+ */
+const FULL_RECORD: View = { ...DEFAULT_VIEW, period: "y3" };
 
 /** Every complex gets its page at build time, so any other id is not found. */
 export const dynamicParams = false;
@@ -27,12 +33,12 @@ export async function generateStaticParams() {
 }
 
 function describeRecord(complex: Complex): string {
-  const total = countFor(complex, { ...DEFAULT_VIEW, period: "y3" });
+  const total = countFor(complex, FULL_RECORD);
   const complaints =
     total === 0
       ? "no complaints"
       : `${total.toLocaleString("en-US")} ${total === 1 ? "complaint" : "complaints"}`;
-  return `${complex.address}: ${complaints} ${PERIOD_PHRASE.y3}. Data from the City of Austin.`;
+  return `${complex.address}: ${complaints} ${PERIOD_PHRASE[FULL_RECORD.period]}. Data from the City of Austin.`;
 }
 
 export async function generateMetadata({
@@ -77,7 +83,7 @@ export default async function BuildingPage({
           place="page"
           complex={complex}
           detail={detail}
-          view={DEFAULT_VIEW}
+          view={FULL_RECORD}
           periodStarts={meta.periodStarts}
         />
       </div>
