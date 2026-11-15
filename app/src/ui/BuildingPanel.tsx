@@ -448,24 +448,34 @@ function LeadFigure({ complex, period }: { complex: Complex; period: Period }) {
 }
 
 /** The two periods the lead figure is not showing, shortest first, then the complaints still open. */
+/** What "open now" counts, which its caption is too short to say: not the active period, and every outcome. */
+const OPEN_NOW_SCOPE =
+  "Complaints from the last 3 years that the city has not closed";
+
 function Figures({ complex, period }: { complex: Complex; period: Period }) {
-  const figures = [
+  const figures: { value: string; label: string; scope?: string }[] = [
     ...PERIODS.filter((other) => other !== period).map((other) => ({
       value: formatCount(totalFor(complex, other)),
       label: `last ${PERIOD_LABEL[other]}`,
     })),
-    { value: formatCount(complex.open), label: "open now" },
+    {
+      value: formatCount(complex.open),
+      label: "open now",
+      scope: OPEN_NOW_SCOPE,
+    },
   ];
 
   return (
     <div className="mt-[18px] grid grid-cols-3 gap-2">
-      {figures.map(({ value, label }) => (
+      {figures.map(({ value, label, scope }) => (
         <div
           key={label}
+          title={scope}
           className="rounded-[18px] border border-white/60 bg-white/42 p-3"
         >
           <p className="text-[20px] text-deep tabular-nums">{value}</p>
           <p className="text-[12px] text-steel">{label}</p>
+          {scope && <p className="sr-only">{scope}</p>}
         </div>
       ))}
     </div>

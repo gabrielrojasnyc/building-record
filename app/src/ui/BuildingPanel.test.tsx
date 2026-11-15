@@ -205,7 +205,7 @@ it("leads with the complaints of the active period, the other two periods and op
   expect(smallFigures()).toEqual([
     "102last 2 years",
     "284last 3 years",
-    "1open now",
+    "1open nowComplaints from the last 3 years that the city has not closed",
   ]);
   expect(barRow("Building condition")).toHaveTextContent("11");
 
@@ -215,7 +215,7 @@ it("leads with the complaints of the active period, the other two periods and op
   expect(smallFigures()).toEqual([
     "12last 12 months",
     "284last 3 years",
-    "1open now",
+    "1open nowComplaints from the last 3 years that the city has not closed",
   ]);
   expect(barRow("Building condition")).toHaveTextContent("90");
 
@@ -225,7 +225,7 @@ it("leads with the complaints of the active period, the other two periods and op
   expect(smallFigures()).toEqual([
     "12last 12 months",
     "102last 2 years",
-    "1open now",
+    "1open nowComplaints from the last 3 years that the city has not closed",
   ]);
   expect(barRow("Building condition")).toHaveTextContent("254");
 });
@@ -254,7 +254,7 @@ it('shows None and "no complaints" for a clean building', () => {
   expect(smallFigures()).toEqual([
     "0last 2 years",
     "0last 3 years",
-    "0open now",
+    "0open nowComplaints from the last 3 years that the city has not closed",
   ]);
   expect(screen.getByText("No complaints in the last 3 years.")).toBeVisible();
   expect(screen.queryAllByTestId("month-bar")).toHaveLength(0);
@@ -797,6 +797,16 @@ describe("over the map", () => {
     expect(close.parentElement).toBe(panel);
     expect(scroller).toHaveClass("overscroll-contain");
     expect(within(panel).getAllByRole("button")[0]).toBe(close);
+  });
+
+  it("says what open now counts, to the eye on hover and to a screen reader", () => {
+    renderOnMap(busy, { [HISTORY]: pending });
+    const tile = screen.getByText("open now").parentElement as HTMLElement;
+    const scope =
+      "Complaints from the last 3 years that the city has not closed";
+    expect(tile).toHaveAttribute("title", scope);
+    expect(within(tile).getByText(scope)).toHaveClass("sr-only");
+    expect(tile).toHaveTextContent(/^1open now/);
   });
 
   it("closes from its button and from the Escape key", async () => {
