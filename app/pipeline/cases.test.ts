@@ -461,6 +461,26 @@ describe("complaint outcomes", () => {
     expect(index.unrecognizedOutcomes).toBe(2);
   });
 
+  it("names each unrecognized phrase with how many rows carry it, for the build log, and counts blank phrases and closed rows", async () => {
+    const { index } = await summaryOf([
+      complaint("2026-09-01", { parcelid: "", last_update: "Something new" }),
+      complaint("2026-09-02", { last_update: " Something new " }),
+      complaint("2026-09-03", {
+        status: "Active",
+        last_update: "Rarely seen",
+      }),
+      complaint("2026-09-04", { last_update: NONE }),
+      complaint("2026-09-05", { last_update: "   " }),
+      complaint("2026-09-06", { status: "Pending" }),
+    ]);
+    expect([...index.unrecognizedPhrases]).toEqual([
+      ["Something new", 2],
+      ["Rarely seen", 1],
+    ]);
+    expect(index.blankOutcomes).toBe(2);
+    expect(index.closedCases).toBe(4);
+  });
+
   it("keeps a violation case link only when it is on the city permit site", async () => {
     const link = (url: unknown) => ({
       violationcasenumber: "2026 141538-CV",

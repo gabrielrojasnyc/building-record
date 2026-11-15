@@ -22,7 +22,12 @@ import {
   MAX_UNRECOGNIZED_OUTCOME_SHARE,
   MIN_EXPECTED_DEFICIENCY_ROWS,
   MIN_EXPECTED_REPEAT_OFFENDER_ROWS,
+  MAX_BLANK_OUTCOME_SHARE,
+  MIN_CLOSED_SHARE,
+  MAX_SKIPPED_DEFICIENCY_SHARE,
   buildData,
+  refuseIncompletePull,
+  type PullReadings,
 } from "./build";
 import { CityApiError } from "./socrata";
 
@@ -234,6 +239,9 @@ const LOW = {
   minAddressPoints: 1,
   minRepeatOffenderRows: 1,
   minDeficiencyRows: 1,
+  // The fixture leaves most phrases blank and skips one deficiency row in six, far past the live limits.
+  maxBlankOutcomeShare: 1,
+  maxSkippedDeficiencyShare: 1,
 };
 const options = () => ({
   ...LOW,
@@ -569,18 +577,35 @@ describe("buildData", () => {
   });
 
   it.each([
-    ["6wtj-zbtb", "code cases", "minCases"],
-    ["9s7j-tygf", "address points", "minAddressPoints"],
-    ["86z9-i27i", "Repeat Offender rows", "minRepeatOffenderRows"],
-    ["ge82-ij4h", "Repeat Offender deficiency rows", "minDeficiencyRows"],
+    ["6wtj-zbtb", "complaint rows", "minCases", "MIN_EXPECTED_CASES"],
+    [
+      "9s7j-tygf",
+      "address points",
+      "minAddressPoints",
+      "MIN_EXPECTED_ADDRESS_POINTS",
+    ],
+    [
+      "86z9-i27i",
+      "Repeat Offender rows",
+      "minRepeatOffenderRows",
+      "MIN_EXPECTED_REPEAT_OFFENDER_ROWS",
+    ],
+    [
+      "ge82-ij4h",
+      "Repeat Offender deficiency rows",
+      "minDeficiencyRows",
+      "MIN_EXPECTED_DEFICIENCY_ROWS",
+    ],
   ])(
-    "refuses to publish over good data when %s is short (%s)",
-    async (_dataset, label, option) => {
+    "refuses to publish over good data when %s is short (%s), naming the floor to change",
+    async (_dataset, label, option, constant) => {
       mkdirSync(out);
       writeFileSync(`${out}/meta.json`, '{"yesterday":true}');
       const tooHigh = { ...options(), [option]: 1_000_000 };
       await expect(buildData(out, NOW, fixtureFetch, tooHigh)).rejects.toThrow(
-        new RegExp(`Only \\d+ ${label} came back, expected at least 1000000`),
+        new RegExp(
+          `Only \\d+ ${label} came back, expected at least 1,000,000 \\(${constant} in pipeline/build\\.ts\\)`,
+        ),
       );
       expect(readFileSync(`${out}/meta.json`, "utf8")).toBe(
         '{"yesterday":true}',
@@ -595,7 +620,46 @@ describe("buildData", () => {
       MIN_EXPECTED_ADDRESS_POINTS,
       MIN_EXPECTED_REPEAT_OFFENDER_ROWS,
       MIN_EXPECTED_DEFICIENCY_ROWS,
-    ]).toEqual([50_000, 300_000, 40, 2_000]);
+    ]).toEqual([50_000, 300_000, 40, 1_000]);
+  });
+
+  it("prints what each guard saw, and every unrecognized phrase with its count, even when a guard refuses", async () => {
+    await expect(
+      buildData(out, NOW, fixtureFetch, {
+        ...options(),
+        maxUnrecognizedOutcomeShare: 0.001,
+      }),
+    ).rejects.toThrow(/outcome phrase/);
+    const printed = logged.join("\n");
+    expect(printed).toMatch(
+      /Outcome phrases not on the allow-list \(build log only\), most frequent first:\n {2}1 {2}Tenant says the landlord is retaliating/,
+    );
+    expect(printed).toContain("304 complaint rows read");
+    expect(printed).toContain("6 Repeat Offender deficiency rows read");
+  });
+
+  it("refuses to write when more than 3% of complaint rows have no outcome phrase", async () => {
+    // Most of the fixture's rows carry no phrase at all.
+    await expect(
+      buildData(out, NOW, fixtureFetch, {
+        ...options(),
+        maxBlankOutcomeShare: MAX_BLANK_OUTCOME_SHARE,
+      }),
+    ).rejects.toThrow(/have no outcome phrase.*MAX_BLANK_OUTCOME_SHARE/);
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it("refuses to write when more than 5% of deficiency rows are skipped", async () => {
+    // One of the fixture's six has a category this site does not recognize.
+    await expect(
+      buildData(out, NOW, fixtureFetch, {
+        ...options(),
+        maxSkippedDeficiencyShare: MAX_SKIPPED_DEFICIENCY_SHARE,
+      }),
+    ).rejects.toThrow(
+      /1 of 6 Repeat Offender deficiency rows \(16\.7%\) were skipped.*MAX_SKIPPED_DEFICIENCY_SHARE/,
+    );
+    expect(existsSync(out)).toBe(false);
   });
 
   it("refuses to publish when more than 1% of cases carry a description it does not recognize", async () => {
@@ -609,7 +673,7 @@ describe("buildData", () => {
         maxUncategorizedShare: 0.001,
       }),
     ).rejects.toThrow(
-      /1 of 304 cases \(0\.3%\) carry a description this site does not recognize/,
+      /1 of 304 complaint rows \(0\.3%\) carry a description this site does not recognize.*MAX_UNCATEGORIZED_SHARE/,
     );
     expect(readFileSync(`${out}/meta.json`, "utf8")).toBe('{"yesterday":true}');
     await expect(
@@ -628,7 +692,7 @@ describe("buildData", () => {
         maxUnrecognizedOutcomeShare: 0.001,
       }),
     ).rejects.toThrow(
-      /1 of 304 cases \(0\.3%\) carry an outcome phrase this site does not recognize/,
+      /1 of 304 complaint rows \(0\.3%\) carry an outcome phrase this site does not recognize.*MAX_UNRECOGNIZED_OUTCOME_SHARE/,
     );
     expect(readFileSync(`${out}/meta.json`, "utf8")).toBe('{"yesterday":true}');
     await expect(
@@ -786,7 +850,87 @@ describe("buildData", () => {
         ...options(),
         minComplexes: MIN_EXPECTED_COMPLEXES,
       }),
-    ).rejects.toThrow(/6 .*2000/);
+    ).rejects.toThrow(/Only 6 apartment complexes .*2,000/);
     expect(existsSync(out)).toBe(false);
+  });
+});
+
+describe("the guards on a pull", () => {
+  /** A pull with round numbers, every reading on the right side of its limit. */
+  const healthy: PullReadings = {
+    addressPoints: MIN_EXPECTED_ADDRESS_POINTS,
+    caseRows: 100_000,
+    repeatOffenderRows: MIN_EXPECTED_REPEAT_OFFENDER_ROWS,
+    deficiencyRows: 2_000,
+    uncategorizedCases: 0,
+    unrecognizedOutcomes: 0,
+    blankOutcomes: 0,
+    closedCases: 100_000,
+    skippedDeficiencies: 0,
+  };
+
+  it("passes a pull that reads like the live one", () => {
+    expect(() => refuseIncompletePull(healthy)).not.toThrow();
+  });
+
+  it("allows 3% of complaint rows with no outcome phrase, and refuses one more", () => {
+    expect(MAX_BLANK_OUTCOME_SHARE).toBe(0.03);
+    expect(() =>
+      refuseIncompletePull({ ...healthy, blankOutcomes: 3_000 }),
+    ).not.toThrow();
+    expect(() =>
+      refuseIncompletePull({ ...healthy, blankOutcomes: 3_001 }),
+    ).toThrow(
+      "3,001 of 100,000 complaint rows (3.0%) have no outcome phrase, more than the 3% allowed (MAX_BLANK_OUTCOME_SHARE in pipeline/build.ts). Refusing to write.",
+    );
+  });
+
+  it("needs 85% of complaint rows closed, and refuses one fewer", () => {
+    expect(MIN_CLOSED_SHARE).toBe(0.85);
+    expect(() =>
+      refuseIncompletePull({ ...healthy, closedCases: 85_000 }),
+    ).not.toThrow();
+    expect(() =>
+      refuseIncompletePull({ ...healthy, closedCases: 84_999 }),
+    ).toThrow(
+      "Only 84,999 of 100,000 complaint rows (85.0%) are Closed, fewer than the 85% expected (MIN_CLOSED_SHARE in pipeline/build.ts). Refusing to write.",
+    );
+  });
+
+  it("allows 1% of complaint rows with an unrecognized phrase or description, and refuses one more", () => {
+    for (const reading of [
+      "unrecognizedOutcomes",
+      "uncategorizedCases",
+    ] as const) {
+      expect(() =>
+        refuseIncompletePull({ ...healthy, [reading]: 1_000 }),
+      ).not.toThrow();
+      expect(() =>
+        refuseIncompletePull({ ...healthy, [reading]: 1_001 }),
+      ).toThrow(/1,001 of 100,000 complaint rows \(1\.0%\)/);
+    }
+  });
+
+  it("needs 1,000 deficiency rows, and refuses one fewer", () => {
+    expect(() =>
+      refuseIncompletePull({ ...healthy, deficiencyRows: 1_000 }),
+    ).not.toThrow();
+    expect(() =>
+      refuseIncompletePull({ ...healthy, deficiencyRows: 999 }),
+    ).toThrow(
+      "Only 999 Repeat Offender deficiency rows came back, expected at least 1,000 (MIN_EXPECTED_DEFICIENCY_ROWS in pipeline/build.ts). Refusing to write.",
+    );
+  });
+
+  it("allows 5% of deficiency rows skipped, and refuses one more", () => {
+    expect(MAX_SKIPPED_DEFICIENCY_SHARE).toBe(0.05);
+    expect(() =>
+      refuseIncompletePull({ ...healthy, skippedDeficiencies: 100 }),
+    ).not.toThrow();
+    expect(() =>
+      refuseIncompletePull({ ...healthy, skippedDeficiencies: 101 }),
+    ).toThrow(
+      "101 of 2,000 Repeat Offender deficiency rows (5.1%) were skipped for an unknown category or a missing or unsafe kind, more than the 5% allowed (MAX_SKIPPED_DEFICIENCY_SHARE in pipeline/build.ts). Refusing to write.",
+    );
   });
 });

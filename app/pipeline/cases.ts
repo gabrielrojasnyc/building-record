@@ -46,6 +46,12 @@ export interface CaseIndex {
   futureDatedCases: number;
   /** Rows, whatever else is true of them, whose outcome phrase is not on the allow-list. */
   unrecognizedOutcomes: number;
+  /** Each phrase not on the allow-list with how many rows carry it, most frequent first. For the build log only, never published. */
+  unrecognizedPhrases: Map<string, number>;
+  /** Rows with no outcome phrase at all. */
+  blankOutcomes: number;
+  /** Rows whose status is Closed. */
+  closedCases: number;
 }
 
 interface CaseRow {
@@ -197,10 +203,21 @@ export async function loadCases(
   let uncategorizedCases = 0;
   let futureDatedCases = 0;
   let unrecognizedOutcomes = 0;
+  const unrecognizedPhrases = new Map<string, number>();
+  let blankOutcomes = 0;
+  let closedCases = 0;
 
   for (const row of rows) {
     const phrase = row.last_update?.trim() ?? "";
-    if (phrase && !isKnownCityOutcome(phrase)) unrecognizedOutcomes += 1;
+    if (!phrase) blankOutcomes += 1;
+    else if (!isKnownCityOutcome(phrase)) {
+      unrecognizedOutcomes += 1;
+      unrecognizedPhrases.set(
+        phrase,
+        (unrecognizedPhrases.get(phrase) ?? 0) + 1,
+      );
+    }
+    if (row.status === "Closed") closedCases += 1;
 
     const parcelId = row.parcelid?.trim();
     if (!parcelId) {
@@ -266,5 +283,12 @@ export async function loadCases(
     uncategorizedCases,
     futureDatedCases,
     unrecognizedOutcomes,
+    unrecognizedPhrases: new Map(
+      [...unrecognizedPhrases].sort(
+        ([phraseA, a], [phraseB, b]) => b - a || compareText(phraseA, phraseB),
+      ),
+    ),
+    blankOutcomes,
+    closedCases,
   };
 }

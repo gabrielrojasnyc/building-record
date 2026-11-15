@@ -22,16 +22,25 @@ import {
 } from "./names";
 import { loadApartmentParcels, toOutline } from "./parcels";
 
-/** A pull that returns fewer rows than a floor below was cut short. Each is well under the live count. */
+/**
+ * A pull that returns fewer rows than a floor below was cut short. Each is well under the live count.
+ * The periods roll, so a count read from them can shrink as well as grow.
+ */
 export const MIN_EXPECTED_COMPLEXES = 2000; // live: about 2,400 once parcels sharing an address are merged
-export const MIN_EXPECTED_CASES = 50_000; // live: 82,384
+export const MIN_EXPECTED_CASES = 50_000; // live: 82,382 complaint rows read for the rolling 3 years on 2026-11-14
 export const MIN_EXPECTED_ADDRESS_POINTS = 300_000; // live: 441,043
 export const MIN_EXPECTED_REPEAT_OFFENDER_ROWS = 40; // live: 80
-export const MIN_EXPECTED_DEFICIENCY_ROWS = 2_000; // live: 5,376 in the last three years
-/** More unrecognized descriptions than this share of all cases read means the city changed its categories. */
-export const MAX_UNCATEGORIZED_SHARE = 0.01;
-/** More outcome phrases outside the allow-list than this share of all cases read means the city changed its wording. */
-export const MAX_UNRECOGNIZED_OUTCOME_SHARE = 0.01;
+export const MIN_EXPECTED_DEFICIENCY_ROWS = 1_000; // live: 5,376 in the rolling 3 years
+/** More unrecognized descriptions than this share of all complaint rows read means the city changed its categories. */
+export const MAX_UNCATEGORIZED_SHARE = 0.01; // live: under 0.1%
+/** More outcome phrases outside the allow-list than this share of all complaint rows read means the city changed its wording. */
+export const MAX_UNRECOGNIZED_OUTCOME_SHARE = 0.01; // live: 0%
+/** More rows with no outcome phrase than this share means the city stopped sending it, and every outcome would be misread. */
+export const MAX_BLANK_OUTCOME_SHARE = 0.03; // live: 0.2%
+/** Fewer Closed rows than this share means the city changed how it writes status, which decides what is still open. */
+export const MIN_CLOSED_SHARE = 0.85; // live: about 97%
+/** More deficiency rows skipped than this share means the city renamed a category or changed its kinds. */
+export const MAX_SKIPPED_DEFICIENCY_SHARE = 0.05; // live: 0%
 
 export interface BuildOptions {
   minComplexes?: number;
@@ -41,6 +50,9 @@ export interface BuildOptions {
   minDeficiencyRows?: number;
   maxUncategorizedShare?: number;
   maxUnrecognizedOutcomeShare?: number;
+  maxBlankOutcomeShare?: number;
+  minClosedShare?: number;
+  maxSkippedDeficiencyShare?: number;
   /** The committed OpenStreetMap names file. Missing or unreadable means no OpenStreetMap names. */
   namesSnapshotPath?: string;
   /** The committed list of approved city titles and withheld parcels. Missing or unreadable stops the build. */
@@ -49,9 +61,38 @@ export interface BuildOptions {
   log?: (line: string) => void;
 }
 
-type Floors = Required<
-  Omit<BuildOptions, "namesSnapshotPath" | "titleReviewPath" | "log">
+/** Every floor and share limit a pull is held to. */
+export type Limits = Required<
+  Omit<
+    BuildOptions,
+    "minComplexes" | "namesSnapshotPath" | "titleReviewPath" | "log"
+  >
 >;
+
+const DEFAULT_LIMITS: Limits = {
+  minCases: MIN_EXPECTED_CASES,
+  minAddressPoints: MIN_EXPECTED_ADDRESS_POINTS,
+  minRepeatOffenderRows: MIN_EXPECTED_REPEAT_OFFENDER_ROWS,
+  minDeficiencyRows: MIN_EXPECTED_DEFICIENCY_ROWS,
+  maxUncategorizedShare: MAX_UNCATEGORIZED_SHARE,
+  maxUnrecognizedOutcomeShare: MAX_UNRECOGNIZED_OUTCOME_SHARE,
+  maxBlankOutcomeShare: MAX_BLANK_OUTCOME_SHARE,
+  minClosedShare: MIN_CLOSED_SHARE,
+  maxSkippedDeficiencyShare: MAX_SKIPPED_DEFICIENCY_SHARE,
+};
+
+/** What a pull read, as the guards weigh it. */
+export interface PullReadings {
+  addressPoints: number;
+  caseRows: number;
+  repeatOffenderRows: number;
+  deficiencyRows: number;
+  uncategorizedCases: number;
+  unrecognizedOutcomes: number;
+  blankOutcomes: number;
+  closedCases: number;
+  skippedDeficiencies: number;
+}
 
 interface Inputs {
   namesSnapshotPath: string;
@@ -83,15 +124,136 @@ function printAwaitingReview(
   }
 }
 
+const count = (value: number) => value.toLocaleString("en-US");
+const percent = (share: number) => `${(share * 100).toFixed(1)}%`;
+const shareOf = (part: number, whole: number) =>
+  whole === 0 ? 0 : part / whole;
+/** Where to change a limit, so a refused build says what to edit if the city's data really did change. */
+const inBuild = (constant: string) => `${constant} in pipeline/build.ts`;
+const REFUSING = "Refusing to write.";
+
 function requireAtLeast(
   dataset: string,
   received: number,
   floor: number,
+  constant: string,
 ): void {
   if (received < floor) {
     throw new Error(
-      `Only ${received} ${dataset} came back, expected at least ${floor}. Refusing to write.`,
+      `Only ${count(received)} ${dataset} came back, expected at least ${count(floor)} (${inBuild(constant)}). ${REFUSING}`,
     );
+  }
+}
+
+/** Throws when more than `limit` of `whole` is `part`. */
+function requireAtMost(
+  part: number,
+  whole: number,
+  limit: number,
+  what: string,
+  constant: string,
+): void {
+  const share = shareOf(part, whole);
+  if (share > limit) {
+    throw new Error(
+      `${count(part)} of ${count(whole)} ${what.replace("{share}", percent(share))}, more than the ${limit * 100}% allowed (${inBuild(constant)}). ${REFUSING}`,
+    );
+  }
+}
+
+/**
+ * Refuses a pull that looks cut short or reads data the city has changed the shape of. A refused nightly keeps
+ * yesterday's site, a day old but whole, which is better than publishing counts or problems that are partial.
+ */
+export function refuseIncompletePull(
+  readings: PullReadings,
+  limits: Limits = DEFAULT_LIMITS,
+): void {
+  const { caseRows, deficiencyRows } = readings;
+  requireAtLeast(
+    "address points",
+    readings.addressPoints,
+    limits.minAddressPoints,
+    "MIN_EXPECTED_ADDRESS_POINTS",
+  );
+  requireAtLeast(
+    "complaint rows",
+    caseRows,
+    limits.minCases,
+    "MIN_EXPECTED_CASES",
+  );
+  requireAtLeast(
+    "Repeat Offender rows",
+    readings.repeatOffenderRows,
+    limits.minRepeatOffenderRows,
+    "MIN_EXPECTED_REPEAT_OFFENDER_ROWS",
+  );
+  requireAtLeast(
+    "Repeat Offender deficiency rows",
+    deficiencyRows,
+    limits.minDeficiencyRows,
+    "MIN_EXPECTED_DEFICIENCY_ROWS",
+  );
+  requireAtMost(
+    readings.uncategorizedCases,
+    caseRows,
+    limits.maxUncategorizedShare,
+    "complaint rows ({share}) carry a description this site does not recognize",
+    "MAX_UNCATEGORIZED_SHARE",
+  );
+  requireAtMost(
+    readings.unrecognizedOutcomes,
+    caseRows,
+    limits.maxUnrecognizedOutcomeShare,
+    "complaint rows ({share}) carry an outcome phrase this site does not recognize",
+    "MAX_UNRECOGNIZED_OUTCOME_SHARE",
+  );
+  requireAtMost(
+    readings.blankOutcomes,
+    caseRows,
+    limits.maxBlankOutcomeShare,
+    "complaint rows ({share}) have no outcome phrase",
+    "MAX_BLANK_OUTCOME_SHARE",
+  );
+  const closedShare = shareOf(readings.closedCases, caseRows);
+  if (closedShare < limits.minClosedShare) {
+    throw new Error(
+      `Only ${count(readings.closedCases)} of ${count(caseRows)} complaint rows (${percent(closedShare)}) are Closed, fewer than the ${limits.minClosedShare * 100}% expected (${inBuild("MIN_CLOSED_SHARE")}). ${REFUSING}`,
+    );
+  }
+  requireAtMost(
+    readings.skippedDeficiencies,
+    deficiencyRows,
+    limits.maxSkippedDeficiencyShare,
+    "Repeat Offender deficiency rows ({share}) were skipped for an unknown category or a missing or unsafe kind",
+    "MAX_SKIPPED_DEFICIENCY_SHARE",
+  );
+}
+
+/** What each guard saw, and every phrase off the allow-list, for the person reading the build log. */
+function printReadings(
+  readings: PullReadings,
+  unrecognizedPhrases: Map<string, number>,
+  log: (line: string) => void,
+): void {
+  const { caseRows, deficiencyRows } = readings;
+  const of = (part: number, whole: number) =>
+    `${count(part)} (${percent(shareOf(part, whole))})`;
+  log(
+    `${count(caseRows)} complaint rows read: ${of(readings.closedCases, caseRows)} Closed, ${of(readings.blankOutcomes, caseRows)} with no outcome phrase, ${of(readings.unrecognizedOutcomes, caseRows)} with a phrase not on the allow-list, ${of(readings.uncategorizedCases, caseRows)} with a description not recognized.`,
+  );
+  log(
+    `${count(deficiencyRows)} Repeat Offender deficiency rows read: ${of(readings.skippedDeficiencies, deficiencyRows)} skipped.`,
+  );
+  if (unrecognizedPhrases.size === 0) {
+    log("Outcome phrases not on the allow-list: none.");
+    return;
+  }
+  log(
+    "Outcome phrases not on the allow-list (build log only), most frequent first:",
+  );
+  for (const [phrase, rows] of unrecognizedPhrases) {
+    log(`  ${count(rows)}  ${phrase}`);
   }
 }
 
@@ -109,7 +271,7 @@ type Files = Map<string, string>;
 async function assemble(
   pulledAt: Date,
   fetchImpl: typeof fetch,
-  floors: Floors,
+  { minComplexes, ...limits }: Limits & { minComplexes: number },
   { namesSnapshotPath, titleReviewPath, log }: Inputs,
 ): Promise<{ files: Files; meta: Meta }> {
   const [
@@ -130,40 +292,20 @@ async function assemble(
     readTitleReview(titleReviewPath),
   ]);
 
-  requireAtLeast(
-    "address points",
-    addressPoints.length,
-    floors.minAddressPoints,
-  );
-  requireAtLeast("code cases", caseIndex.totalCases, floors.minCases);
-  requireAtLeast(
-    "Repeat Offender rows",
-    repeatOffenders.rowsRead,
-    floors.minRepeatOffenderRows,
-  );
-  requireAtLeast(
-    "Repeat Offender deficiency rows",
-    deficiencies.rowsRead,
-    floors.minDeficiencyRows,
-  );
-  const uncategorizedShare =
-    caseIndex.totalCases === 0
-      ? 0
-      : caseIndex.uncategorizedCases / caseIndex.totalCases;
-  if (uncategorizedShare > floors.maxUncategorizedShare) {
-    throw new Error(
-      `${caseIndex.uncategorizedCases} of ${caseIndex.totalCases} cases (${(uncategorizedShare * 100).toFixed(1)}%) carry a description this site does not recognize, more than the ${floors.maxUncategorizedShare * 100}% allowed. Refusing to write.`,
-    );
-  }
-  const unrecognizedShare =
-    caseIndex.totalCases === 0
-      ? 0
-      : caseIndex.unrecognizedOutcomes / caseIndex.totalCases;
-  if (unrecognizedShare > floors.maxUnrecognizedOutcomeShare) {
-    throw new Error(
-      `${caseIndex.unrecognizedOutcomes} of ${caseIndex.totalCases} cases (${(unrecognizedShare * 100).toFixed(1)}%) carry an outcome phrase this site does not recognize, more than the ${floors.maxUnrecognizedOutcomeShare * 100}% allowed. Refusing to write.`,
-    );
-  }
+  const readings: PullReadings = {
+    addressPoints: addressPoints.length,
+    caseRows: caseIndex.totalCases,
+    repeatOffenderRows: repeatOffenders.rowsRead,
+    deficiencyRows: deficiencies.rowsRead,
+    uncategorizedCases: caseIndex.uncategorizedCases,
+    unrecognizedOutcomes: caseIndex.unrecognizedOutcomes,
+    blankOutcomes: caseIndex.blankOutcomes,
+    closedCases: caseIndex.closedCases,
+    skippedDeficiencies: deficiencies.skipped,
+  };
+  // Printed before the guards, so a refused build still says what it saw.
+  printReadings(readings, caseIndex.unrecognizedPhrases, log);
+  refuseIncompletePull(readings, limits);
   const { offenders } = repeatOffenders;
 
   // An ID names a file under buildings/, so anything but letters and digits is left out and counted.
@@ -222,7 +364,12 @@ async function assemble(
   });
   printAwaitingReview(awaitingReview, titleReviewPath, log);
   const complexes: Complex[] = properties.map(({ complex }) => complex);
-  requireAtLeast("apartment complexes", complexes.length, floors.minComplexes);
+  requireAtLeast(
+    "apartment complexes",
+    complexes.length,
+    minComplexes,
+    "MIN_EXPECTED_COMPLEXES",
+  );
   assertUniqueAddresses(complexes);
 
   const files: Files = new Map();
@@ -299,26 +446,13 @@ export async function buildData(
   fetchImpl: typeof fetch = fetch,
   {
     minComplexes = MIN_EXPECTED_COMPLEXES,
-    minCases = MIN_EXPECTED_CASES,
-    minAddressPoints = MIN_EXPECTED_ADDRESS_POINTS,
-    minRepeatOffenderRows = MIN_EXPECTED_REPEAT_OFFENDER_ROWS,
-    minDeficiencyRows = MIN_EXPECTED_DEFICIENCY_ROWS,
-    maxUncategorizedShare = MAX_UNCATEGORIZED_SHARE,
-    maxUnrecognizedOutcomeShare = MAX_UNRECOGNIZED_OUTCOME_SHARE,
     namesSnapshotPath = NAMES_SNAPSHOT_PATH,
     titleReviewPath = TITLE_REVIEW_PATH,
     log = console.log,
+    ...limits
   }: BuildOptions = {},
 ): Promise<Meta> {
-  const floors = {
-    minComplexes,
-    minCases,
-    minAddressPoints,
-    minRepeatOffenderRows,
-    minDeficiencyRows,
-    maxUncategorizedShare,
-    maxUnrecognizedOutcomeShare,
-  };
+  const floors = { ...DEFAULT_LIMITS, ...limits, minComplexes };
   const { files, meta } = await assemble(pulledAt, fetchImpl, floors, {
     namesSnapshotPath,
     titleReviewPath,
