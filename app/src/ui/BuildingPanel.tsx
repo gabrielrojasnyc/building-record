@@ -6,7 +6,11 @@ import { aerialPhotoUrl } from "@/city/aerialPhoto";
 import { loadBuildingDetail } from "@/city/buildingDetail";
 import { load311Summary, type RequestTypeCount } from "@/city/requests311";
 import { formatAcres, formatCount, formatDate } from "@/domain/format";
-import { NO_CASES_CAUTION, titleOf } from "@/domain/labels";
+import {
+  DUPLICATES_ONLY_NOTE,
+  NO_CASES_CAUTION,
+  titleOf,
+} from "@/domain/labels";
 import {
   PERIODS,
   PERIOD_LABEL,
@@ -244,7 +248,11 @@ export function BuildingPanel(props: BuildingPanelProps) {
               >
                 Austin 311
               </a>
-              , City of Austin. {NO_CASES_CAUTION}
+              , City of Austin.{" "}
+              {totalFor(complex, view.period) === 0 &&
+              (complex.duplicates[view.period] ?? 0) > 0
+                ? DUPLICATES_ONLY_NOTE
+                : NO_CASES_CAUTION}
             </p>
 
             {onClose && (

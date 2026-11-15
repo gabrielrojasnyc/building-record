@@ -5,6 +5,10 @@ import type { Category, Complex } from "./types";
 export const NO_CASES_CAUTION =
   "No complaints means none reached Code Enforcement. It does not mean the building has no problems.";
 
+/** Said instead of that caution where complaints did reach the city in the period, but every one was a duplicate. */
+export const DUPLICATES_ONLY_NOTE =
+  "The city closed every complaint here in this period as a duplicate of another complaint.";
+
 /** How each complaint category reads on screen, in display order. */
 export const CATEGORY_LABEL: Record<Category, string> = {
   structure: "Building condition",

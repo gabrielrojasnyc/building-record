@@ -2,6 +2,7 @@ import { useId, useRef, useState, type Ref } from "react";
 import { formatAcres, formatCount } from "@/domain/format";
 import { CATEGORY_LABEL, OUTCOME_CARD_PHRASE, titleOf } from "@/domain/labels";
 import { OUTCOMES, OUTCOME_LABEL, type Outcome } from "@/domain/outcomes";
+import { PERIOD_PHRASE } from "@/domain/periods";
 import {
   countFor,
   outcomeSplit,
@@ -96,10 +97,20 @@ function cardCopy(
   complex: Complex,
   view: View,
   count: number,
-): { caption: string; detail: string | null } {
+): { caption: string; captionTitle?: string; detail: string | null } {
   const acres = formatAcres(complex.acres);
 
   if (view.category === "all") {
+    const duplicates = complex.duplicates[view.period] ?? 0;
+    // Complaints did reach the city here, so "no complaints on file" would not be true.
+    if (count === 0 && duplicates > 0) {
+      const many = duplicates !== 1;
+      return {
+        caption: "duplicate reports only",
+        captionTitle: `${formatCount(duplicates)} ${many ? "duplicate reports" : "duplicate report"} ${PERIOD_PHRASE[view.period]}, closed by the city as ${many ? "duplicates of other complaints" : "a duplicate of another complaint"}`,
+        detail: acres,
+      };
+    }
     if (count === 0) return { caption: "no complaints on file", detail: acres };
     return { caption: complaintsWord(count), detail: null };
   }
@@ -129,7 +140,7 @@ function TrayCard(props: {
 }) {
   const { complex, view, selected, hovered } = props;
   const count = countFor(complex, view);
-  const { caption, detail } = cardCopy(complex, view, count);
+  const { caption, captionTitle, detail } = cardCopy(complex, view, count);
   const outcomes = count > 0 ? outcomeLine(outcomeSplit(complex, view)) : null;
   const title = titleOf(complex);
   const underTitle = complex.name ? complex.address : detail;
@@ -174,7 +185,9 @@ function TrayCard(props: {
         )}
       </span>
       {/* Under the figure's row, not beside the chip, so a caption has the card's whole width. */}
-      <span className={`mt-1 ${smallText}`}>{caption}</span>
+      <span title={captionTitle} className={`mt-1 ${smallText}`}>
+        {caption}
+      </span>
       {outcomes && (
         <span title={outcomes.title} className={`truncate ${smallText}`}>
           {outcomes.text}

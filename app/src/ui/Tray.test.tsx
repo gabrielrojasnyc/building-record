@@ -438,6 +438,39 @@ describe("with one complaint type selected", () => {
   });
 });
 
+it("says duplicate reports only on a card whose complaints in the period were all closed as duplicates, with how many in its title", () => {
+  const duplicatesOnly = complex("400", {
+    address: "2606 Wheless Ln",
+    tally: { m12: {}, y2: {}, y3: { structure: { none: 25 } } },
+    duplicates: { m12: 4, y2: 4, y3: 6 },
+  });
+  const oneDuplicate = complex("500", {
+    address: "500 Single Ln",
+    duplicates: { m12: 1, y2: 1, y3: 1 },
+  });
+  renderTray([duplicatesOnly, oneDuplicate, clean]);
+
+  expect(card("2606 Wheless Ln").getByText("None")).toBeVisible();
+  const caption = card("2606 Wheless Ln").getByText("duplicate reports only");
+  expect(caption).toHaveAttribute(
+    "title",
+    "4 duplicate reports in the last 12 months, closed by the city as duplicates of other complaints",
+  );
+  expect(
+    card("2606 Wheless Ln").queryByText("no complaints on file"),
+  ).toBeNull();
+  expect(
+    card("500 Single Ln").getByText("duplicate reports only"),
+  ).toHaveAttribute(
+    "title",
+    "1 duplicate report in the last 12 months, closed by the city as a duplicate of another complaint",
+  );
+  // A complex with no complaints and no duplicates reads as before.
+  expect(
+    card("1107 W Gibson St").getByText("no complaints on file"),
+  ).toBeVisible();
+});
+
 it("shows None, never NaN or undefined, for a complex whose tally has nothing for the period", () => {
   renderTray([
     complex("1", { address: "1 Empty Ln" }),
@@ -544,7 +577,9 @@ it("separates thousands in a card's figure and outcome line, as the record panel
     }),
   ]);
   expect(card("1 Busy Ln").getByText("1,234")).toBeVisible();
-  expect(card("1 Busy Ln").getByText("1,200 confirmed, 34 none found")).toHaveAttribute(
+  expect(
+    card("1 Busy Ln").getByText("1,200 confirmed, 34 none found"),
+  ).toHaveAttribute(
     "title",
     "1,200 violations confirmed, 34 no violation found",
   );

@@ -597,6 +597,36 @@ it("puts its section headings one level under the page's h1", () => {
   expect(screen.queryAllByRole("heading", { level: 3 })).toHaveLength(0);
 });
 
+it("says, in place of the caution about no complaints, that every complaint in the period was a duplicate when that is so", () => {
+  const caution =
+    "No complaints means none reached Code Enforcement. It does not mean the building has no problems.";
+  const duplicatesOnly: Complex = {
+    ...clean,
+    tally: { m12: {}, y2: {}, y3: { structure: { none: 25 } } },
+    duplicates: { m12: 4, y2: 4, y3: 6 },
+  };
+  renderPage(duplicatesOnly, cleanDetail);
+  expect(
+    screen.getByText(
+      /The city closed every complaint here in this period as a duplicate of another complaint\./,
+    ),
+  ).toBeVisible();
+  expect(document.body.textContent).not.toContain(caution);
+
+  // Over 3 years it has complaints, so the caution is back.
+  cleanup();
+  renderPage(duplicatesOnly, cleanDetail, { view: THREE_YEARS });
+  expect(document.body.textContent).toContain(caution);
+  expect(document.body.textContent).not.toContain(
+    "as a duplicate of another complaint.",
+  );
+
+  // With no complaints and no duplicates, the caution stands as before.
+  cleanup();
+  renderPage(clean, cleanDetail);
+  expect(document.body.textContent).toContain(caution);
+});
+
 it("names the building as the page's h1 on its own page", () => {
   renderPage(busy, busyDetail);
 
