@@ -179,4 +179,59 @@ describe("searchComplexes", () => {
     const many = Array.from({ length: 9 }, (_, index) => complex(String(index), `${index} Oak Ln`));
     expect(searchComplexes("oak", many)).toHaveLength(6);
   });
+
+  describe("the way a person types", () => {
+    const named = [
+      complex("avalon", "9001 Northgate Blvd", "Avalon Palms Apartments"),
+      complex("array", "2000 Burton Dr", "Array Apartments"),
+      complex("crest", "1601 Royal Crest Dr"),
+      complex("gate", "8800 Gateway Dr"),
+    ];
+    const found = (text: string) =>
+      searchComplexes(text, named).map((match) => match.complexId);
+
+    it("finds a building by its words in any order, each one started and not finished", () => {
+      expect(found("palms avalon")).toEqual(["avalon"]);
+      expect(found("northgate 9001")).toEqual(["avalon"]);
+      expect(found("ava pal")).toEqual(["avalon"]);
+      expect(found("crest dr 1601")).toEqual(["crest"]);
+    });
+
+    it("forgives one slip in a word of four letters or more", () => {
+      expect(found("avlon")).toEqual(["avalon"]);
+      expect(found("avalom palms")).toEqual(["avalon"]);
+      expect(found("burtn")).toEqual(["array"]);
+      expect(found("royla crest")).toEqual(["crest"]);
+    });
+
+    it("never forgives a slip in a number, which would be another address", () => {
+      expect(found("9011 northgate")).toEqual([]);
+      expect(found("1610 royal")).toEqual([]);
+    });
+
+    it("does not guess at a word of three letters or fewer, or at two slips", () => {
+      expect(found("avx")).toEqual([]);
+      expect(found("avlno")).toEqual([]);
+    });
+
+    it("needs every word of the text to be found", () => {
+      expect(found("avalon burton")).toEqual([]);
+    });
+
+    it("ranks an exact start first, then words started, then text contained, and forgives a slip only when nothing matches as typed", () => {
+      const ranked = [
+        complex("slip", "1 Gtaeway Ln"),
+        complex("contained", "5 Northgate Blvd"),
+        complex("word", "7 Old Gate Rd"),
+        complex("start", "Gate House, 9 Elm St"),
+      ];
+      expect(
+        searchComplexes("gate", ranked).map((match) => match.complexId),
+      ).toEqual(["start", "word", "contained"]);
+      expect(
+        searchComplexes("gateway", ranked).map((match) => match.complexId),
+      ).toEqual(["slip"]);
+    });
+  });
 });
+
