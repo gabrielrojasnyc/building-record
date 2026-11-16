@@ -127,6 +127,32 @@ const MAP_SAYS: Record<
 */
 const queryListeners = new Set<() => void>();
 
+/** Where the open building's ID sits in the address, after the view's filters. */
+const BUILDING_IN_ADDRESS = "building";
+
+/** Changes the query string where it stands. Next.js folds history.replaceState into its router: no navigation, no server request. */
+function writeQuery(params: URLSearchParams) {
+  const query = params.toString();
+  window.history.replaceState(
+    null,
+    "",
+    query ? `?${query}` : window.location.pathname,
+  );
+  queryListeners.forEach((listener) => listener());
+}
+
+/**
+ * Names the open building in the address, or takes it out, and leaves the rest of the address as it is.
+ * So the Back button, a reload or a shared link comes back to the same building.
+ */
+function showBuildingInAddress(id: string | null) {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get(BUILDING_IN_ADDRESS) === id) return;
+  if (id === null) params.delete(BUILDING_IN_ADDRESS);
+  else params.set(BUILDING_IN_ADDRESS, id);
+  writeQuery(params);
+}
+
 function subscribeToQuery(listener: () => void) {
   queryListeners.add(listener);
   return () => {
@@ -168,20 +194,24 @@ function useViewInUrl(): [View, (view: View) => void] {
     () => window.location.search,
     () => "",
   );
+  // Only the view's own part of the address, so the view stays the same object while a building opens and
+  // closes, and the map draws no pin again for it.
+  const viewQuery = viewToSearchParams(
+    viewFromSearchParams(new URLSearchParams(query)),
+  ).toString();
   const view = useMemo(
-    () => viewFromSearchParams(new URLSearchParams(query)),
-    [query],
+    () => viewFromSearchParams(new URLSearchParams(viewQuery)),
+    [viewQuery],
   );
 
   const setView = useCallback((next: View) => {
-    const nextQuery = viewToSearchParams(next).toString();
-    // Next.js folds history.replaceState into its router: the URL changes with no navigation or server request.
-    window.history.replaceState(
-      null,
-      "",
-      nextQuery ? `?${nextQuery}` : window.location.pathname,
+    const params = viewToSearchParams(next);
+    // A change of filter keeps the building that is open.
+    const building = new URLSearchParams(window.location.search).get(
+      BUILDING_IN_ADDRESS,
     );
-    queryListeners.forEach((listener) => listener());
+    if (building !== null) params.set(BUILDING_IN_ADDRESS, building);
+    writeQuery(params);
   }, []);
 
   return [view, setView];
@@ -277,6 +307,25 @@ export function Finder({
 
   // Someone moving the map themselves is not waiting for the camera to come back.
   const releaseHold = () => happened({ type: "map moved by hand" });
+
+  /*
+    The address names the open building. A page opened or come back to with one in its address opens it, once;
+    after that the address follows the screen. A building the data does not have is taken out of the address.
+  */
+  const readAddress = useRef(false);
+  useEffect(() => {
+    if (!readAddress.current) {
+      readAddress.current = true;
+      const named = new URLSearchParams(window.location.search).get(
+        BUILDING_IN_ADDRESS,
+      );
+      if (named !== null && byId.has(named)) {
+        happened({ type: "picked", id: named });
+        return;
+      }
+    }
+    showBuildingInAddress(selectedId);
+  }, [selectedId, byId]);
 
   const selected = selectedId === null ? undefined : byId.get(selectedId);
   const controlsRef = useRef<HTMLDivElement>(null);

@@ -27,3 +27,4 @@ For a browser test, or an agent driving the site:
 - `aside[aria-busy="true"]`: the open record is still waiting for its building file.
 - `[data-suggestions]`: the search's state, as listed above.
 - `img[data-loaded]`: the record's aerial photo is in (`true`) or not yet (`false`).
+- The address: `?building=<complex id>` names the open building, after the filters (`period`, `category`, `ro`, `order`). Opening the page with it opens that building, so it is also the way to put the site in that state. Only `Finder.tsx` writes it, and it follows the screen's state, never the other way round after the page has opened.

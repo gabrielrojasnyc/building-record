@@ -408,6 +408,48 @@ test("with suggestions open, the first Escape closes only the suggestions", asyn
   await expect(panel(page)).toBeHidden();
 });
 
+test("the address names the open building, so the Back button and the building page's own way back return to it", async ({
+  page,
+}) => {
+  expect(NAMED, "a named complex is in the data").toBeDefined();
+  if (!NAMED?.name) return;
+
+  await page.goto("/?period=3y");
+  await waitForMap(page);
+  await pickFromSearch(page, NAMED.address, NAMED);
+  await expect(spotlit(page, NAMED.id)).toHaveCount(1);
+  const onTheMap = new RegExp(`/\\?period=3y&building=${NAMED.id}$`);
+  await expect(page).toHaveURL(onTheMap);
+
+  // Out to the building's own page, and back with the browser's button: the filter, the record and the model are all there again.
+  await panel(page)
+    .getByRole("link", { name: "Open this building's page" })
+    .click();
+  await expect(page).toHaveURL(new RegExp(`/building/${NAMED.id}$`));
+  await page.goBack();
+  await expect(page).toHaveURL(onTheMap);
+  await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText(
+    NAMED.name.text,
+  );
+  await expect(
+    page.getByRole("button", { name: "3 years", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(spotlit(page, NAMED.id)).toHaveCount(1);
+
+  // Closing the record takes it out of the address, and a reload then opens nothing.
+  await page.keyboard.press("Escape");
+  await expect(panel(page)).toBeHidden();
+  await expect(page).toHaveURL(/\/\?period=3y$/);
+
+  // The page's own way back opens the map on the building too.
+  await page.goto(`/building/${NAMED.id}`);
+  await page.getByRole("link", { name: "Back to the map" }).click();
+  await expect(page).toHaveURL(new RegExp(`/\\?building=${NAMED.id}$`));
+  await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText(
+    NAMED.name.text,
+  );
+});
+
 test("a building page is reachable directly", async ({ page }) => {
   const complex = complexes.find(({ id }) => id === COMPLEX_WITH_RECORD);
   expect(complex, `${COMPLEX_WITH_RECORD} is in the data`).toBeDefined();
@@ -422,9 +464,10 @@ test("a building page is reachable directly", async ({ page }) => {
       ? `${complex.name.text}, ${complex.address}: code complaint record`
       : `${complex.address}: code complaint record`,
   );
+  // The way back opens the map on this building.
   await expect(
     page.getByRole("link", { name: "Back to the map" }),
-  ).toHaveAttribute("href", "/");
+  ).toHaveAttribute("href", `/?building=${COMPLEX_WITH_RECORD}`);
   await expect(
     page.getByRole("list", { name: "What the record shows" }),
   ).toBeVisible();

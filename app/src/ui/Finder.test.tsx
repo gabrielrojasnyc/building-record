@@ -826,3 +826,82 @@ describe("what the screen says of the map itself", () => {
     expect(counting("3 complexes in Austin")).toBeVisible();
   });
 });
+
+describe("the open building in the address", () => {
+  const address = () => window.location.search;
+
+  it("is named there while its record is open, beside the filters, and leaves when the record closes", async () => {
+    window.history.replaceState(null, "", "/?period=3y");
+    openFinder();
+    pickOnMap(array);
+    expect(address()).toBe(`?period=3y&building=${array.id}`);
+
+    pickOnMap(crest);
+    expect(address()).toBe(`?period=3y&building=${crest.id}`);
+
+    await userEvent.keyboard("{Escape}");
+    expect(address()).toBe("?period=3y");
+  });
+
+  it("stays there when a filter changes", async () => {
+    openFinder();
+    pickOnMap(array);
+    await userEvent.click(screen.getByRole("button", { name: "3 years" }));
+    expect(address()).toBe(`?period=3y&building=${array.id}`);
+    await userEvent.click(screen.getByRole("button", { name: "12 months" }));
+    expect(address()).toBe(`?building=${array.id}`);
+  });
+
+  it("hands the map the same view while a building opens and closes, so no pin is drawn again for it", async () => {
+    window.history.replaceState(null, "", "/?period=3y");
+    openFinder();
+    const view = lastMap().view;
+
+    pickOnMap(array);
+    await staged(array);
+    expect(lastMap().view).toBe(view);
+
+    await userEvent.keyboard("{Escape}");
+    expect(lastMap().view).toBe(view);
+  });
+
+  it("leaves when the person asks for somewhere else", async () => {
+    openFinder();
+    pickOnMap(array);
+    await userEvent.click(screen.getByRole("button", { name: "Downtown" }));
+    expect(address()).toBe("");
+  });
+
+  it("opens the building the address names, as when the page is come back to, and stands its model up", async () => {
+    window.history.replaceState(null, "", `/?order=most&building=${array.id}`);
+    render(<Finder complexes={everything} meta={meta} />);
+
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Array Apartments" }),
+    ).toBeVisible();
+    expect(address()).toBe(`?order=most&building=${array.id}`);
+    // The pick came before the map said what it shows, so the count keeps all of Austin.
+    reportView(RIVERSIDE);
+    expect(counting("3 complexes in Austin")).toBeVisible();
+    await staged(array);
+  });
+
+  it("opens that building in the list too, when the map cannot start", async () => {
+    window.history.replaceState(null, "", `/?building=${crest.id}`);
+    render(<Finder complexes={everything} meta={meta} />);
+    act(() => lastMap().onUnavailable());
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: "1601 Royal Crest Dr" }),
+    ).toBeVisible();
+    expect(cardOf(crest)).toHaveAttribute("aria-current", "true");
+  });
+
+  it("takes a building it does not know out of the address, and opens nothing", async () => {
+    window.history.replaceState(null, "", "/?period=2y&building=no-such-parcel");
+    openFinder();
+
+    expect(screen.queryByRole("complementary")).toBeNull();
+    expect(address()).toBe("?period=2y");
+  });
+});

@@ -72,8 +72,9 @@ export default async function BuildingPage({
     <main className="px-(--gutter) py-6">
       <div aria-hidden className="fog pointer-events-none fixed inset-0" />
       <div className="relative mx-auto flex max-w-xl flex-col gap-3">
+        {/* Named in the address, so the map opens on this building, as the browser's own Back button does. */}
         <Link
-          href="/"
+          href={`/?building=${complex.id}`}
           prefetch={false}
           className="inline-flex h-[30px] items-center self-start rounded-full bg-white/55 px-3 text-[13px] font-normal text-deep hover:bg-white/85"
         >

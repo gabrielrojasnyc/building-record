@@ -122,6 +122,19 @@ it("describes the record as complaints in the last 3 years, duplicates left out"
   );
 });
 
+it("offers a way back that opens the map on this building", async () => {
+  render(
+    await BuildingPage({
+      params: Promise.resolve({ id: "0307050309" }),
+      searchParams: Promise.resolve({}),
+    }),
+  );
+  expect(screen.getByRole("link", { name: "Back to the map" })).toHaveAttribute(
+    "href",
+    "/?building=0307050309",
+  );
+});
+
 it("shows the building's full record: the 3 years lead, with 12 months and 2 years beside them", async () => {
   render(
     await BuildingPage({
