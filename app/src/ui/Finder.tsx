@@ -5,8 +5,8 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
-  useState,
   useSyncExternalStore,
 } from "react";
 import type { AddressMatch } from "@/city/addressSearch";
@@ -26,6 +26,12 @@ import type { SpotlightTarget } from "@/map/spotlight";
 import { BuildingPanel } from "./BuildingPanel";
 import { ComplexList } from "./ComplexList";
 import { Filters } from "./Filters";
+import {
+  OPENING,
+  step,
+  viewAreaOf,
+  type FlyTarget,
+} from "./finderState";
 import { Glass } from "./Glass";
 import { InViewBar } from "./InViewBar";
 import { IntroSearch } from "./IntroSearch";
@@ -90,20 +96,6 @@ function phoneSpotlightPadding(viewportHeight: number): CameraPadding {
   };
 }
 
-interface FlyTarget {
-  lon: number;
-  lat: number;
-  zoom: number;
-}
-
-/**
- * The count's hold: the ground it keeps counting while a building is open and until the camera is back.
- * `area` is null when the building was picked before the map first reported: the count then keeps all of Austin.
- */
-interface Hold {
-  area: ViewArea | null;
-}
-
 /** The camera eases back for about a second after a building closes; past this the count stops waiting for it. */
 const HOLD_AFTER_CLOSE_MS = 1500;
 
@@ -113,18 +105,6 @@ const CONTROLS_PRESENT =
 // Visibility switches when the fade ends, so the controls stay seen while they fade and leave the tab order and the accessibility tree with it.
 const CONTROLS_ASIDE =
   "*:invisible *:opacity-0 motion-safe:*:transition-[opacity,visibility] motion-safe:*:duration-250";
-
-/** About a centimetre: two reports this close are the same camera. */
-const SAME_GROUND_DEGREES = 1e-7;
-
-/** True when two reports show the same ground, as when the camera has come back to exactly where it was. */
-function sameGround(a: ViewArea, b: ViewArea): boolean {
-  return a.every(
-    ([lon, lat], corner) =>
-      Math.abs(lon - b[corner][0]) < SAME_GROUND_DEGREES &&
-      Math.abs(lat - b[corner][1]) < SAME_GROUND_DEGREES,
-  );
-}
 
 /*
   The view lives in the query string so a filtered map can be shared. Reading it as an external
@@ -203,13 +183,12 @@ export function Finder({
   const [view, changeView] = useViewInUrl();
   const isPhone = usePhoneLayout();
   const viewportHeight = useViewportHeight();
-  const [viewArea, setViewArea] = useState<ViewArea | null>(null);
-  const [mapUnavailable, setMapUnavailable] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  /** So a turning camera never makes the count flicker while a building is open. */
-  const [hold, setHold] = useState<Hold | null>(null);
-  const [stage, setStage] = useState<SpotlightTarget | null>(null);
-  const [flyTo, setFlyTo] = useState<FlyTarget | null>(null);
+  // Everything that happens to the screen goes through `step`, so the open building, its model, the count's
+  // hold and the camera's next move always change together.
+  const [state, happened] = useReducer(step, OPENING);
+  const { selectedId, hold, stage, flyTo } = state;
+  const mapUnavailable = state.map.status === "unavailable";
+  const viewArea = viewAreaOf(state);
 
   const byId = useMemo(
     () => new Map(complexes.map((complex) => [complex.id, complex])),
@@ -246,19 +225,22 @@ export function Finder({
     loadBuildingDetail(complex.id).then(
       ({ outline }) => {
         if (!current) return;
-        setStage({
+        const target: SpotlightTarget = {
           id: complex.id,
           title: titleOf(complex),
           lon: complex.lon,
           lat: complex.lat,
           outline,
-        });
+        };
+        happened({ type: "outline arrived", target });
       },
       () => {
         if (!current) return;
-        // With no outline there is no model: fly to the building's point, as before there were models.
-        setStage(null);
-        setFlyTo({ lon: complex.lon, lat: complex.lat, zoom: SELECTION_ZOOM });
+        happened({
+          type: "outline missing",
+          id: complex.id,
+          at: { lon: complex.lon, lat: complex.lat, zoom: SELECTION_ZOOM },
+        });
       },
     );
     return () => {
@@ -266,30 +248,21 @@ export function Finder({
     };
   }, [selectedId, byId, mapUnavailable]);
 
-  const reportViewArea = (area: ViewArea) => {
-    setViewArea(area);
-    // After a building closes the camera eases back to where it was, and the tray lets go once it is there.
-    setHold((current) =>
-      current !== null &&
-      current.area !== null &&
-      selectedId === null &&
-      sameGround(area, current.area)
-        ? null
-        : current,
-    );
-  };
+  const reportViewArea = (area: ViewArea) =>
+    happened({ type: "map reported", area });
 
   // The camera may never come back to the same ground (a rotation, a resized window), so the hold ends soon after closing regardless.
   useEffect(() => {
     if (selectedId !== null || hold === null) return;
-    const timer = setTimeout(() => setHold(null), HOLD_AFTER_CLOSE_MS);
+    const timer = setTimeout(
+      () => happened({ type: "hold ran out" }),
+      HOLD_AFTER_CLOSE_MS,
+    );
     return () => clearTimeout(timer);
   }, [selectedId, hold]);
 
   // Someone moving the map themselves is not waiting for the camera to come back.
-  const releaseHold = () => {
-    if (selectedId === null) setHold(null);
-  };
+  const releaseHold = () => happened({ type: "map moved by hand" });
 
   const selected = selectedId === null ? undefined : byId.get(selectedId);
   const controlsRef = useRef<HTMLDivElement>(null);
@@ -306,8 +279,7 @@ export function Finder({
   */
   const clearSelection = useCallback(() => {
     handFocusBack.current = true;
-    setSelectedId(null);
-    setStage(null);
+    happened({ type: "closed" });
   }, []);
 
   /*
@@ -335,17 +307,11 @@ export function Finder({
   const select = (id: string, throughSearch = false) => {
     if (!byId.has(id)) return;
     pickedThroughSearch.current = throughSearch;
-    setSelectedId(id);
-    setHold((current) => current ?? { area: viewArea });
+    happened({ type: "picked", id });
   };
 
-  // Asked for in the same update as the model leaves, so the map hands the camera to the fly instead of easing back.
-  const leaveFor = (target: FlyTarget) => {
-    setSelectedId(null);
-    setStage(null);
-    setHold(null);
-    setFlyTo(target);
-  };
+  const leaveFor = (target: FlyTarget) =>
+    happened({ type: "left for", target });
 
   const jump = (area: Area) => {
     leaveFor({ lon: area.lon, lat: area.lat, zoom: area.zoom });
@@ -392,7 +358,7 @@ export function Finder({
           spotlight={spotlight}
           onViewAreaChange={reportViewArea}
           onSelect={(id) => select(id)}
-          onUnavailable={() => setMapUnavailable(true)}
+          onUnavailable={() => happened({ type: "map gave up" })}
         />
       </div>
       {selected && (
