@@ -67,6 +67,58 @@ afterEach(() => {
 });
 
 describe("IntroSearch", () => {
+  it("marks the state of what it shows under the box, for a test or a tool to read", async () => {
+    search.mockResolvedValue({ matches: [], cityUnavailable: false });
+    const { user, input } = setup();
+    const surface = () =>
+      input.closest("[data-suggestions]")?.getAttribute("data-suggestions");
+    expect(surface()).toBe("closed");
+
+    await user.type(input, "zzzz");
+    expect(surface()).toBe("looking");
+    await settle();
+    expect(surface()).toBe("none");
+
+    search.mockResolvedValue({ matches: [street], cityUnavailable: false });
+    await user.type(input, "z");
+    await settle();
+    expect(surface()).toBe("listing");
+
+    await user.keyboard("{Escape}");
+    expect(surface()).toBe("closed");
+  });
+
+  it("drops the highlight when the suggestion it was on leaves the list, and never points at one that is gone", async () => {
+    searchLocal.mockReturnValue([apartments]);
+    const onChoose = vi.fn();
+    const user = userEvent.setup({ delay: null });
+    const { rerender } = render(
+      <IntroSearch complexes={complexes} onChoose={onChoose} />,
+    );
+    const input = screen.getByRole("combobox");
+    await user.type(input, "1601");
+    await settle();
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    expect(input).toHaveAttribute(
+      "aria-activedescendant",
+      screen.getByRole("option", { name: /Royal Oak/ }).id,
+    );
+
+    // The map gives up while the list is open: addresses elsewhere have nowhere to go, so the city's leave it.
+    rerender(
+      <IntroSearch complexes={complexes} onChoose={onChoose} complexesOnly />,
+    );
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+    expect(screen.getByRole("option")).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+
+    await user.keyboard("{Enter}");
+    expect(onChoose).toHaveBeenCalledWith(apartments);
+  });
+
   it("asks for an address or a building name in a placeholder short enough for the field, and is named in full", () => {
     setup();
     const input = screen.getByRole("combobox", {

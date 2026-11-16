@@ -1,6 +1,9 @@
 /** Address search waits for this many characters, in the browser and before asking the city. */
 export const ADDRESS_SEARCH_MIN_CHARACTERS = 3;
 
+/** As many suggestions as the search lists: the site's own buildings first, then the city's other addresses. */
+export const ADDRESS_SEARCH_MOST_SUGGESTIONS = 6;
+
 const UPPERCASE_WORDS = new Set(['IH', 'SH', 'FM', 'RM', 'US', 'NB', 'SB', 'EB', 'WB', 'SVRD']);
 const ORDINAL = /^(\d+)(ST|ND|RD|TH)$/;
 

@@ -12,10 +12,12 @@ import {
   searchAddresses,
   searchComplexes,
   type AddressMatch,
+  type AddressSearchResult,
 } from "@/city/addressSearch";
 import { ADDRESS_SEARCH_MIN_CHARACTERS } from "@/domain/address";
 import type { Complex } from "@/domain/types";
 import { Glass } from "./Glass";
+import { asksTheCity, CLOSED, suggestionsFor } from "./suggestions";
 
 /** What the field asks for, in full, as its accessible name. */
 const LABEL = "Search an address or building name";
@@ -29,15 +31,11 @@ const CITY_UNAVAILABLE =
 const LOOKING = "Looking for other Austin addresses";
 /** How long typing must stop before the city is asked. The site's own buildings never wait for it. */
 const TYPING_PAUSE_MS = 250;
-/** As many suggestions as the list holds. With that many of the site's own, the city has no room to add any. */
-const MOST_SUGGESTIONS = 6;
 
 /** What the city added for some text: the site's own matches with its other addresses under them. */
-interface CityAnswer {
+interface CityAnswer extends AddressSearchResult {
   /** The trimmed text these matches answer. A result for older text is never shown. */
   query: string;
-  matches: AddressMatch[];
-  cityUnavailable: boolean;
 }
 
 export function IntroSearch({
@@ -58,16 +56,14 @@ export function IntroSearch({
   const [dismissedQuery, setDismissedQuery] = useState<string | null>(null);
 
   const query = text.trim();
-  const longEnough = query.length >= ADDRESS_SEARCH_MIN_CHARACTERS;
+  const searchable = query.length >= ADDRESS_SEARCH_MIN_CHARACTERS;
 
   // The site's own buildings are already in the browser, so they answer on the key that finds them.
   const ownMatches = useMemo(
-    () => (longEnough ? searchComplexes(query, complexes) : []),
-    [longEnough, query, complexes],
+    () => (searchable ? searchComplexes(query, complexes) : []),
+    [searchable, query, complexes],
   );
-  // With no map an address elsewhere has nowhere to go, and a full list has no room for one.
-  const asksCity =
-    longEnough && !complexesOnly && ownMatches.length < MOST_SUGGESTIONS;
+  const asksCity = searchable && asksTheCity({ ownMatches, complexesOnly });
 
   // Other Austin addresses come from the city, which takes its time: asked once typing pauses, and added under.
   useEffect(() => {
@@ -84,19 +80,19 @@ export function IntroSearch({
     };
   }, [asksCity, query, complexes]);
 
-  const answered = asksCity && cityAnswer?.query === query ? cityAnswer : null;
-  const shown = longEnough && dismissedQuery !== query;
-  const matches = shown ? (answered?.matches ?? ownMatches) : [];
+  // What the text finds, and then what is on show: the same, unless the person has put the list away.
+  const found = suggestionsFor({
+    searchable,
+    ownMatches,
+    asksCity,
+    answered: cityAnswer?.query === query ? cityAnswer : null,
+  });
+  const suggestions = dismissedQuery === query ? CLOSED : found;
+  const shown = suggestions.state !== "closed";
+  const matches = suggestions.state === "listing" ? suggestions.matches : [];
   const isOpen = matches.length > 0;
-  const showsCityUnavailable = shown && answered?.cityUnavailable === true;
-  const waitsOnCity = shown && asksCity && answered === null;
-  // Said only while there is nothing else to show: beside a list, the list is the answer so far.
-  const showsLooking = waitsOnCity && !isOpen;
-  // The no-match sentence is only true once everyone asked has answered and nothing matched.
-  const showsNoMatch =
-    shown && !isOpen && !waitsOnCity && !showsCityUnavailable;
-  const showsSurface =
-    isOpen || showsNoMatch || showsCityUnavailable || showsLooking;
+  // A suggestion can leave the list under the highlight, as the city's do when the map gives up. The highlight goes with it.
+  const active = activeIndex < matches.length ? activeIndex : -1;
   const optionId = (index: number) => `${listId}-${index}`;
 
   useEffect(() => {
@@ -133,14 +129,13 @@ export function IntroSearch({
     }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       // What the arrows walk is the list as it would stand open, which Escape may have closed.
-      const walked = longEnough ? (answered?.matches ?? ownMatches) : [];
-      if (walked.length === 0) return;
+      if (found.state !== "listing") return;
       event.preventDefault();
       setDismissedQuery(null);
-      const last = walked.length - 1;
+      const last = found.matches.length - 1;
       const step = event.key === "ArrowDown" ? 1 : -1;
       setActiveIndex((current) =>
-        current === -1
+        current === -1 || current > last
           ? step === 1
             ? 0
             : last
@@ -150,14 +145,14 @@ export function IntroSearch({
     }
     if (event.key === "Enter" && isOpen) {
       event.preventDefault();
-      choose(matches[activeIndex] ?? matches[0]);
+      choose(matches[active] ?? matches[0]);
     }
   };
 
   return (
     <Glass
       as="header"
-      className={`fixed top-(--gutter) left-(--gutter) ${showsSurface ? "z-5" : "z-3"} w-[340px] rounded-[28px] px-[22px] pt-[22px] pb-[18px] phone:right-(--gutter) phone:w-auto phone:rounded-3xl phone:px-4 phone:py-3.5`}
+      className={`fixed top-(--gutter) left-(--gutter) ${shown ? "z-5" : "z-3"} w-[340px] rounded-[28px] px-[22px] pt-[22px] pb-[18px] phone:right-(--gutter) phone:w-auto phone:rounded-3xl phone:px-4 phone:py-3.5`}
     >
       <h1 className="font-display text-[40px] leading-none tracking-[-0.01em] text-deep italic phone:text-[28px]">
         Building Record
@@ -165,7 +160,11 @@ export function IntroSearch({
       <p className="mt-2 mb-4 max-w-[26ch] text-slate phone:hidden">
         Austin apartments, seen through the city&apos;s own complaint files.
       </p>
-      <div ref={rootRef} className="relative phone:mt-2.5">
+      <div
+        ref={rootRef}
+        data-suggestions={suggestions.state}
+        className="relative phone:mt-2.5"
+      >
         <div className="flex h-11 items-center gap-2.5 rounded-full border border-white/70 bg-white/50 px-4 focus-within:border-white focus-within:bg-white/78 focus-within:outline-[1.5px] focus-within:outline-offset-2 focus-within:outline-deep">
           <svg
             aria-hidden
@@ -187,7 +186,7 @@ export function IntroSearch({
             aria-expanded={isOpen}
             aria-controls={isOpen ? listId : undefined}
             aria-activedescendant={
-              isOpen && activeIndex >= 0 ? optionId(activeIndex) : undefined
+              active >= 0 ? optionId(active) : undefined
             }
             aria-autocomplete="list"
             placeholder={PLACEHOLDER}
@@ -204,7 +203,7 @@ export function IntroSearch({
             className="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-steel"
           />
         </div>
-        {showsSurface && (
+        {shown && (
           <div className={SURFACE}>
             {isOpen && (
               <ul id={listId} role="listbox" aria-label="Address and building suggestions">
@@ -213,7 +212,7 @@ export function IntroSearch({
                     key={`${match.label}-${match.complexId ?? "city"}`}
                     id={optionId(index)}
                     role="option"
-                    aria-selected={index === activeIndex}
+                    aria-selected={index === active}
                     // Keeps focus in the input so the list survives the press.
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => choose(match)}
@@ -238,7 +237,10 @@ export function IntroSearch({
                 ))}
               </ul>
             )}
-            {showsCityUnavailable && (
+            {/* Under a list, or alone when there is nothing to list. */}
+            {(suggestions.state === "unavailable" ||
+              (suggestions.state === "listing" &&
+                suggestions.cityUnavailable)) && (
               <p
                 role="status"
                 className={`px-3 text-[13px] text-steel ${isOpen ? "pt-1.5 pb-1" : "py-2"}`}
@@ -246,12 +248,14 @@ export function IntroSearch({
                 {CITY_UNAVAILABLE}
               </p>
             )}
-            {showsLooking && (
+            {/* Said only while there is nothing else to show: beside a list, the list is the answer so far. */}
+            {suggestions.state === "looking" && (
               <p role="status" className="px-3 py-2 text-[13px] text-steel">
                 {LOOKING}
               </p>
             )}
-            {showsNoMatch && (
+            {/* Only true once everyone asked has answered and nothing matched. */}
+            {suggestions.state === "none" && (
               <p role="status" className="px-3 py-2 text-slate">
                 {complexesOnly ? NO_COMPLEX_MATCH : NO_MATCH}
               </p>
