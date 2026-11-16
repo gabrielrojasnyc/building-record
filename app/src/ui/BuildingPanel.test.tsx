@@ -882,6 +882,26 @@ describe("over the map", () => {
     ).toBeVisible();
   });
 
+  it("is marked busy while the building file is on its way", () => {
+    renderOnMap(busy, { [HISTORY]: pending });
+    expect(screen.getByRole("complementary")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+  });
+
+  it("is no longer marked busy once the building file is in", async () => {
+    renderOnMap(busy, { [HISTORY]: ok(busyDetail) });
+    await open(TREND).findAllByTestId("month-bar");
+    expect(screen.getByRole("complementary")).not.toHaveAttribute("aria-busy");
+  });
+
+  it("is not left marked busy by a building file that cannot be read", async () => {
+    renderOnMap(busy, { [HISTORY]: status(404) });
+    await open(TREND).findByText(/could not be loaded/);
+    expect(screen.getByRole("complementary")).not.toHaveAttribute("aria-busy");
+  });
+
   it("heads the panel with the title over the gradient from the first moment, and adds the photo once the building file arrives", async () => {
     const { select } = renderOnMap(
       {

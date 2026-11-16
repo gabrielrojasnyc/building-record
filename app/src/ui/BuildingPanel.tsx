@@ -183,6 +183,8 @@ export function BuildingPanel(props: BuildingPanelProps) {
       ref={panelRef}
       tabIndex={opensOverMap ? -1 : undefined}
       aria-labelledby={headingId}
+      // Said to a screen reader, and to a test or a tool, while the building file is still on its way.
+      aria-busy={detail.status === "loading" || undefined}
       className={props.place === "page" ? "rounded-[28px]" : MAP_PLACEMENT}
     >
       {/* On the panel, not in what scrolls, so it stays in reach however far down the record a person has read. */}
