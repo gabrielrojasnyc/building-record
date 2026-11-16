@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <desc>One building picked out and lit, between two neighbors in the fog.</desc>
+  <rect width="32" height="32" rx="7" fill="#16314a"/>
+  <g id="neighbor-behind">
+    <path fill="#254560" d="M4 13.5l4 2v8l-4-2z"/>
+    <path fill="#1e3b56" d="M12 13.5l-4 2v8l4-2z"/>
+    <path fill="#2e4f68" d="M8 11.5l4 2-4 2-4-2z"/>
+  </g>
+  <g id="picked-building">
+    <path fill="#a9bdc9" d="M10 8l6 3v16l-6-3z"/>
+    <path fill="#5f7f98" d="M22 8l-6 3v16l6-3z"/>
+    <path fill="#e8eff3" d="M16 5l6 3-6 3-6-3z"/>
+  </g>
+  <g id="neighbor-in-front">
+    <path fill="#254560" d="M20 21l4 2v5l-4-2z"/>
+    <path fill="#1e3b56" d="M28 21l-4 2v5l4-2z"/>
+    <path fill="#2e4f68" d="M24 19l4 2-4 2-4-2z"/>
+  </g>
+</svg>

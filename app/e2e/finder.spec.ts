@@ -711,6 +711,25 @@ test.describe("on a phone", () => {
   });
 });
 
+test("a tab, a bookmark and a phone's home screen show the site's own mark", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  const drawing = page.locator('link[rel="icon"][type="image/svg+xml"]');
+  await expect(drawing).toHaveCount(1);
+  const svg = await request.get((await drawing.getAttribute("href")) ?? "");
+  expect(svg.ok()).toBe(true);
+  expect(await svg.text()).toContain("One building picked out and lit");
+
+  // For a browser that takes no drawing, and for a phone's home screen.
+  expect((await request.get("/favicon.ico")).ok()).toBe(true);
+  const homeScreen = page.locator('link[rel="apple-touch-icon"]');
+  await expect(homeScreen).toHaveAttribute("sizes", "180x180");
+  const png = await request.get((await homeScreen.getAttribute("href")) ?? "");
+  expect(png.headers()["content-type"]).toBe("image/png");
+});
+
 test.describe("when the map cannot start", () => {
   test.beforeEach(async ({ page }) => {
     await withoutMap(page);
