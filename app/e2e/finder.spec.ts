@@ -59,8 +59,8 @@ const COMPLEX_WITH_RECORD = "0304070701";
 /** An unnamed complex whose label is long: "Parcel 0201520114, near 4612 Sojourner St". */
 const LONG_LABEL = "0201520114";
 const FOOTPRINTS = "https://data.austintexas.gov/resource/3qcc-8uhz.json**";
-const AERIAL_PHOTOS = "https://imagery.nationalmap.gov/**";
-/** One navy pixel, standing in for the USGS aerial photo. */
+const AERIAL_PHOTOS = "https://maps.austintexas.gov/image/**";
+/** One navy pixel, standing in for the city's aerial photo. */
 const PHOTO = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGPgFpYHAABqAD4U+VRBAAAAAElFTkSuQmCC",
   "base64",
@@ -447,7 +447,7 @@ test("a building page is reachable directly", async ({ page }) => {
   await expect(photo).toHaveAttribute("data-loaded", "true");
   // With no close button on the page, the credit sits in the header's corner.
   const header = await photo.locator("..").boundingBox();
-  const credit = await page.getByText("Aerial photo: USGS").boundingBox();
+  const credit = await page.getByText("Aerial photo: City of Austin").boundingBox();
   expect(credit && header && credit.y - header.y).toBe(14);
 });
 
@@ -1016,7 +1016,7 @@ test.describe("a picked building", () => {
         name: `Aerial photo of ${NAMED.name.text}`,
       }),
     ).toHaveAttribute("data-loaded", "true");
-    await expect(panel(page).getByText("Aerial photo: USGS")).toBeVisible();
+    await expect(panel(page).getByText("Aerial photo: City of Austin")).toBeVisible();
   });
 
   test("is found by its name", async ({ page }) => {
@@ -1252,7 +1252,7 @@ test.describe("a picked building", () => {
     await page.goto("/");
     await waitForMap(page);
 
-    const photoAnswered = page.waitForResponse(/imagery\.nationalmap\.gov/);
+    const photoAnswered = page.waitForResponse(/maps\.austintexas\.gov\/image/);
     await pickFromSearch(page, NAMED.address, NAMED);
     await photoAnswered;
 
@@ -1260,7 +1260,7 @@ test.describe("a picked building", () => {
       NAMED.name.text,
     );
     await expect(panel(page).locator("img")).toHaveCount(0);
-    await expect(panel(page).getByText("Aerial photo: USGS")).toHaveCount(0);
+    await expect(panel(page).getByText("Aerial photo: City of Austin")).toHaveCount(0);
   });
 
   test("fades its photo in, and not for someone who asked for less motion", async ({

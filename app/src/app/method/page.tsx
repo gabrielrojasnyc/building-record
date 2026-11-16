@@ -78,8 +78,9 @@ const SOURCES = [
   },
 ] as const;
 
-const NAIP =
-  "https://www.usgs.gov/centers/eros/science/usgs-eros-archive-aerial-photography-national-agriculture-imagery-program-naip";
+/** The city's own page for the aerial photos a record shows. */
+const CITY_AERIALS =
+  "https://maps.austintexas.gov/image/rest/services/AerialMosaics/Aerials2025/ImageServer";
 const ODBL = "https://opendatacommons.org/licenses/odbl/";
 /** When every name was last checked against current rental listings. Change it when that check is run again. */
 const NAMES_LAST_CHECKED = "November 2026";
@@ -348,9 +349,9 @@ export default async function MethodPage() {
                   Development Services and 311 departments.
                 </p>
                 <p>
-                  Aerial photos are from the{" "}
-                  <ExternalLink href={NAIP}>
-                    USGS National Agriculture Imagery Program
+                  Aerial photos are the{" "}
+                  <ExternalLink href={CITY_AERIALS}>
+                    City of Austin&apos;s 2025 aerial imagery
                   </ExternalLink>
                   . Most building names are from OpenStreetMap contributors.
                 </p>
@@ -442,8 +443,9 @@ export default async function MethodPage() {
                   buildings and estimated heights where none was measured.
                 </p>
                 <p>
-                  Aerial photos are from the USGS National Agriculture Imagery
-                  Program and are in the public domain.
+                  Aerial photos are the City of Austin&apos;s own, flown in
+                  2025. They are shown straight from the city&apos;s server when
+                  a record opens, and this site keeps no copy.
                 </p>
                 <p>
                   OpenStreetMap data is available under the{" "}

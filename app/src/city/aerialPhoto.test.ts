@@ -10,10 +10,10 @@ function parse(url: string) {
 }
 
 describe("aerialPhotoUrl", () => {
-  it("asks the USGS NAIP image server for a jpg in the fixed form", () => {
+  it("asks the City of Austin's 2025 aerial imagery for a jpg in the fixed form", () => {
     const { parsed } = parse(aerialPhotoUrl(BOX, 744, 400));
     expect(parsed.origin + parsed.pathname).toBe(
-      "https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer/exportImage",
+      "https://maps.austintexas.gov/image/rest/services/AerialMosaics/Aerials2025/ImageServer/exportImage",
     );
     expect(Object.fromEntries(parsed.searchParams)).toMatchObject({
       bboxSR: "4326",

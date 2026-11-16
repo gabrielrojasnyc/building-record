@@ -300,7 +300,7 @@ const PHOTO_TEXT_SHADOW =
 
 /**
  * The building's title over its aerial photo. A steel ground and the title stand from the first
- * moment; USGS can take seconds, so the photo fades in over them once it has loaded, and a photo
+ * moment; the city can take seconds, so the photo fades in over them once it has loaded, and a photo
  * that fails is dropped, never shown as a broken image.
  */
 function Header(props: {
@@ -335,7 +335,7 @@ function Header(props: {
   return (
     <div className="relative h-[204px] overflow-hidden rounded-t-[27px] bg-linear-to-b/srgb from-steel to-slate phone:h-[170px]">
       {src !== null && status !== "failed" && (
-        // A plain img: the photo comes straight from USGS in the browser, never through this site's server.
+        // A plain img: the photo comes straight from the city in the browser, never through this site's server.
         // eslint-disable-next-line @next/next/no-img-element
         <img
           ref={readFinishedPhoto}
@@ -367,7 +367,7 @@ function Header(props: {
         <span
           className={`pointer-events-none absolute ${props.underClose ? "top-[58px]" : "top-3.5"} right-3.5 z-1 text-[10.5px] text-ice opacity-80 ${PHOTO_TEXT_SHADOW}`}
         >
-          Aerial photo: USGS
+          Aerial photo: City of Austin
         </span>
       )}
     </div>
@@ -444,8 +444,7 @@ function Sentences(props: {
       : null;
   // A type the map is filtered to opens with its row, so the number on the map is the first thing found.
   const filteredType =
-    view.category !== "all" &&
-    countFor(complex, { ...view, period: "y3" }) > 0;
+    view.category !== "all" && countFor(complex, { ...view, period: "y3" }) > 0;
 
   return (
     <ul

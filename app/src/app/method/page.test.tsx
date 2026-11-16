@@ -748,8 +748,9 @@ describe("names, building shapes and photos", () => {
       "Building shapes are from the city's 2013 survey of building footprints, with OpenStreetMap shapes for newer buildings and estimated heights where none was measured.",
     );
     expect(section).toHaveTextContent(
-      "Aerial photos are from the USGS National Agriculture Imagery Program and are in the public domain.",
+      "Aerial photos are the City of Austin's own, flown in 2025. They are shown straight from the city's server when a record opens, and this site keeps no copy.",
     );
+    expect(document.body.textContent).not.toMatch(/USGS|National Agriculture/);
   });
 
   it("links the Open Database License that OpenStreetMap data is under", async () => {

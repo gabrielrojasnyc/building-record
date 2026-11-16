@@ -418,11 +418,11 @@ describe("the header", () => {
     expect(photo).toHaveAttribute("decoding", "async");
     expect(photo).not.toHaveAttribute("loading", "lazy");
     expect(photo).toHaveAttribute("data-loaded", "false");
-    expect(screen.queryByText("Aerial photo: USGS")).toBeNull();
+    expect(screen.queryByText("Aerial photo: City of Austin")).toBeNull();
 
     fireEvent.load(photo);
     expect(photo).toHaveAttribute("data-loaded", "true");
-    expect(screen.getByText("Aerial photo: USGS")).toBeVisible();
+    expect(screen.getByText("Aerial photo: City of Austin")).toBeVisible();
   });
 
   it("drops a photo that fails to load, keeping the title over the gradient", () => {
@@ -434,7 +434,7 @@ describe("the header", () => {
       }),
     );
     expect(screen.queryByRole("img", { name: /^Aerial photo/ })).toBeNull();
-    expect(screen.queryByText("Aerial photo: USGS")).toBeNull();
+    expect(screen.queryByText("Aerial photo: City of Austin")).toBeNull();
     expect(
       screen.getByRole("heading", { level: 1, name: "Royal Crest Apartments" }),
     ).toBeVisible();
