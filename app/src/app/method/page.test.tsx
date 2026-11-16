@@ -43,9 +43,11 @@ vi.mock("../dataFiles", () => ({
   readDataFile: vi.fn(async () => meta),
 }));
 
+/** Renders the page with the full rules under every step opened, as a reader who wants them would have it. */
 async function renderPage(overrides: Partial<Meta> = {}) {
   vi.mocked(readDataFile).mockResolvedValueOnce({ ...meta, ...overrides });
   render(await MethodPage());
+  for (const rules of document.querySelectorAll("details")) rules.open = true;
 }
 
 function sectionOf(heading: string) {
@@ -65,7 +67,57 @@ it("starts with a way back to the map and has one h1 over a plain heading order"
   expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
     "Method and sources",
   );
-  expect(screen.queryAllByRole("heading", { level: 3 })).toHaveLength(0);
+  // Six steps, the card of the complaint beside them, and under the steps the sixteen parts of the rules.
+  expect(
+    screen
+      .getAllByRole("heading", { level: 2 })
+      .map((heading) => heading.textContent),
+  ).toEqual([
+    "A complaint reaches the city",
+    "It is tied to a building",
+    "The city says what it found",
+    "It is counted by the day it was opened",
+    "It joins the building's record",
+    "What the record cannot tell you",
+    "The complaint",
+  ]);
+  expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(16);
+  expect(screen.queryAllByRole("heading", { level: 4 })).toHaveLength(0);
+});
+
+it("keeps the full rules folded under each step until a reader opens them, and loses none of them", async () => {
+  vi.mocked(readDataFile).mockResolvedValueOnce(meta);
+  render(await MethodPage());
+
+  const folded = [...document.querySelectorAll("details")];
+  expect(folded).toHaveLength(6);
+  expect(folded.every((rules) => !rules.open)).toBe(true);
+  expect(
+    folded.map((rules) =>
+      [...rules.querySelectorAll("h3")].map((heading) => heading.textContent),
+    ),
+  ).toEqual([
+    ["What counts as a complaint", "Where the data comes from"],
+    [
+      "What counts as a complex",
+      "How a building is labelled",
+      "Names, building shapes and photos",
+      "What is left out",
+    ],
+    ["How outcomes are decided", "What Violation confirmed means and does not"],
+    ["How far back it goes", "How fresh it is"],
+    [
+      "Counts, not rates",
+      "Repeat Offender properties",
+      "Recorded problems at Repeat Offender properties",
+      "311 requests",
+    ],
+    ["What a record cannot tell you", "What this site is"],
+  ]);
+  for (const rules of folded)
+    expect(rules.querySelector("summary")).toHaveTextContent(
+      "The full rules for this step",
+    );
 });
 
 it("reads the numbers it names from the data", async () => {
@@ -416,7 +468,7 @@ describe("how outcomes are decided", () => {
       expect(headings).toContain(OUTCOME_LABEL.violation);
     });
 
-    it("has Closed/Duplicate Case under the not counted heading and nowhere else on the page", async () => {
+    it("has Closed/Duplicate Case under the not counted heading and nowhere else in the rules", async () => {
       const table = await renderTable();
       const row = within(table)
         .getAllByRole("row")
@@ -429,9 +481,11 @@ describe("how outcomes are decided", () => {
       expect(
         within(row as HTMLElement).getByText("Closed/Duplicate Case"),
       ).toBeVisible();
-      expect(
-        document.body.textContent?.split("Closed/Duplicate Case"),
-      ).toHaveLength(2);
+      // Outside the rules it is only one of the phrases a reader can try in the third step.
+      const inRules = [...document.querySelectorAll("details")]
+        .map((rules) => rules.textContent)
+        .join(" ");
+      expect(inRules.split("Closed/Duplicate Case")).toHaveLength(2);
     });
 
     it("says what a phrase lands on only holds for a closed complaint with no violation case number", async () => {

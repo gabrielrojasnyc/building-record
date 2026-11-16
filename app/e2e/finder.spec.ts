@@ -488,6 +488,19 @@ test("a property listed under several parcels has one suggestion and one record"
   );
 });
 
+/** A step of the method page, found by its title. */
+const methodStep = (page: Page, title: string) =>
+  page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("heading", { level: 2, name: title }) });
+
+/** Opens the full rules folded under a step of the method page. */
+async function openRules(page: Page, title: string) {
+  await methodStep(page, title)
+    .getByText("The full rules for this step")
+    .click();
+}
+
 test("the method page states the caution and links back to the map", async ({
   page,
 }) => {
@@ -495,7 +508,13 @@ test("the method page states the caution and links back to the map", async ({
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     "Method and sources",
   );
-  await expect(page.getByText(CAUTION)).toBeVisible();
+  // Said in the last step itself, before any rules are opened.
+  await expect(
+    methodStep(page, "What the record cannot tell you")
+      .getByText(CAUTION)
+      .first(),
+  ).toBeVisible();
+  await openRules(page, "It is counted by the day it was opened");
   await expect(
     page.getByText(`This copy of the data was pulled on ${pullDate}.`),
   ).toBeVisible();
@@ -505,6 +524,68 @@ test("the method page states the caution and links back to the map", async ({
   await expect(
     page.getByRole("heading", { level: 1, name: "Building Record" }),
   ).toBeVisible();
+});
+
+test("the method page follows one complaint: its card fills in as the steps are reached, and changes with what is tried", async ({
+  page,
+}) => {
+  await page.goto("/method");
+  const card = page.getByRole("complementary", {
+    name: "The complaint you are following",
+  });
+  await expect(card).toContainText("Building condition");
+  await expect(card).toContainText("Step 1 of 6");
+  // What a later step finds out is not on the card yet.
+  await expect(card.getByText("The city found")).toHaveCount(0);
+
+  const found = methodStep(page, "The city says what it found");
+  await found.scrollIntoViewIfNeeded();
+  await found.getByLabel("The city's phrase").scrollIntoViewIfNeeded();
+  await expect(card.getByText("Violation confirmed")).toBeVisible();
+
+  // Trying something changes the complaint everywhere it is shown.
+  await found
+    .getByLabel("The city's phrase")
+    .selectOption("Closed/Duplicate Case");
+  await expect(found.getByText(/^Rule 1 of 6 decides it\./)).toBeVisible();
+  await expect(
+    card.getByText("A duplicate of another complaint"),
+  ).toBeVisible();
+
+  const recorded = methodStep(page, "It joins the building's record");
+  await recorded.scrollIntoViewIfNeeded();
+  await expect(
+    recorded.getByText(
+      "The complaint you are following is not in this record: the city closed it as a duplicate.",
+    ),
+  ).toBeVisible();
+  await methodStep(page, "What the record cannot tell you")
+    .getByRole("link", { name: "Austin Code Complaint Cases" })
+    .scrollIntoViewIfNeeded();
+  await expect(
+    card.getByText("No: the city closed it as a duplicate"),
+  ).toBeVisible();
+  await expect(card).toContainText("Step 6 of 6");
+
+  const overflow = await page.evaluate(
+    () =>
+      document.documentElement.scrollWidth -
+      document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test("the method page holds still for a reader who asked for less motion", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/method");
+  const figure = page.locator(".journey-figure").first();
+  await expect(figure).toBeVisible();
+  expect(
+    await figure.evaluate((element) => getComputedStyle(element).animationName),
+  ).toBe("none");
+  await expect(page.locator(".journey-progress")).toBeHidden();
 });
 
 for (const size of [
@@ -517,7 +598,11 @@ for (const size of [
     await page.setViewportSize({ width: size.width, height: size.height });
     await page.goto("/method");
 
+    // The table is part of the full rules, which stay folded until a reader opens them.
     const table = page.getByRole("table", { name: /City outcome phrases/ });
+    await expect(table).toBeHidden();
+    await openRules(page, "The city says what it found");
+    await openRules(page, "It is counted by the day it was opened");
     await expect(table).toBeVisible();
     await expect(
       table.getByRole("rowheader", { name: "Violation confirmed" }),
@@ -806,19 +891,17 @@ test.describe("when the map cannot start", () => {
 
   test("a filtered view survives a reload", async ({ page }) => {
     await page.goto("/?period=3y&order=most");
-    await expect(page.getByRole("button", { name: "3 years", exact: true })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(
+      page.getByRole("button", { name: "3 years", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
     await expect(
       page.getByRole("button", { name: "Most first" }),
     ).toBeVisible();
 
     await page.reload();
-    await expect(page.getByRole("button", { name: "3 years", exact: true })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(
+      page.getByRole("button", { name: "3 years", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
     await expect(
       page.getByRole("button", { name: "Most first" }),
     ).toBeVisible();
