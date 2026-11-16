@@ -52,6 +52,13 @@ export interface CameraPadding {
 
 const NO_PADDING: CameraPadding = { top: 0, right: 0, bottom: 0, left: 0 };
 
+/**
+ * - `starting`: the map is being built, and nothing is asked of it yet.
+ * - `ready`: it is drawn and listening.
+ * - `unavailable`: it could not start, for good. The component renders nothing.
+ */
+type Status = "starting" | "ready" | "unavailable";
+
 export interface BuildingMapProps {
   complexes: Complex[];
   view: View;
@@ -129,8 +136,8 @@ export function BuildingMap(props: BuildingMapProps) {
   const spotlightRef = useRef<Spotlight | null>(null);
   /** The pin's tooltip. MapLibre ends a hover only on the next mouse event, which a tap never sends. */
   const tooltipRef = useRef<maplibregl.Popup | null>(null);
-  const [ready, setReady] = useState(false);
-  const [unavailable, setUnavailable] = useState(false);
+  const [status, setStatus] = useState<Status>("starting");
+  const ready = status === "ready";
 
   // The map is built once; it reads everything that changes through these refs.
   const latest = useRef(props);
@@ -155,7 +162,7 @@ export function BuildingMap(props: BuildingMapProps) {
 
     const giveUp = () => {
       if (cancelled) return;
-      setUnavailable(true);
+      setStatus("unavailable");
       if (reportedUnavailable.current) return;
       reportedUnavailable.current = true;
       latest.current.onUnavailable();
@@ -287,7 +294,7 @@ export function BuildingMap(props: BuildingMapProps) {
         });
         map.on("moveend", reportViewArea);
 
-        setReady(true);
+        setStatus("ready");
         reportViewArea();
       });
     };
@@ -304,7 +311,8 @@ export function BuildingMap(props: BuildingMapProps) {
       map?.remove();
       mapRef.current = null;
       markedSelected.current = null;
-      setReady(false);
+      // A map that is taken away starts again from nothing. One that gave up stays given up.
+      setStatus((current) => (current === "ready" ? "starting" : current));
     };
   }, []);
 
@@ -381,7 +389,7 @@ export function BuildingMap(props: BuildingMapProps) {
     spotlight.clear({ returnCamera: !flewNow });
   }, [ready, spotlightId]);
 
-  if (unavailable) return null;
+  if (status === "unavailable") return null;
 
   // MapLibre's stylesheet sets position: relative on its container, so the map fills a wrapper instead of being the absolute box itself.
   // The pin tooltip is styled by the `.pin-tooltip` rule in globals.css.

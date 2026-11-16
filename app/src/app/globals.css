@@ -211,6 +211,19 @@
     }
   }
 
+  /*
+    The line that says the map is loading waits out a usual start before it shows, so a map that is up within a
+    moment never flashes it. With motion reduced it waits as long, and is then simply there.
+  */
+  .map-starting {
+    animation: map-starting 1ms linear 0.9s both;
+
+    @media (prefers-reduced-motion: no-preference) {
+      animation-duration: 0.3s;
+      animation-timing-function: ease-out;
+    }
+  }
+
   /* On a phone the building panel is a bottom sheet over the tray, so it carries a denser frost to stay readable. */
   .building-sheet {
     @variant phone {
@@ -340,5 +353,11 @@
 @keyframes journey-read {
   from {
     transform: scaleX(0);
+  }
+}
+
+@keyframes map-starting {
+  from {
+    opacity: 0;
   }
 }

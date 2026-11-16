@@ -30,6 +30,7 @@ import {
   OPENING,
   step,
   viewAreaOf,
+  type FinderState,
   type FlyTarget,
 } from "./finderState";
 import { Glass } from "./Glass";
@@ -105,6 +106,19 @@ const CONTROLS_PRESENT =
 // Visibility switches when the fade ends, so the controls stay seen while they fade and leave the tab order and the accessibility tree with it.
 const CONTROLS_ASIDE =
   "*:invisible *:opacity-0 motion-safe:*:transition-[opacity,visibility] motion-safe:*:duration-250";
+
+/** A map that is up within a moment never shows that it was loading: the line waits out a usual start, from globals.css. */
+const MAP_STARTING = "map-starting";
+
+/** What the screen says for the map while it is not up, in the one place it speaks for the map. */
+const MAP_SAYS: Record<
+  Exclude<FinderState["map"]["status"], "ready">,
+  string
+> = {
+  starting: "Loading the map",
+  unavailable:
+    "The map could not load on this device. You can still browse the list below.",
+};
 
 /*
   The view lives in the query string so a filtered map can be shared. Reading it as an external
@@ -323,7 +337,7 @@ export function Finder({
   };
 
   return (
-    <main>
+    <main data-map={state.map.status}>
       <div
         aria-hidden
         className={`fog pointer-events-none fixed inset-0 z-1 ${spotlight ? "fog-spotlight" : ""}`}
@@ -376,14 +390,15 @@ export function Finder({
       <div
         className={`fixed inset-x-0 bottom-0 z-2 flex flex-col gap-2 pb-2 ${mapUnavailable ? "top-[228px] phone:top-[178px]" : ""} ${mapUnavailable && selected ? "pr-[calc(372px+var(--gutter))] phone:pr-0" : ""}`}
       >
-        {mapUnavailable && (
+        {/* One line for both, so a screen reader hears "loading" become "could not load". A map that is up says nothing. */}
+        {state.map.status !== "ready" && (
           <div className="px-(--gutter)">
             <Glass
               as="p"
-              className="w-fit max-w-full rounded-2xl px-4 py-2.5 text-deep"
+              role="status"
+              className={`w-fit max-w-full rounded-2xl px-4 py-2.5 text-deep ${state.map.status === "starting" ? MAP_STARTING : ""}`}
             >
-              The map could not load on this device. You can still browse the
-              list below.
+              {MAP_SAYS[state.map.status]}
             </Glass>
           </div>
         )}

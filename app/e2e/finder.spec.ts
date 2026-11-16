@@ -730,6 +730,33 @@ test("a tab, a bookmark and a phone's home screen show the site's own mark", asy
   expect(png.headers()["content-type"]).toBe("image/png");
 });
 
+test("says the map is loading while it starts, and nothing once it is up", async ({
+  page,
+}) => {
+  let letTheStyleThrough = () => {};
+  const held = new Promise<void>((resolve) => {
+    letTheStyleThrough = resolve;
+  });
+  await page.route("https://tiles.openfreemap.org/styles/positron", async (route) => {
+    await held;
+    await route.continue();
+  });
+
+  await page.goto("/");
+  const main = page.getByRole("main");
+  await expect(main).toHaveAttribute("data-map", "starting");
+  const line = main.getByRole("status");
+  await expect(line).toHaveText("Loading the map");
+  // It waits out a usual start before it shows, then is plainly there.
+  await expect(line).toHaveCSS("opacity", "1");
+  await expect(page.getByText(/complexes in Austin/)).toBeVisible();
+
+  letTheStyleThrough();
+  await expect(main).toHaveAttribute("data-map", "ready");
+  await expect(line).toHaveCount(0);
+  await waitForMap(page);
+});
+
 test.describe("when the map cannot start", () => {
   test.beforeEach(async ({ page }) => {
     await withoutMap(page);

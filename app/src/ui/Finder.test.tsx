@@ -789,3 +789,40 @@ it("keeps the search and filters where they are on a desktop while a building is
   pickOnMap(array);
   expect(controls()).not.toHaveAttribute("inert");
 });
+
+describe("what the screen says of the map itself", () => {
+  /** The one line at the bottom that speaks for the map while it is not up. */
+  const mapStatus = () =>
+    within(screen.getByRole("main")).queryByRole("status");
+  const mapState = () => screen.getByRole("main").dataset.map;
+
+  it("says the map is loading until the map reports, then says nothing", () => {
+    render(<Finder complexes={everything} meta={meta} />);
+    expect(mapStatus()).toHaveTextContent(/^Loading the map$/);
+    expect(mapState()).toBe("starting");
+    expect(counting("3 complexes in Austin")).toBeVisible();
+
+    reportView(RIVERSIDE);
+    expect(mapStatus()).toBeNull();
+    expect(mapState()).toBe("ready");
+  });
+
+  it("says in the same place that the map could not load, so a screen reader hears the change", () => {
+    render(<Finder complexes={everything} meta={meta} />);
+    const line = mapStatus();
+
+    act(() => lastMap().onUnavailable());
+    expect(mapStatus()).toBe(line);
+    expect(line).toHaveTextContent(
+      "The map could not load on this device. You can still browse the list below.",
+    );
+    expect(mapState()).toBe("unavailable");
+  });
+
+  it("stays given up whatever the map reports afterwards", () => {
+    openWithoutMap();
+    reportView(NORTH);
+    expect(mapState()).toBe("unavailable");
+    expect(counting("3 complexes in Austin")).toBeVisible();
+  });
+});
