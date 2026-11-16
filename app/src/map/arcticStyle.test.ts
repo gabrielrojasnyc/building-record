@@ -2,7 +2,14 @@ import type { LayerSpecification, StyleSpecification } from "maplibre-gl";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_VIEW } from "@/domain/query";
 import type { Complex } from "@/domain/types";
-import { buildingsLayer, pinLayers, repaint, toFeatures } from "./arcticStyle";
+import { AREAS } from "@/domain/areas";
+import {
+  buildingsLayer,
+  pinLayers,
+  repaint,
+  START_VIEW,
+  toFeatures,
+} from "./arcticStyle";
 import positron from "./fixtures/positron.json";
 
 const base = positron as unknown as StyleSpecification;
@@ -320,5 +327,23 @@ describe("buildingsLayer", () => {
     const paint = layer.paint as Record<string, unknown>;
     expect(paint["fill-extrusion-color"]).toBe("#E1EAEF");
     expect(paint["fill-extrusion-opacity"]).toBe(0.5);
+  });
+});
+
+describe("the zoom a part of the city is shown at", () => {
+  it("is the same on arrival as after a jump to Downtown, where the site opens", () => {
+    const downtown = AREAS.find(({ name }) => name === "Downtown");
+    expect(START_VIEW.zoom).toBe(downtown?.zoom);
+  });
+
+  it("is close enough everywhere that buildings stand, and closer where they are low", () => {
+    // Buildings are drawn from zoom 13.5, and only read as buildings a full step closer.
+    const drawnFrom = buildingsLayer().minzoom ?? 0;
+    for (const area of AREAS)
+      expect(area.zoom, area.name).toBeGreaterThanOrEqual(drawnFrom + 1);
+    // Towers read from further off than two-storey blocks do.
+    const [downtown, ...lowRise] = AREAS;
+    for (const area of lowRise)
+      expect(area.zoom, area.name).toBeGreaterThan(downtown.zoom);
   });
 });

@@ -4,15 +4,16 @@ import type {
   SkySpecification,
   StyleSpecification,
 } from "maplibre-gl";
+import { OPENING_ZOOM } from "@/domain/areas";
 import { countFor, type View } from "@/domain/query";
 import type { Complex } from "@/domain/types";
 
 export const BASE_STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
 
-/** Downtown, close enough that its buildings stand up (they are drawn from zoom 13.5), so the site opens on a city and not on flat land. */
+/** Downtown, as close as any area is shown, so the site opens on a city of standing buildings and not on flat land. */
 export const START_VIEW = {
   center: [-97.7431, 30.266] as [number, number],
-  zoom: 14.8,
+  zoom: OPENING_ZOOM,
   pitch: 52,
   bearing: -12,
   minZoom: 9.5,

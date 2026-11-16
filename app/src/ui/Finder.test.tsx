@@ -544,12 +544,21 @@ it("leaves for an area in one render, with the fly, and the count follows the ma
   const leaving = mapRenders
     .slice(before)
     .find((props) => props.spotlight === null);
-  expect(leaving?.flyTo).toEqual({ lon: -97.7431, lat: 30.268, zoom: 13.9 });
+  // Close enough that the area's buildings stand, as they do when the site opens.
+  expect(leaving?.flyTo).toEqual({ lon: -97.7431, lat: 30.268, zoom: 14.8 });
   expect(leaving?.selectedId).toBeNull();
   expect(screen.queryByRole("complementary")).toBeNull();
 
   reportView(NORTH);
   expect(counting("1 complex in view")).toBeVisible();
+});
+
+it("flies closer to an area of low buildings than to downtown's towers, so they stand too", async () => {
+  openFinder();
+  const before = mapRenders.length;
+  await userEvent.click(screen.getByRole("button", { name: "Rundberg" }));
+  const leaving = mapRenders.slice(before).find((props) => props.flyTo);
+  expect(leaving?.flyTo).toEqual({ lon: -97.703, lat: 30.362, zoom: 15.3 });
 });
 
 it("without a map, opens a picked building's record with its photo and stages nothing", async () => {

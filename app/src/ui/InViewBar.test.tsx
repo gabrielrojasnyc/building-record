@@ -103,13 +103,14 @@ it("counts every complex in Austin until the map says what it shows", () => {
   ).toBeVisible();
 });
 
-it("reports an area jump", async () => {
+it("reports an area jump, with how close the map should stand over it", async () => {
   renderBar(sample);
   await userEvent.click(screen.getByRole("button", { name: "East Riverside" }));
   expect(onJump).toHaveBeenCalledWith({
     name: "East Riverside",
     lon: -97.725,
     lat: 30.237,
+    zoom: 15.3,
   });
 });
 

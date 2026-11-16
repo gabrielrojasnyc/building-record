@@ -47,7 +47,6 @@ const CITYWIDE: ViewArea = [
 ];
 /** Only for a building whose file cannot be read: with an outline, the map frames the model itself. */
 const SELECTION_ZOOM = 14.6;
-const AREA_ZOOM = 13.9;
 const ADDRESS_ZOOM = 15;
 
 /*
@@ -349,7 +348,7 @@ export function Finder({
   };
 
   const jump = (area: Area) => {
-    leaveFor({ lon: area.lon, lat: area.lat, zoom: AREA_ZOOM });
+    leaveFor({ lon: area.lon, lat: area.lat, zoom: area.zoom });
   };
 
   const goToAddress = (match: AddressMatch) => {
