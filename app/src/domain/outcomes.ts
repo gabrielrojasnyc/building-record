@@ -88,6 +88,19 @@ export const RESTATED_OUTCOME: ReadonlyMap<string, Outcome> = new Map<string, Ou
 export const restatesOutcome = (phrase: string, outcome: Outcome): boolean =>
   RESTATED_OUTCOME.get(phrase) === outcome;
 
+/**
+ * The rules `classify` applies, in its order and in the words the method page gives them. The first that fits
+ * decides. Kept beside `classify` so a change to one is a change to the other.
+ */
+export const RULES_IN_ORDER: readonly string[] = [
+  "The city closed it as a duplicate of another complaint. It is not counted anywhere.",
+  `It has a violation case number, or the city's phrase says a violation was found. A phrase that says no violation was found does not count. This is ${OUTCOME_LABEL.violation}.`,
+  `The city's phrase says an inspection was performed and the problem was fixed: abated by the inspector, abated by Community Court, or fixed through voluntary compliance. This is ${OUTCOME_LABEL.fixed}.`,
+  `The city's phrase says no violation was found. This is ${OUTCOME_LABEL.none}.`,
+  `None of the rules above fit, and the city has not closed it. This is ${OUTCOME_LABEL.open}.`,
+  `Anything else: it is closed and none of the rules above fit. This is ${OUTCOME_LABEL.other}.`,
+];
+
 const DUPLICATE = "Closed/Duplicate Case";
 const FIXED_AT_INSPECTION = new Set([
   "Inspection Performed/Abated by Inspector",
