@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import {
   searchAddresses,
   searchComplexes,
@@ -19,9 +26,14 @@ const NO_COMPLEX_MATCH =
   "No building name or address starts with or contains that.";
 const CITY_UNAVAILABLE =
   "Other Austin addresses could not be loaded right now.";
+const LOOKING = "Looking for other Austin addresses";
+/** How long typing must stop before the city is asked. The site's own buildings never wait for it. */
 const TYPING_PAUSE_MS = 250;
+/** As many suggestions as the list holds. With that many of the site's own, the city has no room to add any. */
+const MOST_SUGGESTIONS = 6;
 
-interface Suggestions {
+/** What the city added for some text: the site's own matches with its other addresses under them. */
+interface CityAnswer {
   /** The trimmed text these matches answer. A result for older text is never shown. */
   query: string;
   matches: AddressMatch[];
@@ -41,41 +53,50 @@ export function IntroSearch({
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const [text, setText] = useState("");
-  const [suggestions, setSuggestions] = useState<Suggestions | null>(null);
+  const [cityAnswer, setCityAnswer] = useState<CityAnswer | null>(null);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [dismissedQuery, setDismissedQuery] = useState<string | null>(null);
 
   const query = text.trim();
+  const longEnough = query.length >= ADDRESS_SEARCH_MIN_CHARACTERS;
 
+  // The site's own buildings are already in the browser, so they answer on the key that finds them.
+  const ownMatches = useMemo(
+    () => (longEnough ? searchComplexes(query, complexes) : []),
+    [longEnough, query, complexes],
+  );
+  // With no map an address elsewhere has nowhere to go, and a full list has no room for one.
+  const asksCity =
+    longEnough && !complexesOnly && ownMatches.length < MOST_SUGGESTIONS;
+
+  // Other Austin addresses come from the city, which takes its time: asked once typing pauses, and added under.
   useEffect(() => {
-    if (query.length < ADDRESS_SEARCH_MIN_CHARACTERS) return;
+    if (!asksCity) return;
     let superseded = false;
     const timer = setTimeout(async () => {
-      // With no map the city is never asked, so it cannot be unavailable.
-      const result = complexesOnly
-        ? { matches: searchComplexes(query, complexes), cityUnavailable: false }
-        : await searchAddresses(query, complexes);
+      const result = await searchAddresses(query, complexes);
       if (superseded) return;
-      setSuggestions({ query, ...result });
-      setActiveIndex(-1);
+      setCityAnswer({ query, ...result });
     }, TYPING_PAUSE_MS);
     return () => {
       superseded = true;
       clearTimeout(timer);
     };
-  }, [query, complexes, complexesOnly]);
+  }, [asksCity, query, complexes]);
 
-  const shown =
-    suggestions?.query === query && dismissedQuery !== query
-      ? suggestions
-      : null;
-  const matches = shown?.matches ?? [];
+  const answered = asksCity && cityAnswer?.query === query ? cityAnswer : null;
+  const shown = longEnough && dismissedQuery !== query;
+  const matches = shown ? (answered?.matches ?? ownMatches) : [];
   const isOpen = matches.length > 0;
-  const showsCityUnavailable = shown?.cityUnavailable === true;
-  // The no-match sentence is only true when the city answered and nothing matched.
+  const showsCityUnavailable = shown && answered?.cityUnavailable === true;
+  const waitsOnCity = shown && asksCity && answered === null;
+  // Said only while there is nothing else to show: beside a list, the list is the answer so far.
+  const showsLooking = waitsOnCity && !isOpen;
+  // The no-match sentence is only true once everyone asked has answered and nothing matched.
   const showsNoMatch =
-    shown !== null && matches.length === 0 && !showsCityUnavailable;
-  const showsSurface = isOpen || showsNoMatch || showsCityUnavailable;
+    shown && !isOpen && !waitsOnCity && !showsCityUnavailable;
+  const showsSurface =
+    isOpen || showsNoMatch || showsCityUnavailable || showsLooking;
   const optionId = (index: number) => `${listId}-${index}`;
 
   useEffect(() => {
@@ -111,15 +132,12 @@ export function IntroSearch({
       return;
     }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      if (
-        !suggestions ||
-        suggestions.query !== query ||
-        suggestions.matches.length === 0
-      )
-        return;
+      // What the arrows walk is the list as it would stand open, which Escape may have closed.
+      const walked = longEnough ? (answered?.matches ?? ownMatches) : [];
+      if (walked.length === 0) return;
       event.preventDefault();
       setDismissedQuery(null);
-      const last = suggestions.matches.length - 1;
+      const last = walked.length - 1;
       const step = event.key === "ArrowDown" ? 1 : -1;
       setActiveIndex((current) =>
         current === -1
@@ -226,6 +244,11 @@ export function IntroSearch({
                 className={`px-3 text-[13px] text-steel ${isOpen ? "pt-1.5 pb-1" : "py-2"}`}
               >
                 {CITY_UNAVAILABLE}
+              </p>
+            )}
+            {showsLooking && (
+              <p role="status" className="px-3 py-2 text-[13px] text-steel">
+                {LOOKING}
               </p>
             )}
             {showsNoMatch && (

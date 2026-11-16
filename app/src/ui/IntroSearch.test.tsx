@@ -57,6 +57,9 @@ beforeEach(() => {
     matches: [apartments, street],
     cityUnavailable: false,
   });
+  // No building of the site's own matches unless a test says so.
+  searchLocal.mockReset();
+  searchLocal.mockReturnValue([]);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -72,7 +75,53 @@ describe("IntroSearch", () => {
     expect(input).toHaveAttribute("placeholder", "Address or building name");
   });
 
-  it("searches 250 ms after typing stops, not on every key", async () => {
+  it("lists the site's own buildings at once, on the key that finds them, before the city is even asked", async () => {
+    searchLocal.mockReturnValue([apartments]);
+    const { user, input } = setup();
+    await user.type(input, "1601");
+
+    expect(search).not.toHaveBeenCalled();
+    expect(
+      within(screen.getByRole("listbox"))
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["1601 Royal Crest Drapartments"]);
+
+    // The city's other addresses join them under, once it has answered.
+    await settle();
+    expect(within(screen.getByRole("listbox")).getAllByRole("option")).toHaveLength(2);
+  });
+
+  it("chooses the first of its own buildings on Enter without waiting for the city", async () => {
+    searchLocal.mockReturnValue([apartments]);
+    const { user, input, onChoose } = setup();
+    await user.type(input, "1601{Enter}");
+    expect(onChoose).toHaveBeenCalledWith(apartments);
+    expect(search).not.toHaveBeenCalled();
+  });
+
+  it("says it is looking for other addresses while the city has not answered and no building matches", async () => {
+    search.mockResolvedValue({ matches: [], cityUnavailable: false });
+    const { user, input } = setup();
+    await user.type(input, "zzzz");
+
+    expect(
+      screen.getByText("Looking for other Austin addresses"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("No Austin address or building name matches that."),
+    ).not.toBeInTheDocument();
+
+    await settle();
+    expect(
+      screen.queryByText("Looking for other Austin addresses"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("No Austin address or building name matches that."),
+    ).toBeInTheDocument();
+  });
+
+  it("asks the city 250 ms after typing stops, not on every key", async () => {
     const { user, input } = setup();
     await user.type(input, "1601");
     expect(search).not.toHaveBeenCalled();
